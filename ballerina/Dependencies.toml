@@ -26,10 +26,12 @@ modules = [
 org = "ballerina"
 name = "io"
 version = "1.8.0"
-scope = "testOnly"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "lang.value"}
+]
+modules = [
+	{org = "ballerina", packageName = "io", moduleName = "io"}
 ]
 
 [[package]]
@@ -79,7 +81,28 @@ scope = "testOnly"
 org = "ballerina"
 name = "lang.value"
 version = "0.0.0"
-scope = "testOnly"
+dependencies = [
+	{org = "ballerina", name = "jballerina.java"}
+]
+
+[[package]]
+org = "ballerina"
+name = "log"
+version = "2.13.0"
+dependencies = [
+	{org = "ballerina", name = "io"},
+	{org = "ballerina", name = "jballerina.java"},
+	{org = "ballerina", name = "lang.value"},
+	{org = "ballerina", name = "observe"}
+]
+modules = [
+	{org = "ballerina", packageName = "log", moduleName = "log"}
+]
+
+[[package]]
+org = "ballerina"
+name = "observe"
+version = "1.5.1"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"}
 ]
@@ -123,7 +146,9 @@ name = "xlsx"
 version = "0.1.0"
 dependencies = [
 	{org = "ballerina", name = "file"},
+	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "jballerina.java"},
+	{org = "ballerina", name = "log"},
 	{org = "ballerina", name = "test"}
 ]
 modules = [
