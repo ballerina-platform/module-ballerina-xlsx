@@ -25,8 +25,6 @@ import io.ballerina.runtime.api.values.BString;
 
 /**
  * Utility class for handling Ballerina annotations in XLSX operations.
- *
- * @since 0.1.1
  */
 public final class AnnotationUtils {
 

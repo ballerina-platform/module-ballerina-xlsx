@@ -24,7 +24,7 @@ public class Sheet {
     # Get the name of the sheet.
     #
     # + return - Sheet name
-    public isolated function getName() returns string = @java:Method {
+    public function getName() returns string = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 
@@ -34,21 +34,21 @@ public class Sheet {
     # This excludes "ghost rows" - rows that have formatting but no actual data.
     #
     # + return - Range string (e.g., "A1:D50")
-    public isolated function getUsedRange() returns string = @java:Method {
+    public function getUsedRange() returns string = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 
     # Get the number of rows with data.
     #
     # + return - Row count
-    public isolated function getRowCount() returns int = @java:Method {
+    public function getRowCount() returns int = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 
     # Get the number of columns with data.
     #
     # + return - Column count
-    public isolated function getColumnCount() returns int = @java:Method {
+    public function getColumnCount() returns int = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 
@@ -70,7 +70,7 @@ public class Sheet {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Array of rows or error
-    public isolated function getRows(RowReadOptions options = {}, typedesc<anydata[]> t = <>)
+    public function getRows(RowReadOptions options = {}, typedesc<anydata[]> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
@@ -94,7 +94,7 @@ public class Sheet {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error
-    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<anydata> t = <>)
+    public function getRow(int index, RowReadOptions options = {}, typedesc<anydata> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
@@ -118,7 +118,7 @@ public class Sheet {
     # + data - Data to write
     # + options - Write options
     # + return - Error if write fails
-    public isolated function putRows(anydata[] data, *RowWriteOptions options) returns Error? = @java:Method {
+    public function putRows(anydata[] data, *RowWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 }

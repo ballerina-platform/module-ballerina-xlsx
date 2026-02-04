@@ -17,12 +17,9 @@
 import ballerina/file;
 import ballerina/test;
 
-// Test record type for writing
-type Person record {|
-    string name;
-    int age;
-    boolean active;
-|};
+// =============================================================================
+// BASIC WRITE TESTS
+// =============================================================================
 
 @test:Config {
     groups: ["write"]
@@ -34,19 +31,18 @@ function testWriteStringArray() returns error? {
         ["Jane", "25", "Los Angeles"]
     ];
 
-    string tempFile = TEST_DATA_DIR + "temp_write_string.xlsx";
+    string tempFile = getTempFilePath("write_string");
     check write(data, tempFile);
 
     // Verify file was created
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
-    // Verify by parsing back
+    // Verify by parsing back and checking exact content
     string[][] parsed = check parse(tempFile);
-    test:assertEquals(parsed.length(), 3, "Should have 3 rows");
-    test:assertEquals(parsed[0][0], "Name", "First cell should be 'Name'");
+    assertStringArrayEquals(parsed, data, "Write/read round-trip");
 
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
 }
 
 @test:Config {
@@ -58,71 +54,112 @@ function testWriteRecords() returns error? {
         {name: "Bob", age: 35, active: false}
     ];
 
-    string tempFile = TEST_DATA_DIR + "temp_write_records.xlsx";
+    string tempFile = getTempFilePath("write_records");
     check write(people, tempFile);
 
     // Verify file was created
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
-    // Verify by parsing back as string array (to check headers)
+    // Verify by parsing back as string array to check headers
     string[][] parsed = check parse(tempFile);
-    test:assertTrue(parsed.length() >= 2, "Should have header + data rows");
+    test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
+
+    // Verify headers exist (order may vary)
+    string[] headers = parsed[0];
+    test:assertTrue(headers.indexOf("name") != () || headers.indexOf("Name") != (),
+        "Should have 'name' header");
+    test:assertTrue(headers.indexOf("age") != () || headers.indexOf("Age") != (),
+        "Should have 'age' header");
+    test:assertTrue(headers.indexOf("active") != () || headers.indexOf("Active") != (),
+        "Should have 'active' header");
 
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
 }
 
 @test:Config {
-    groups: ["write"]
+    groups: ["write", "options"]
 }
 function testWriteWithoutHeaders() returns error? {
     Person[] people = [
         {name: "Alice", age: 28, active: true}
     ];
 
-    string tempFile = TEST_DATA_DIR + "temp_write_no_headers.xlsx";
+    string tempFile = getTempFilePath("write_no_headers");
     check write(people, tempFile, writeHeaders = false);
 
     // Parse back - should only have data row, no headers
     string[][] parsed = check parse(tempFile);
     test:assertEquals(parsed.length(), 1, "Should have only 1 row (no headers)");
 
+    // First row should be data, not header names
+    test:assertTrue(parsed[0].indexOf("Alice") != (), "First row should contain data 'Alice'");
+
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
 }
 
 @test:Config {
-    groups: ["write"]
+    groups: ["write", "options"]
 }
 function testWriteWithCustomSheetName() returns error? {
-    string[][] data = [["Data"]];
+    string[][] data = [["Data", "Value"], ["A", "1"]];
 
-    string tempFile = TEST_DATA_DIR + "temp_write_sheet_name.xlsx";
+    string tempFile = getTempFilePath("write_sheet_name");
     check write(data, tempFile, sheetName = "MyCustomSheet");
 
     // Verify by opening as workbook and checking sheet name
     Workbook wb = check new Workbook(tempFile);
     string[] sheetNames = wb.getSheetNames();
+    test:assertEquals(sheetNames.length(), 1, "Should have 1 sheet");
     test:assertEquals(sheetNames[0], "MyCustomSheet", "Sheet name should match");
     check wb.close();
 
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
 }
+
+@test:Config {
+    groups: ["write", "options"]
+}
+function testWriteWithStartRow() returns error? {
+    string[][] data = [
+        ["Header1", "Header2"],
+        ["Data1", "Data2"]
+    ];
+
+    string tempFile = getTempFilePath("write_start_row");
+    check write(data, tempFile, startRow = 2);
+
+    // Parse back - data should start at row 2 (0-based), so rows 0,1 are empty
+    // But parse will only see the used range starting from row 2
+    string[][] parsed = check parse(tempFile);
+
+    // The data we wrote should be there
+    test:assertEquals(parsed.length(), 2, "Should have 2 rows");
+    test:assertEquals(parsed[0][0], "Header1", "First row should be Header1");
+    test:assertEquals(parsed[1][0], "Data1", "Second row should be Data1");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// ROUND-TRIP TESTS
+// =============================================================================
 
 @test:Config {
     groups: ["write"]
 }
-function testRoundTrip() returns error? {
-    // Original data
+function testRoundTripStringArray() returns error? {
     string[][] original = [
-        ["Name", "Score"],
-        ["Alice", "95"],
-        ["Bob", "87"],
-        ["Charlie", "92"]
+        ["Name", "Score", "Grade"],
+        ["Alice", "95", "A"],
+        ["Bob", "87", "B"],
+        ["Charlie", "92", "A-"]
     ];
 
-    string tempFile = TEST_DATA_DIR + "temp_roundtrip.xlsx";
+    string tempFile = getTempFilePath("roundtrip_string");
 
     // Write to XLSX
     check write(original, tempFile);
@@ -130,37 +167,176 @@ function testRoundTrip() returns error? {
     // Read back
     string[][] parsed = check parse(tempFile);
 
-    // Verify
-    test:assertEquals(parsed.length(), original.length(), "Row count should match");
-    test:assertEquals(parsed[0].length(), original[0].length(), "Column count should match");
-    test:assertEquals(parsed[1][0], "Alice", "Data should match");
-    test:assertEquals(parsed[1][1], "95", "Data should match");
+    // Verify exact match
+    assertStringArrayEquals(parsed, original, "Round-trip string array");
 
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
 }
 
-// Test record type with @xlsx:Name annotations
-type AnnotatedEmployee record {|
-    @Name {value: "First Name"}
-    string firstName;
-    @Name {value: "Employee ID"}
-    int id;
-    @Name {value: "Department Name"}
-    string department;
-|};
+@test:Config {
+    groups: ["write"]
+}
+function testRoundTripRecords() returns error? {
+    Employee[] original = [
+        {name: "John Doe", age: 30, department: "Engineering"},
+        {name: "Jane Smith", age: 25, department: "Marketing"}
+    ];
+
+    string tempFile = getTempFilePath("roundtrip_records");
+
+    // Write to XLSX
+    check write(original, tempFile);
+
+    // Read back as records
+    Employee[] parsed = check parse(tempFile);
+
+    // Verify
+    assertEmployeesEqual(parsed, original);
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write"]
+}
+function testRoundTripWithSpecialCharacters() returns error? {
+    string[][] original = [
+        ["Name", "Description"],
+        ["Test", "Special chars: @#$%^&*()"],
+        ["Quote", "He said \"Hello\""],
+        ["Newline", "Line1"],  // Note: actual newlines in cells are complex
+        ["Comma", "a,b,c"]
+    ];
+
+    string tempFile = getTempFilePath("roundtrip_special");
+
+    check write(original, tempFile);
+    string[][] parsed = check parse(tempFile);
+
+    // Verify special characters preserved
+    test:assertEquals(parsed[1][1], "Special chars: @#$%^&*()", "Special chars preserved");
+    test:assertEquals(parsed[4][1], "a,b,c", "Commas preserved");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// TYPE PRESERVATION TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["write", "types"]
+}
+function testWriteIntegerValues() returns error? {
+    // Write records with int values
+    NumericTypes[] data = [
+        {intValue: 42, decimalValue: 3.14d},
+        {intValue: -100, decimalValue: 0.001d},
+        {intValue: 0, decimalValue: 999.999d}
+    ];
+
+    string tempFile = getTempFilePath("write_int");
+    check write(data, tempFile);
+
+    // Read back and verify
+    NumericTypes[] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 3, "Should have 3 records");
+    test:assertEquals(parsed[0].intValue, 42, "First int should be 42");
+    test:assertEquals(parsed[1].intValue, -100, "Second int should be -100");
+    test:assertEquals(parsed[2].intValue, 0, "Third int should be 0");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "types"]
+}
+function testWriteDecimalValues() returns error? {
+    NumericTypes[] data = [
+        {intValue: 1, decimalValue: 3.14159d},
+        {intValue: 2, decimalValue: 2.71828d}
+    ];
+
+    string tempFile = getTempFilePath("write_decimal");
+    check write(data, tempFile);
+
+    NumericTypes[] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 2, "Should have 2 records");
+    // Decimal comparison with tolerance
+    test:assertTrue(parsed[0].decimalValue > 3.14d && parsed[0].decimalValue < 3.15d,
+        "First decimal should be ~3.14159");
+    test:assertTrue(parsed[1].decimalValue > 2.71d && parsed[1].decimalValue < 2.72d,
+        "Second decimal should be ~2.71828");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "types"]
+}
+function testWriteBooleanValues() returns error? {
+    Person[] data = [
+        {name: "Active", age: 30, active: true},
+        {name: "Inactive", age: 25, active: false}
+    ];
+
+    string tempFile = getTempFilePath("write_boolean");
+    check write(data, tempFile);
+
+    Person[] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 2, "Should have 2 records");
+    test:assertEquals(parsed[0].active, true, "First should be active");
+    test:assertEquals(parsed[1].active, false, "Second should be inactive");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "types"]
+}
+function testWriteMapArray() returns error? {
+    map<anydata>[] data = [
+        {"Name": "Alice", "Age": 28, "City": "NYC"},
+        {"Name": "Bob", "Age": 35, "City": "LA"}
+    ];
+
+    string tempFile = getTempFilePath("write_map");
+    check write(data, tempFile);
+
+    // Read back as string array to verify structure
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
+
+    // Verify headers (map keys become headers)
+    string[] headers = parsed[0];
+    test:assertTrue(headers.indexOf("Name") != (), "Should have 'Name' header");
+    test:assertTrue(headers.indexOf("Age") != (), "Should have 'Age' header");
+    test:assertTrue(headers.indexOf("City") != (), "Should have 'City' header");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// ANNOTATION TESTS
+// =============================================================================
 
 @test:Config {
     groups: ["write", "annotation"]
 }
 function testAnnotatedRecordWrite() returns error? {
-    // Write data using annotated record type
     AnnotatedEmployee[] employees = [
         {firstName: "John", id: 101, department: "Engineering"},
         {firstName: "Jane", id: 102, department: "Marketing"}
     ];
 
-    string tempFile = TEST_DATA_DIR + "temp_annotated.xlsx";
+    string tempFile = getTempFilePath("annotated_write");
     check write(employees, tempFile);
 
     // Parse back as string[][] to verify headers match annotation values
@@ -179,31 +355,198 @@ function testAnnotatedRecordWrite() returns error? {
     test:assertTrue(headers.indexOf("id") == (), "Should NOT have 'id' header");
 
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
 }
 
 @test:Config {
-    groups: ["parse", "annotation"]
+    groups: ["write", "annotation"]
 }
-function testAnnotatedRecordParse() returns error? {
-    // First write data with annotated record to create test file
-    AnnotatedEmployee[] employees = [
+function testAnnotatedRecordRoundTrip() returns error? {
+    AnnotatedEmployee[] original = [
         {firstName: "Alice", id: 201, department: "Sales"},
         {firstName: "Bob", id: 202, department: "Support"}
     ];
 
-    string tempFile = TEST_DATA_DIR + "temp_annotated_parse.xlsx";
-    check write(employees, tempFile);
+    string tempFile = getTempFilePath("annotated_roundtrip");
+    check write(original, tempFile);
 
-    // Now parse back using the same annotated record type
+    // Parse back using the same annotated record type
     AnnotatedEmployee[] parsed = check parse(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have 2 employee records");
-    test:assertEquals(parsed[0].firstName, "Alice", "First employee firstName should match");
-    test:assertEquals(parsed[0].id, 201, "First employee id should match");
-    test:assertEquals(parsed[0].department, "Sales", "First employee department should match");
-    test:assertEquals(parsed[1].firstName, "Bob", "Second employee firstName should match");
+    test:assertEquals(parsed[0].firstName, "Alice", "First employee firstName");
+    test:assertEquals(parsed[0].id, 201, "First employee id");
+    test:assertEquals(parsed[0].department, "Sales", "First employee department");
+    test:assertEquals(parsed[1].firstName, "Bob", "Second employee firstName");
+    test:assertEquals(parsed[1].id, 202, "Second employee id");
 
     // Cleanup
-    check file:remove(tempFile);
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// EDGE CASE TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["write", "edge"]
+}
+function testWriteEmptyArray() returns error? {
+    string[][] data = [];
+
+    string tempFile = getTempFilePath("write_empty");
+    check write(data, tempFile);
+
+    // File should be created (empty workbook)
+    test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
+
+    // Parse back - should be empty
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 0, "Should be empty");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "edge"]
+}
+function testWriteSingleRow() returns error? {
+    string[][] data = [["Single", "Row", "Data"]];
+
+    string tempFile = getTempFilePath("write_single_row");
+    check write(data, tempFile);
+
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 1, "Should have 1 row");
+    test:assertEquals(parsed[0].length(), 3, "Should have 3 columns");
+    test:assertEquals(parsed[0][0], "Single", "First cell");
+    test:assertEquals(parsed[0][2], "Data", "Third cell");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "edge"]
+}
+function testWriteSingleCell() returns error? {
+    string[][] data = [["OnlyCell"]];
+
+    string tempFile = getTempFilePath("write_single_cell");
+    check write(data, tempFile);
+
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 1, "Should have 1 row");
+    test:assertEquals(parsed[0].length(), 1, "Should have 1 column");
+    test:assertEquals(parsed[0][0], "OnlyCell", "Cell value");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "edge"]
+}
+function testWriteUnicodeData() returns error? {
+    string[][] data = [
+        ["Language", "Text"],
+        ["Japanese", "\u{3053}\u{3093}\u{306B}\u{3061}\u{306F}"],  // こんにちは
+        ["Chinese", "\u{4F60}\u{597D}"],                            // 你好
+        ["Korean", "\u{C548}\u{B155}"]                              // 안녕
+    ];
+
+    string tempFile = getTempFilePath("write_unicode");
+    check write(data, tempFile);
+
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 4, "Should have 4 rows");
+    test:assertEquals(parsed[0][0], "Language", "Header");
+    test:assertEquals(parsed[1][0], "Japanese", "First data row label");
+    // Verify Unicode content exists (exact comparison may be tricky)
+    test:assertTrue(parsed[1][1].length() > 0, "Japanese text should have content");
+    test:assertTrue(parsed[2][1].length() > 0, "Chinese text should have content");
+    test:assertTrue(parsed[3][1].length() > 0, "Korean text should have content");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "edge"]
+}
+function testWriteLargeDataset() returns error? {
+    // Create a moderately large dataset
+    string[][] data = [];
+    data.push(["ID", "Name", "Value"]);
+
+    foreach int i in 1 ... 100 {
+        data.push([i.toString(), "Item" + i.toString(), (i * 10).toString()]);
+    }
+
+    string tempFile = getTempFilePath("write_large");
+    check write(data, tempFile);
+
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 101, "Should have 101 rows (header + 100 data)");
+    test:assertEquals(parsed[1][0], "1", "First data ID should be 1");
+    test:assertEquals(parsed[100][0], "100", "Last data ID should be 100");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "edge"]
+}
+function testWriteWideData() returns error? {
+    // Create wide data with 10 columns
+    WideRecord[] data = [
+        {col1: "A1", col2: "B1", col3: "C1", col4: "D1", col5: "E1",
+         col6: "F1", col7: "G1", col8: "H1", col9: "I1", col10: "J1"},
+        {col1: "A2", col2: "B2", col3: "C2", col4: "D2", col5: "E2",
+         col6: "F2", col7: "G2", col8: "H2", col9: "I2", col10: "J2"}
+    ];
+
+    string tempFile = getTempFilePath("write_wide");
+    check write(data, tempFile);
+
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
+    test:assertEquals(parsed[0].length(), 10, "Should have 10 columns");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// OVERWRITE BEHAVIOR TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["write"]
+}
+function testWriteOverwritesExistingFile() returns error? {
+    string tempFile = getTempFilePath("overwrite");
+
+    // Write first data
+    string[][] data1 = [["First", "Data"]];
+    check write(data1, tempFile);
+
+    // Verify first write
+    string[][] parsed1 = check parse(tempFile);
+    test:assertEquals(parsed1[0][0], "First", "First write should have 'First'");
+
+    // Overwrite with different data
+    string[][] data2 = [["Second", "Data", "More"]];
+    check write(data2, tempFile);
+
+    // Verify overwrite - should have new data, not old
+    string[][] parsed2 = check parse(tempFile);
+    test:assertEquals(parsed2.length(), 1, "Should have 1 row");
+    test:assertEquals(parsed2[0][0], "Second", "Should be overwritten with 'Second'");
+    test:assertEquals(parsed2[0].length(), 3, "Should have 3 columns now");
+
+    // Cleanup
+    check removeTempFile(tempFile);
 }

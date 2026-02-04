@@ -14,12 +14,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/jballerina.java;
+import ballerina/log;
 
-function init() returns error? {
-    setModule();
+# Internal function called from native code to print error logs.
+#
+# This function is invoked by the Java FailSafeUtils when console logging is enabled.
+# It uses the Ballerina log module to output errors to the console.
+#
+# + message - The error message to log
+# + err - Optional error object
+# + stackTrace - Optional stack trace
+# + keyValues - Optional key-value pairs for structured logging (e.g., offendingRow)
+isolated function printError(string message, error? err = (), error:StackFrame[]? stackTrace = (),
+        *log:KeyValues keyValues) {
+    log:printError(message, err, stackTrace, keyValues = keyValues);
 }
-
-isolated function setModule() = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.utils.ModuleUtils"
-} external;

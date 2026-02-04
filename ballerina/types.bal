@@ -55,23 +55,33 @@ public const annotation NameConfig Name on record field;
 # + includeEmptyRows - Whether to include empty rows in output (default: false)
 # + formulaMode - How to handle formula cells (default: CACHED)
 # + enableConstraintValidation - Whether to validate type constraints (default: true).
-#                                **Note**: Not yet implemented. Currently ignored.
+#                                When enabled, parsed records are validated against any Ballerina
+#                                `@constraint` annotations defined on the record type.
+# + caseInsensitiveHeaders - Whether to match headers case-insensitively (default: false).
+#                            When enabled, header "Name" will match record field "name" or "NAME".
 # + allowDataProjection - Data projection configuration.
-#                         **Note**: Not yet implemented. Currently ignored.
-#                         Set to `false` to disable data projection.
+#                         Set to `false` to disable data projection (strict mode - all fields must match).
 #                         When enabled (default `{}`):
-#                         - `nilAsOptionalField`: Treat nil values as optional field absence
-#                         - `absentAsNilableType`: Allow absent columns for nilable types
+#                         - `nilAsOptionalField`: When true, nil cell values are treated as field absence
+#                           (optional fields with nil values are not set in the record)
+#                         - `absentAsNilableType`: When true, columns missing from the sheet are allowed
+#                           for nilable/optional record fields (set to nil)
+# + failSafe - Fail-safe error handling configuration.
+#              When set, parsing continues on row-level errors (type conversion, validation).
+#              Errors are logged and problematic rows are skipped.
+#              Critical errors (file not found, corrupted file) still fail immediately.
 public type ParseOptions record {|
     int headerRow = 0;
     int dataStartRow?;
     boolean includeEmptyRows = false;
     FormulaMode formulaMode = CACHED;
     boolean enableConstraintValidation = true;
+    boolean caseInsensitiveHeaders = false;
     record {|
         boolean nilAsOptionalField = false;
         boolean absentAsNilableType = false;
     |}|false allowDataProjection = {};
+    FailSafeOptions failSafe?;
 |};
 
 # Options for writing XLSX data.
@@ -94,19 +104,23 @@ public type WriteOptions record {|
 # + includeEmptyRows - Whether to include empty rows (default: false)
 # + formulaMode - How to handle formula cells (default: CACHED)
 # + enableConstraintValidation - Whether to validate type constraints (default: true).
-#                                **Note**: Not yet implemented. Currently ignored.
-# + allowDataProjection - Data projection configuration (see ParseOptions).
-#                         **Note**: Not yet implemented. Currently ignored.
+#                                When enabled, parsed records are validated against any Ballerina
+#                                `@constraint` annotations defined on the record type.
+# + caseInsensitiveHeaders - Whether to match headers case-insensitively (default: false).
+# + allowDataProjection - Data projection configuration (see ParseOptions for details).
+# + failSafe - Fail-safe error handling configuration (see ParseOptions).
 public type RowReadOptions record {|
     int headerRow = 0;
     int dataStartRow?;
     boolean includeEmptyRows = false;
     FormulaMode formulaMode = CACHED;
     boolean enableConstraintValidation = true;
+    boolean caseInsensitiveHeaders = false;
     record {|
         boolean nilAsOptionalField = false;
         boolean absentAsNilableType = false;
     |}|false allowDataProjection = {};
+    FailSafeOptions failSafe?;
 |};
 
 # Options for writing rows to a sheet.
@@ -123,3 +137,111 @@ public type RowWriteOptions record {|
 # - `record{}[]` - Array of records (field names become headers)
 # - `map<anydata>[]` - Array of maps (keys become headers)
 public type WritableData anydata[][]|record {}[]|map<anydata>[];
+
+// =============================================================================
+// Fail-Safe Error Handling Types
+// =============================================================================
+
+# Content types for error log output.
+#
+# Controls what information is included when logging parsing errors.
+public enum ErrorLogContentType {
+    # Log only metadata: timestamp, location (row/column), error message.
+    # Output format: `{"time":"...","location":{"row":N,"column":N},"message":"..."}`
+    METADATA,
+    # Log only the raw offending row data as a JSON array.
+    # Output format: `["value1", "value2", ...]`
+    RAW,
+    # Log both raw data and metadata for comprehensive debugging.
+    # Output format: `{"time":"...","location":{...},"offendingRow":"[...]","message":"..."}`
+    RAW_AND_METADATA
+}
+
+# File write options for error logs.
+#
+# Controls how the error log file is written when multiple errors occur.
+public enum FileWriteOption {
+    # Append new errors to the existing log file (default).
+    APPEND,
+    # Overwrite the log file on first error, then append subsequent errors.
+    OVERWRITE
+}
+
+# Configuration for file-based error logging.
+#
+# When provided in `FailSafeOptions`, parsing errors will be written to the specified file.
+#
+# + filePath - Path to the error log file (required)
+# + contentType - What content to include in logs (default: METADATA)
+# + fileWriteOption - How to handle existing log files (default: APPEND)
+public type FileOutputMode record {|
+    string filePath;
+    ErrorLogContentType contentType = METADATA;
+    FileWriteOption fileWriteOption = APPEND;
+|};
+
+# Configuration for fail-safe error handling during parsing.
+#
+# When enabled, parsing continues even when row-level errors occur (e.g., type conversion failures).
+# Errors can be logged to console, file, or both. Rows with errors are skipped, and only
+# successfully parsed rows are returned.
+#
+# **Note**: Critical structural errors (corrupted file, missing sheet, header errors) will
+# always cause parsing to fail immediately, regardless of fail-safe configuration.
+#
+# + enableConsoleLogs - Enable logging errors to console (default: true)
+# + includeSourceDataInConsole - Include offending row data in console output (default: false)
+# + fileOutputMode - Optional file-based error logging configuration
+#
+# # Example: Console logging only
+# ```ballerina
+# Employee[] employees = check xlsx:parse("data.xlsx", 0, {
+#     failSafe: {
+#         enableConsoleLogs: true,
+#         includeSourceDataInConsole: true
+#     }
+# });
+# ```
+#
+# # Example: File logging only
+# ```ballerina
+# Employee[] employees = check xlsx:parse("data.xlsx", 0, {
+#     failSafe: {
+#         enableConsoleLogs: false,
+#         fileOutputMode: {
+#             filePath: "./xlsx-errors.log",
+#             contentType: RAW_AND_METADATA,
+#             fileWriteOption: OVERWRITE
+#         }
+#     }
+# });
+# ```
+public type FailSafeOptions record {|
+    boolean enableConsoleLogs = true;
+    boolean includeSourceDataInConsole = false;
+    FileOutputMode fileOutputMode?;
+|};
+
+# Location within an XLSX file where an error occurred.
+#
+# + row - Row number (1-based, as displayed in Excel)
+# + column - Column number (1-based)
+public type Location record {|
+    int row;
+    int column;
+|};
+
+# Structured error log output.
+#
+# Represents the JSON structure written to error log files when using METADATA or RAW_AND_METADATA content types.
+#
+# + time - ISO 8601 timestamp when the error occurred
+# + location - Row and column where the error occurred
+# + message - Error message describing what went wrong
+# + offendingRow - The raw row data that caused the error (only with RAW_AND_METADATA)
+public type LogOutput record {|
+    string time?;
+    Location location?;
+    string message?;
+    string offendingRow?;
+|};

@@ -29,6 +29,9 @@ public type SheetNotFoundError distinct Error;
 # Represents an error during type conversion.
 public type TypeConversionError distinct Error;
 
+# Represents an error when constraint validation fails for a record field.
+public type ConstraintValidationError distinct Error;
+
 # Details for XLSX errors.
 #
 # + sheetName - Name of the sheet where error occurred (if applicable)

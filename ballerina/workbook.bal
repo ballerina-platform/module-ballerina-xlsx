@@ -42,7 +42,7 @@ public class Workbook {
     #
     # + path - Path to XLSX file, or nil to create new empty workbook
     # + return - Error if file not found or initialization fails
-    public isolated function init(string? path = ()) returns Error? {
+    public function init(string? path = ()) returns Error? {
         if path is string {
             check self.initFromPath(path);
         } else {
@@ -53,7 +53,7 @@ public class Workbook {
     # Initialize workbook from a file path.
     # + path - Path to the XLSX file
     # + return - Error if file not found or parsing fails
-    isolated function initFromPath(string path) returns Error? = @java:Method {
+    function initFromPath(string path) returns Error? = @java:Method {
         name: "openWorkbookFromPath",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -61,7 +61,7 @@ public class Workbook {
     # Initialize a new empty workbook.
     #
     # + return - Error if creation fails
-    isolated function initNew() returns Error? = @java:Method {
+    function initNew() returns Error? = @java:Method {
         name: "createNewWorkbook",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -69,14 +69,14 @@ public class Workbook {
     # Get all sheet names in the workbook.
     #
     # + return - Array of sheet names
-    public isolated function getSheetNames() returns string[] = @java:Method {
+    public function getSheetNames() returns string[] = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Get the number of sheets in the workbook.
     #
     # + return - Sheet count
-    public isolated function getSheetCount() returns int = @java:Method {
+    public function getSheetCount() returns int = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -88,13 +88,13 @@ public class Workbook {
     #
     # + name - Sheet name
     # + return - Sheet instance or SheetNotFoundError
-    public isolated function getSheet(string name) returns Sheet|SheetNotFoundError {
+    public function getSheet(string name) returns Sheet|SheetNotFoundError {
         Sheet sheet = new;
         check self.getSheetNative(sheet, name);
         return sheet;
     }
 
-    isolated function getSheetNative(Sheet sheet, string name) returns SheetNotFoundError? = @java:Method {
+    function getSheetNative(Sheet sheet, string name) returns SheetNotFoundError? = @java:Method {
         name: "getSheet",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -107,13 +107,13 @@ public class Workbook {
     #
     # + index - Sheet index (0-based)
     # + return - Sheet instance or SheetNotFoundError if index out of range
-    public isolated function getSheetByIndex(int index) returns Sheet|SheetNotFoundError {
+    public function getSheetByIndex(int index) returns Sheet|SheetNotFoundError {
         Sheet sheet = new;
         check self.getSheetByIndexNative(sheet, index);
         return sheet;
     }
 
-    isolated function getSheetByIndexNative(Sheet sheet, int index) returns SheetNotFoundError? = @java:Method {
+    function getSheetByIndexNative(Sheet sheet, int index) returns SheetNotFoundError? = @java:Method {
         name: "getSheetByIndex",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -127,13 +127,13 @@ public class Workbook {
     #
     # + name - Name for the new sheet
     # + return - New sheet instance or Error if name already exists
-    public isolated function createSheet(string name) returns Sheet|Error {
+    public function createSheet(string name) returns Sheet|Error {
         Sheet sheet = new;
         check self.createSheetNative(sheet, name);
         return sheet;
     }
 
-    isolated function createSheetNative(Sheet sheet, string name) returns Error? = @java:Method {
+    function createSheetNative(Sheet sheet, string name) returns Error? = @java:Method {
         name: "createSheet",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -146,7 +146,7 @@ public class Workbook {
     #
     # + path - Path to save the XLSX file
     # + return - Error if save fails
-    public isolated function save(string path) returns Error? = @java:Method {
+    public function save(string path) returns Error? = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -155,7 +155,7 @@ public class Workbook {
     # Always call this when done with the workbook to free memory.
     #
     # + return - Error if close fails
-    public isolated function close() returns Error? = @java:Method {
+    public function close() returns Error? = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 }

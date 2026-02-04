@@ -28,7 +28,6 @@ import io.ballerina.runtime.api.values.BStream;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -36,8 +35,6 @@ import java.nio.file.Paths;
 /**
  * Native entry point for Ballerina XLSX module.
  * This class provides the bridge between Ballerina and Java for Excel operations.
- *
- * @since 0.1.0
  */
 public final class Native {
 
@@ -49,20 +46,24 @@ public final class Native {
      * Parse XLSX file from a file path into a Ballerina array.
      * This is the PRIMARY API for parsing XLSX files.
      *
+     * @param env       Ballerina environment (for fail-safe logging)
      * @param filePath  Path to the XLSX file
      * @param sheet     Sheet to read (string name or int index)
      * @param options   Parsing options
      * @param typedesc  Target type descriptor
      * @return Parsed data as BArray or error
      */
-    public static Object parse(BString filePath, Object sheet, BMap<BString, Object> options, BTypedesc typedesc) {
-        try {
-            Path path = Paths.get(filePath.getValue());
-            byte[] bytes = Files.readAllBytes(path);
-            return XlsxParser.parseBytes(bytes, sheet, options, typedesc);
-        } catch (IOException e) {
-            return DiagnosticLog.fileNotFoundError("Failed to read file: " + filePath.getValue(), e);
+    public static Object parse(Environment env, BString filePath, Object sheet,
+                               BMap<BString, Object> options, BTypedesc typedesc) {
+        Path path = Paths.get(filePath.getValue());
+
+        // Check if file exists before parsing
+        if (!Files.exists(path)) {
+            return DiagnosticLog.fileNotFoundError("Failed to read file: " + filePath.getValue(),
+                    new java.io.FileNotFoundException(filePath.getValue()));
         }
+
+        return XlsxParser.parseFromFile(env, path, sheet, options, typedesc);
     }
 
     /**
