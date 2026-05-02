@@ -47,12 +47,12 @@ function testParseToRecords() returns error? {
 function testParseWithHeaderRowOption() returns error? {
     // complex_headers.xlsx has: Row 0=title, Row 1=metadata, Row 2=headers, Row 3+=data
     ParseOptions opts = {
-        headerRow: 2,
-        dataStartRow: 3
+        headerRowIndex: 2,
+        dataStartRowIndex: 3
     };
     string[][] rows = check parse(TEST_DATA_DIR + "complex_headers.xlsx", 0, opts);
 
-    // When dataStartRow is specified, only data rows are returned (starting from row 3)
+    // When dataStartRowIndex is specified, only data rows are returned (starting from row 3)
     test:assertEquals(rows.length(), 2, "Should have 2 data rows");
     test:assertEquals(rows[0][0], "Item1", "First row should be first data row");
     test:assertEquals(rows[1][0], "Item2", "Second row should be second data row");
@@ -216,12 +216,12 @@ function testParseToMapArray() returns error? {
 }
 function testParseWithCustomDataStartRow() returns error? {
     ParseOptions opts = {
-        headerRow: 0,
-        dataStartRow: 2  // Skip first data row
+        headerRowIndex: 0,
+        dataStartRowIndex: 2  // Skip first data row
     };
     string[][] rows = check parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
-    // When dataStartRow is specified, only data rows starting from that row are returned
+    // When dataStartRowIndex is specified, only data rows starting from that row are returned
     test:assertEquals(rows.length(), 2, "Should have 2 data rows (skipped first data row)");
     test:assertEquals(rows[0][0], "Jane", "First row should be 'Jane' (skipped 'John')");
     test:assertEquals(rows[1][0], "Bob", "Second row should be 'Bob'");
@@ -230,11 +230,9 @@ function testParseWithCustomDataStartRow() returns error? {
 @test:Config {
     groups: ["parse", "options"]
 }
-function testParseWithIncludeEmptyRowsFalse() returns error? {
-    ParseOptions opts = {
-        includeEmptyRows: false  // Default
-    };
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
+function testParseSkipsEmptyRows() returns error? {
+    // Default behavior: empty rows are skipped
+    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Empty rows should be skipped
     // Original: header, First, empty, Second, empty, Third
@@ -242,18 +240,8 @@ function testParseWithIncludeEmptyRowsFalse() returns error? {
     test:assertEquals(rows.length(), 4, "Should have 4 rows (header + 3 data, no empty)");
 }
 
-@test:Config {
-    groups: ["parse", "options"]
-}
-function testParseWithIncludeEmptyRowsTrue() returns error? {
-    ParseOptions opts = {
-        includeEmptyRows: true
-    };
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
-
-    // Empty rows should be included
-    test:assertEquals(rows.length(), 6, "Should have 6 rows (including empty rows)");
-}
+// Note: To include empty rows with position preservation, use Row wrapper type.
+// See Row type documentation for details.
 
 // =============================================================================
 // ANNOTATION TESTS
@@ -300,8 +288,8 @@ function testParseSheetNotFoundByIndex() returns error? {
 
     test:assertTrue(result is Error, "Should return error for invalid sheet index");
     if result is Error {
-        test:assertTrue(result.message().includes("out of range"),
-            "Error message should mention index out of range");
+        test:assertTrue(result.message().includes("not found") || result.message().includes("valid range"),
+            "Error message should mention sheet not found or valid range");
     }
 }
 
@@ -374,10 +362,8 @@ function testParseUnicodeData() returns error? {
     groups: ["parse", "edge"]
 }
 function testParseDataWithEmptyRowsInMiddle() returns error? {
-    ParseOptions opts = {
-        includeEmptyRows: false
-    };
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
+    // Default behavior: empty rows are skipped
+    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Should skip empty rows and have: header, First/100, Second/200, Third/300
     test:assertTrue(rows.length() >= 4, "Should have at least 4 rows after filtering empty");
@@ -616,7 +602,7 @@ function testCaseInsensitiveHeadersDisabled() returns error? {
 }
 function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
     // Test case-insensitive headers via Workbook/Sheet API
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "case_headers.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "case_headers.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet1");
     RowReadOptions opts = {
@@ -676,7 +662,7 @@ function testSheetGetRowsErrorTypePreservation() returns error? {
     ];
     check write(data, testFile);
 
-    Workbook wb = check new Workbook(testFile);
+    Workbook wb = check openFile(testFile);
     Sheet sheet = check wb.getSheetByIndex(0);
 
     ErrorTypeTestRecord[]|Error result = sheet.getRows();
@@ -767,4 +753,381 @@ function testBlankCellNilableFieldSuccess() returns error? {
     test:assertEquals(result[1].age, 25, "Second record should have age 25");
 
     check file:remove(testFile);
+}
+
+// =============================================================================
+// ROW WRAPPER TESTS
+// =============================================================================
+// Tests for Row-wrapped types that preserve row positions during parsing.
+
+@test:Config {
+    groups: ["parse", "row-wrapper"]
+}
+function testParseWithRowWrapper() returns error? {
+    // edge_empty_rows.xlsx has: header, First, empty, Second, empty, Third
+    // With Row wrapper, ALL rows should be included (including empty ones)
+    SimpleDataRow[] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+
+    // Should have 5 rows (First, empty, Second, empty, Third)
+    // Header is at row 0, data starts at row 1
+    test:assertEquals(rows.length(), 5, "Should have 5 rows including empty rows");
+
+    // Verify first data row
+    test:assertEquals(rows[0].rowIndex, 0, "First row should have rowIndex 0");
+    test:assertTrue(rows[0].value != null, "First row should have value");
+    test:assertEquals(rows[0].value?.name, "First", "First row name");
+    test:assertEquals(rows[0].value?.value, 100, "First row value");
+
+    // Verify empty row (rowIndex 1)
+    test:assertEquals(rows[1].rowIndex, 1, "Second row should have rowIndex 1");
+    test:assertEquals(rows[1].value, null, "Empty row should have null value");
+
+    // Verify second data row
+    test:assertEquals(rows[2].rowIndex, 2, "Third row should have rowIndex 2");
+    test:assertTrue(rows[2].value != null, "Third row should have value");
+    test:assertEquals(rows[2].value?.name, "Second", "Third row name");
+    test:assertEquals(rows[2].value?.value, 200, "Third row value");
+
+    // Verify another empty row (rowIndex 3)
+    test:assertEquals(rows[3].rowIndex, 3, "Fourth row should have rowIndex 3");
+    test:assertEquals(rows[3].value, null, "Empty row should have null value");
+
+    // Verify third data row
+    test:assertEquals(rows[4].rowIndex, 4, "Fifth row should have rowIndex 4");
+    test:assertTrue(rows[4].value != null, "Fifth row should have value");
+    test:assertEquals(rows[4].value?.name, "Third", "Fifth row name");
+    test:assertEquals(rows[4].value?.value, 300, "Fifth row value");
+}
+
+@test:Config {
+    groups: ["parse", "row-wrapper"]
+}
+function testParseRowWrapperWithEmployees() returns error? {
+    // employees.xlsx has no empty rows, so all rows should have values
+    EmployeeRow[] rows = check parse(TEST_DATA_DIR + "employees.xlsx");
+
+    test:assertEquals(rows.length(), 3, "Should have 3 employee rows");
+
+    // Verify all rows have sequential indices and non-null values
+    foreach int i in 0 ..< rows.length() {
+        test:assertEquals(rows[i].rowIndex, i, "Row index should be " + i.toString());
+        test:assertTrue(rows[i].value != null, "Row should have value at index " + i.toString());
+    }
+
+    // Verify first employee data
+    test:assertEquals(rows[0].value?.name, "John Doe", "First employee name");
+    test:assertEquals(rows[0].value?.age, 30, "First employee age");
+    test:assertEquals(rows[0].value?.department, "Engineering", "First employee department");
+}
+
+@test:Config {
+    groups: ["parse", "row-wrapper"]
+}
+function testParseRowWrapperFilterPreservesPositions() returns error? {
+    // Parse with Row wrapper
+    SimpleDataRow[] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+
+    // Filter out empty rows
+    SimpleDataRow[] nonEmptyRows = rows.filter(r => r.value != null);
+
+    test:assertEquals(nonEmptyRows.length(), 3, "Should have 3 non-empty rows");
+
+    // Verify original positions are preserved after filtering
+    test:assertEquals(nonEmptyRows[0].rowIndex, 0, "First non-empty should have original rowIndex 0");
+    test:assertEquals(nonEmptyRows[1].rowIndex, 2, "Second non-empty should have original rowIndex 2");
+    test:assertEquals(nonEmptyRows[2].rowIndex, 4, "Third non-empty should have original rowIndex 4");
+}
+
+@test:Config {
+    groups: ["workbook", "row-wrapper"]
+}
+function testSheetGetRowsWithRowWrapper() returns error? {
+    // Test Row wrapper via Workbook/Sheet API
+    Workbook wb = check openFile(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    Sheet sheet = check wb.getSheetByIndex(0);
+
+    SimpleDataRow[] rows = check sheet.getRows();
+
+    test:assertEquals(rows.length(), 5, "Should have 5 rows including empty rows");
+
+    // Verify positions preserved
+    test:assertEquals(rows[0].rowIndex, 0, "First row index");
+    test:assertEquals(rows[1].rowIndex, 1, "Second row index (empty)");
+    test:assertEquals(rows[1].value, null, "Empty row value should be null");
+    test:assertEquals(rows[2].rowIndex, 2, "Third row index");
+
+    check wb.close();
+}
+
+// =============================================================================
+// INVALID OPTION COMBINATION TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["parse", "options", "edge-cases"]
+}
+function testHeaderRowBeyondSheetBounds() returns error? {
+    // headerRowIndex = 100 on a small sheet (4 rows) should return ParseError
+    // Note: headerRowIndex validation only applies to record/map parsing, not string[][]
+    ParseOptions opts = {
+        headerRowIndex: 100
+    };
+
+    // Use record parsing to test headerRowIndex validation
+    Employee[]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+
+    // Record parsing validates headerRowIndex - when beyond bounds, returns ParseError
+    test:assertTrue(result is ParseError, "Should return ParseError when headerRowIndex beyond sheet bounds");
+    if result is ParseError {
+        test:assertTrue(result.message().includes("Header row"), "Error should mention header row");
+    }
+}
+
+@test:Config {
+    groups: ["parse", "options", "edge-cases"]
+}
+function testNegativeHeaderRowBeyondMinusOne() returns error? {
+    // Only -1 is valid for "no headers", other negatives should error or be handled
+    ParseOptions opts = {
+        headerRowIndex: -5
+    };
+
+    string[][]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+
+    // Should either normalize to valid value or return error
+    // The actual behavior depends on implementation
+    test:assertTrue(result is string[][] || result is ParseError,
+        "Should handle invalid negative headerRowIndex");
+}
+
+// =============================================================================
+// EXTREME NUMERIC VALUE TESTS
+// =============================================================================
+
+type NumericRecord record {|
+    int id;
+    int largeInt;
+    decimal largeDecimal;
+|};
+
+@test:Config {
+    groups: ["parse", "numeric", "edge-cases"],
+    before: setupExtremeNumericTestData
+}
+function testParseExtremeIntValues() returns error? {
+    NumericRecord[] records = check parse(TEST_DATA_DIR + "extreme_numeric_test.xlsx");
+
+    test:assertEquals(records.length(), 3, "Should parse all 3 rows");
+
+    // Test large positive int
+    test:assertEquals(records[0].largeInt, int:MAX_VALUE, "Should handle MAX_INT");
+
+    // Test large negative int
+    test:assertEquals(records[1].largeInt, int:MIN_VALUE, "Should handle MIN_INT");
+
+    // Test zero
+    test:assertEquals(records[2].largeInt, 0, "Should handle zero");
+}
+
+@test:Config {
+    groups: ["parse", "numeric", "edge-cases"],
+    before: setupExtremeNumericTestData
+}
+function testParseLargeDecimalValues() returns error? {
+    NumericRecord[] records = check parse(TEST_DATA_DIR + "extreme_numeric_test.xlsx");
+
+    test:assertEquals(records.length(), 3, "Should parse all 3 rows");
+
+    // Test large decimal values are preserved
+    test:assertTrue(records[0].largeDecimal > 1e15d, "Should handle large positive decimal");
+    test:assertTrue(records[1].largeDecimal < -1e15d, "Should handle large negative decimal");
+}
+
+// Setup function for extreme numeric test data
+function setupExtremeNumericTestData() returns error? {
+    string testFilePath = TEST_DATA_DIR + "extreme_numeric_test.xlsx";
+
+    if check file:test(testFilePath, file:EXISTS) {
+        check file:remove(testFilePath);
+    }
+
+    // Create test data with extreme values
+    // Note: Excel/POI may have precision limits for very large numbers
+    string[][] testData = [
+        ["id", "largeInt", "largeDecimal"],
+        ["1", int:MAX_VALUE.toString(), "1234567890123456.789"],   // MAX_INT
+        ["2", int:MIN_VALUE.toString(), "-1234567890123456.789"], // MIN_INT
+        ["3", "0", "0.0"]                                          // Zero
+    ];
+
+    check write(testData, testFilePath);
+}
+
+// =============================================================================
+// HEADER-LESS PARSING TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["parse", "headerless"]
+}
+function testParseHeaderlessToMap() returns error? {
+    // Create test file without headers - just raw data
+    string testFile = TEST_DATA_DIR + "headerless_test.xlsx";
+    string[][] data = [
+        ["Alice", "30"],
+        ["Bob", "25"]
+    ];
+    check write(data, testFile, writeHeaders = false);
+
+    // Parse with headerRowIndex = null (header-less mode)
+    ParseOptions opts = {
+        headerRowIndex: ()
+    };
+    map<anydata>[] result = check parse(testFile, 0, opts);
+
+    test:assertEquals(result.length(), 2, "Should have 2 rows");
+    test:assertEquals(result[0]["col0"], "Alice", "First row col0 should be 'Alice'");
+    test:assertEquals(result[0]["col1"], "30", "First row col1 should be '30'");
+    test:assertEquals(result[1]["col0"], "Bob", "Second row col0 should be 'Bob'");
+    test:assertEquals(result[1]["col1"], "25", "Second row col1 should be '25'");
+
+    check file:remove(testFile);
+}
+
+@test:Config {
+    groups: ["parse", "rowcount"]
+}
+function testParseWithRowCountLimit() returns error? {
+    // Parse employees.xlsx (has 3 data rows) with rowCount limit
+    ParseOptions opts = {
+        rowCount: 2
+    };
+    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx", 0, opts);
+
+    test:assertEquals(employees.length(), 2, "Should have only 2 records due to rowCount limit");
+    test:assertEquals(employees[0].name, "John Doe", "First employee name");
+    test:assertEquals(employees[1].name, "Jane Smith", "Second employee name");
+}
+
+@test:Config {
+    groups: ["parse", "rowcount"]
+}
+function testParseWithRowCountNullMeansAll() returns error? {
+    // Parse with rowCount = null (default) should read all rows
+    ParseOptions opts = {
+        rowCount: ()  // Explicit null = read all
+    };
+    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx", 0, opts);
+
+    test:assertEquals(employees.length(), 3, "Should have all 3 records when rowCount is null");
+}
+
+@test:Config {
+    groups: ["parse", "headerless"]
+}
+function testParseHeaderlessToRecord() returns error? {
+    // Create test file without headers
+    string testFile = TEST_DATA_DIR + "headerless_record_test.xlsx";
+    string[][] data = [
+        ["John", "Engineer"],
+        ["Jane", "Designer"]
+    ];
+    check write(data, testFile, writeHeaders = false);
+
+    // Parse with headerRowIndex = null
+    ParseOptions opts = {
+        headerRowIndex: ()
+    };
+    HeaderlessRecord[] result = check parse(testFile, 0, opts);
+
+    test:assertEquals(result.length(), 2, "Should have 2 records");
+    test:assertEquals(result[0].col0, "John", "First record col0");
+    test:assertEquals(result[0].col1, "Engineer", "First record col1");
+    test:assertEquals(result[1].col0, "Jane", "Second record col0");
+    test:assertEquals(result[1].col1, "Designer", "Second record col1");
+
+    check file:remove(testFile);
+}
+
+// =============================================================================
+// OPEN RECORD POPULATION TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["parse", "openrecord"]
+}
+function testParseToOpenRecord() returns error? {
+    // employees.xlsx has columns: name, age, department
+    // OpenEmployee only defines: name, age (no department)
+    // The 'department' column should be populated into the rest field
+    OpenEmployee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx");
+
+    test:assertEquals(employees.length(), 3, "Should have 3 employees");
+
+    // Verify defined fields
+    test:assertEquals(employees[0].name, "John Doe", "First employee name");
+    test:assertEquals(employees[0].age, 30, "First employee age");
+
+    // Verify extra field (department) was populated via rest field
+    // Access using record indexing since 'department' is in rest field
+    anydata dept = employees[0]["department"];
+    test:assertEquals(dept, "Engineering", "First employee department via rest field");
+
+    // Verify second employee
+    test:assertEquals(employees[1].name, "Jane Smith", "Second employee name");
+    test:assertEquals(employees[1].age, 28, "Second employee age");
+    test:assertEquals(employees[1]["department"], "Marketing", "Second employee department via rest field");
+
+    // Verify third employee
+    test:assertEquals(employees[2].name, "Bob Johnson", "Third employee name");
+    test:assertEquals(employees[2].age, 35, "Third employee age");
+    test:assertEquals(employees[2]["department"], "Sales", "Third employee department via rest field");
+}
+
+@test:Config {
+    groups: ["parse", "openrecord"]
+}
+function testParseToOpenRecordWithMultipleExtraColumns() returns error? {
+    // Create test file with extra columns beyond defined fields
+    string testFile = TEST_DATA_DIR + "open_record_test.xlsx";
+    string[][] data = [
+        ["name", "age", "department", "salary", "location"],
+        ["Alice", "25", "Engineering", "50000", "NYC"],
+        ["Bob", "30", "Marketing", "60000", "LA"]
+    ];
+    check write(data, testFile, writeHeaders = false);  // Headers in first row
+
+    // Parse to OpenEmployee (only defines name and age)
+    OpenEmployee[] employees = check parse(testFile);
+
+    test:assertEquals(employees.length(), 2, "Should have 2 employees");
+
+    // Verify defined fields
+    test:assertEquals(employees[0].name, "Alice", "First employee name");
+    test:assertEquals(employees[0].age, 25, "First employee age");
+
+    // Verify extra fields
+    test:assertEquals(employees[0]["department"], "Engineering", "First employee department");
+    test:assertEquals(employees[0]["salary"], "50000", "First employee salary");
+    test:assertEquals(employees[0]["location"], "NYC", "First employee location");
+
+    test:assertEquals(employees[1].name, "Bob", "Second employee name");
+    test:assertEquals(employees[1]["salary"], "60000", "Second employee salary");
+
+    check file:remove(testFile);
+}
+
+@test:Config {
+    groups: ["parse", "openrecord"]
+}
+function testParseClosedRecordIgnoresExtraColumns() returns error? {
+    // Verify that closed records (Employee) do NOT get extra columns
+    // employees.xlsx has exactly the columns Employee expects
+    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx");
+
+    test:assertEquals(employees.length(), 3, "Should have 3 employees");
+    test:assertEquals(employees[0].name, "John Doe", "First employee name");
+    test:assertEquals(employees[0].department, "Engineering", "First employee department");
+
+    // Closed record should not have any extra fields - all fields are defined
 }

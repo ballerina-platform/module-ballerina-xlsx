@@ -225,6 +225,67 @@ type NilableAgeRecord record {|
 |};
 
 // =============================================================================
+// ROW WRAPPER TEST TYPES
+// =============================================================================
+
+// Simple record for Row wrapper tests
+type SimpleData record {|
+    string name;
+    int value;
+|};
+
+// Row-wrapped version of SimpleData for position preservation
+type SimpleDataRow record {|
+    *Row;              // Spreads rowIndex field from xlsx:Row
+    SimpleData? value; // Nullable to represent empty rows
+|};
+
+// Row-wrapped version of Employee for position preservation
+type EmployeeRow record {|
+    *Row;
+    Employee? value;
+|};
+
+// Expected data for edge_empty_rows.xlsx with Row wrapper
+// Row 0 = header, data starts at row 1
+// Rows: First(0), Empty(1), Second(2), Empty(3), Third(4)
+final SimpleDataRow[] EXPECTED_ROW_WRAPPED_DATA = [
+    {rowIndex: 0, value: {name: "First", value: 100}},
+    {rowIndex: 1, value: null},  // empty row
+    {rowIndex: 2, value: {name: "Second", value: 200}},
+    {rowIndex: 3, value: null},  // empty row
+    {rowIndex: 4, value: {name: "Third", value: 300}}
+];
+
+// =============================================================================
+// HEADER-LESS PARSING TEST TYPES
+// =============================================================================
+
+// Record for header-less parsing - uses col0, col1, col2 as field names
+type HeaderlessRecord record {|
+    string col0;  // First column
+    string col1;  // Second column
+|};
+
+// =============================================================================
+// OPEN RECORD POPULATION TEST TYPES
+// =============================================================================
+
+// Open record that only defines some fields - extra columns should populate rest field
+// Note: Uses { } instead of {| |} to make it an open record
+type OpenEmployee record {
+    string name;
+    int age;
+    // No 'department' field defined - but it should be populated as extra field
+};
+
+// Open record with anydata rest field for type flexibility
+type OpenEmployeeAnydata record {
+    string name;
+    int age;
+};
+
+// =============================================================================
 // HELPER CONSTANTS
 // =============================================================================
 

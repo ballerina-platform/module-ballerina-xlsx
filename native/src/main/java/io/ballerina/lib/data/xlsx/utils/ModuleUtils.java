@@ -21,10 +21,11 @@ package io.ballerina.lib.data.xlsx.utils;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.Module;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Utility class for module-related operations.
- *
- * @since 0.1.0
  */
 public final class ModuleUtils {
 
@@ -51,5 +52,18 @@ public final class ModuleUtils {
      */
     public static Module getModule() {
         return module;
+    }
+
+    /**
+     * Get properties map for StrandMetadata.
+     * Used when calling Ballerina functions from Java.
+     *
+     * @param functionName The name of the function being called
+     * @return Map of properties
+     */
+    public static Map<String, Object> getProperties(String functionName) {
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("functionName", functionName);
+        return properties;
     }
 }

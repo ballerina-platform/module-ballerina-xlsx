@@ -20,8 +20,6 @@ package io.ballerina.lib.data.xlsx.utils;
 
 /**
  * Diagnostic error codes for XLSX module.
- *
- * @since 0.1.0
  */
 public enum DiagnosticErrorCode {
 
@@ -47,7 +45,19 @@ public enum DiagnosticErrorCode {
 
     // Write errors (5xx)
     WRITE_FAILED("XLSX_ERROR_501", "write.failed"),
-    SERIALIZATION_FAILED("XLSX_ERROR_502", "serialization.failed");
+    SERIALIZATION_FAILED("XLSX_ERROR_502", "serialization.failed"),
+
+    // Fail-safe errors (6xx)
+    FAILED_FILE_IO_OPERATION("XLSX_ERROR_601", "failed.file.io.operation"),
+    INVALID_XLSX_DATA_FORMAT("XLSX_ERROR_602", "invalid.xlsx.data.format"),
+    NO_FIELD_FOR_HEADER("XLSX_ERROR_603", "no.field.for.header"),
+    HEADER_CANNOT_BE_EMPTY("XLSX_ERROR_604", "header.cannot.be.empty"),
+
+    // Table errors (7xx)
+    TABLE_NOT_FOUND("XLSX_ERROR_701", "table.not.found"),
+    TABLE_OVERLAP("XLSX_ERROR_702", "table.overlap"),
+    INVALID_TABLE_RANGE("XLSX_ERROR_703", "invalid.table.range"),
+    TABLE_ALREADY_EXISTS("XLSX_ERROR_704", "table.already.exists");
 
     private final String errorCode;
     private final String messageKey;

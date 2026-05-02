@@ -25,7 +25,7 @@ import ballerina/test;
     groups: ["workbook"]
 }
 function testOpenExistingWorkbook() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "multi_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "multi_sheet.xlsx");
 
     test:assertTrue(wb.getSheetCount() > 0, "Should have at least one sheet");
     test:assertEquals(wb.getSheetCount(), 3, "multi_sheet.xlsx has 3 sheets");
@@ -36,7 +36,7 @@ function testOpenExistingWorkbook() returns error? {
     groups: ["workbook"]
 }
 function testCreateNewWorkbook() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
 
     test:assertEquals(wb.getSheetCount(), 0, "New workbook should have no sheets");
     check wb.close();
@@ -50,7 +50,7 @@ function testCreateNewWorkbook() returns error? {
     groups: ["workbook"]
 }
 function testGetSheetNames() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "multi_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "multi_sheet.xlsx");
 
     string[] names = wb.getSheetNames();
     test:assertEquals(names.length(), 3, "Should have 3 sheet names");
@@ -64,7 +64,7 @@ function testGetSheetNames() returns error? {
     groups: ["workbook"]
 }
 function testGetSheetByName() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "multi_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "multi_sheet.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet2");
     test:assertEquals(sheet.getName(), "Sheet2", "Sheet name should match");
@@ -75,7 +75,7 @@ function testGetSheetByName() returns error? {
     groups: ["workbook"]
 }
 function testGetSheetByIndex() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "multi_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "multi_sheet.xlsx");
 
     // Get first sheet (index 0)
     Sheet sheet0 = check wb.getSheetByIndex(0);
@@ -96,7 +96,7 @@ function testGetSheetByIndex() returns error? {
     groups: ["workbook"]
 }
 function testCreateSheet() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
 
     test:assertEquals(wb.getSheetCount(), 0, "Initially no sheets");
 
@@ -120,7 +120,7 @@ function testCreateSheet() returns error? {
     groups: ["workbook", "negative"]
 }
 function testGetSheetNotFoundByName() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
 
     Sheet|SheetNotFoundError result = wb.getSheet("NonExistentSheet");
     test:assertTrue(result is SheetNotFoundError, "Should return SheetNotFoundError");
@@ -135,7 +135,7 @@ function testGetSheetNotFoundByName() returns error? {
     groups: ["workbook", "negative"]
 }
 function testGetSheetNotFoundByIndex() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
 
     Sheet|SheetNotFoundError result = wb.getSheetByIndex(99);
     test:assertTrue(result is SheetNotFoundError, "Should return SheetNotFoundError");
@@ -146,7 +146,7 @@ function testGetSheetNotFoundByIndex() returns error? {
     groups: ["workbook", "negative"]
 }
 function testGetSheetNegativeIndex() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
 
     Sheet|SheetNotFoundError result = wb.getSheetByIndex(-1);
     test:assertTrue(result is SheetNotFoundError, "Should return SheetNotFoundError for negative index");
@@ -161,14 +161,14 @@ function testGetSheetNegativeIndex() returns error? {
     groups: ["workbook"]
 }
 function testWorkbookSave() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
     Sheet sheet = check wb.createSheet("Data");
 
     string[][] data = [["Name", "Value"], ["Test", "123"]];
     check sheet.putRows(data);
 
     string tempFile = getTempFilePath("workbook_save");
-    check wb.save(tempFile);
+    check wb.saveAs(tempFile);
     check wb.close();
 
     // Verify file was created and has content
@@ -188,7 +188,7 @@ function testWorkbookSave() returns error? {
     groups: ["workbook"]
 }
 function testWorkbookSaveMultipleSheets() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
 
     // Create first sheet
     Sheet sheet1 = check wb.createSheet("Sales");
@@ -201,11 +201,11 @@ function testWorkbookSaveMultipleSheets() returns error? {
     check sheet2.putRows(inventoryInput);
 
     string tempFile = getTempFilePath("workbook_multi_save");
-    check wb.save(tempFile);
+    check wb.saveAs(tempFile);
     check wb.close();
 
     // Verify by opening and checking both sheets
-    Workbook wb2 = check new Workbook(tempFile);
+    Workbook wb2 = check openFile(tempFile);
     test:assertEquals(wb2.getSheetCount(), 2, "Should have 2 sheets");
 
     Sheet sales = check wb2.getSheet("Sales");
@@ -228,7 +228,7 @@ function testWorkbookSaveMultipleSheets() returns error? {
     groups: ["workbook"]
 }
 function testSheetGetRows() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     string[][] rows = check sheet.getRows();
@@ -240,7 +240,7 @@ function testSheetGetRows() returns error? {
     groups: ["workbook"]
 }
 function testSheetGetRowsAsRecords() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     Employee[] employees = check sheet.getRows();
@@ -252,7 +252,7 @@ function testSheetGetRowsAsRecords() returns error? {
     groups: ["workbook"]
 }
 function testSheetGetRowByIndex() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     // Get single row as record
@@ -268,7 +268,7 @@ function testSheetGetRowByIndex() returns error? {
     groups: ["workbook"]
 }
 function testSheetGetRowByIndexAsString() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     // Get single row as string array
@@ -284,7 +284,7 @@ function testSheetGetRowByIndexAsString() returns error? {
     groups: ["workbook"]
 }
 function testSheetPutRows() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
     Sheet sheet = check wb.createSheet("TestSheet");
 
     string[][] data = [
@@ -296,7 +296,7 @@ function testSheetPutRows() returns error? {
     check sheet.putRows(data);
 
     // Read back
-    RowReadOptions opts = {headerRow: 0, dataStartRow: 0};
+    RowReadOptions opts = {headerRowIndex: 0, dataStartRowIndex: 0};
     string[][] result = check sheet.getRows(opts);
     test:assertEquals(result.length(), 3, "Should have 3 rows");
     assertStringArrayEquals(result, data, "PutRows then getRows");
@@ -308,7 +308,7 @@ function testSheetPutRows() returns error? {
     groups: ["workbook"]
 }
 function testSheetPutRowsAsRecords() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
     Sheet sheet = check wb.createSheet("Employees");
 
     Employee[] employees = [
@@ -335,7 +335,7 @@ function testSheetPutRowsAsRecords() returns error? {
     groups: ["workbook"]
 }
 function testSheetMetadataGetName() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "multi_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "multi_sheet.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet2");
     test:assertEquals(sheet.getName(), "Sheet2", "Sheet name should be 'Sheet2'");
@@ -347,7 +347,7 @@ function testSheetMetadataGetName() returns error? {
     groups: ["workbook"]
 }
 function testSheetMetadataGetUsedRange() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     string usedRange = sheet.getUsedRange();
@@ -361,8 +361,42 @@ function testSheetMetadataGetUsedRange() returns error? {
 @test:Config {
     groups: ["workbook"]
 }
+function testSheetMetadataGetUsedCellRange() returns error? {
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
+    Sheet sheet = check wb.getSheetByIndex(0);
+
+    CellRange? range = sheet.getUsedCellRange();
+    test:assertTrue(range != (), "Should have used cell range");
+
+    if range != () {
+        // simple.xlsx has 4 rows x 3 columns starting at A1
+        test:assertEquals(range.firstRowIndex, 0, "First row should be 0");
+        test:assertEquals(range.firstColumnIndex, 0, "First column should be 0");
+        test:assertEquals(range.lastRowIndex, 3, "Last row should be 3 (4 rows: 0-3)");
+        test:assertEquals(range.lastColumnIndex, 2, "Last column should be 2 (3 columns: 0-2)");
+    }
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook", "edge"]
+}
+function testEmptySheetGetUsedCellRange() returns error? {
+    Workbook wb = check openFile(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
+    Sheet sheet = check wb.getSheetByIndex(0);
+
+    CellRange? range = sheet.getUsedCellRange();
+    test:assertEquals(range, (), "Empty sheet should return nil");
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook"]
+}
 function testSheetMetadataGetRowCount() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     int rowCount = sheet.getRowCount();
@@ -375,7 +409,7 @@ function testSheetMetadataGetRowCount() returns error? {
     groups: ["workbook"]
 }
 function testSheetMetadataGetColumnCount() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "simple.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "simple.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     int colCount = sheet.getColumnCount();
@@ -398,14 +432,14 @@ function testWorkbookOpenModifySave() returns error? {
     check write(initialData, tempFile);
 
     // Open, modify, save
-    Workbook wb = check new Workbook(tempFile);
+    Workbook wb = check openFile(tempFile);
     Sheet sheet = check wb.getSheetByIndex(0);
 
     // Add more data
     string[][] newData = [["New", "Row"]];
-    check sheet.putRows(newData, startRow = 1);  // Append below existing
+    check sheet.putRows(newData, startRowIndex = 1);  // Append below existing
 
-    check wb.save(tempFile);
+    check wb.saveAs(tempFile);
     check wb.close();
 
     // Verify modifications
@@ -419,7 +453,7 @@ function testWorkbookOpenModifySave() returns error? {
     groups: ["workbook", "lifecycle"]
 }
 function testWorkbookMultipleOperations() returns error? {
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
 
     // Create multiple sheets
     Sheet sheet1 = check wb.createSheet("Sheet1");
@@ -439,11 +473,11 @@ function testWorkbookMultipleOperations() returns error? {
 
     // Save and close
     string tempFile = getTempFilePath("multi_ops");
-    check wb.save(tempFile);
+    check wb.saveAs(tempFile);
     check wb.close();
 
     // Reopen and verify
-    Workbook wb2 = check new Workbook(tempFile);
+    Workbook wb2 = check openFile(tempFile);
     test:assertEquals(wb2.getSheetCount(), 3, "Should still have 3 sheets");
 
     Sheet s1 = check wb2.getSheet("Sheet1");
@@ -466,17 +500,17 @@ function testWorkbookMultipleOperations() returns error? {
     groups: ["workbook", "options"]
 }
 function testSheetGetRowsWithHeaderOption() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "complex_headers.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "complex_headers.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     // complex_headers.xlsx: row 0=title, row 1=metadata, row 2=headers, row 3+=data
     RowReadOptions opts = {
-        headerRow: 2,
-        dataStartRow: 3
+        headerRowIndex: 2,
+        dataStartRowIndex: 3
     };
     string[][] rows = check sheet.getRows(opts);
 
-    // When dataStartRow is specified, only data rows are returned
+    // When dataStartRowIndex is specified, only data rows are returned
     test:assertEquals(rows.length(), 2, "Should have 2 data rows");
     test:assertEquals(rows[0][0], "Item1", "First data row");
     test:assertEquals(rows[1][0], "Item2", "Second data row");
@@ -488,7 +522,7 @@ function testSheetGetRowsWithHeaderOption() returns error? {
     groups: ["workbook", "options"]
 }
 function testSheetGetRowsWithFormulaModeText() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "formulas.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "formulas.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     RowReadOptions opts = {
@@ -519,7 +553,7 @@ function testSheetGetRowsWithFormulaModeText() returns error? {
     groups: ["workbook", "edge"]
 }
 function testEmptySheetMetadata() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     // Empty sheet should have 0 rows/columns
@@ -536,7 +570,7 @@ function testEmptySheetMetadata() returns error? {
     groups: ["workbook", "edge"]
 }
 function testEmptySheetGetRows() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     string[][] rows = check sheet.getRows();
@@ -549,7 +583,7 @@ function testEmptySheetGetRows() returns error? {
     groups: ["workbook", "edge"]
 }
 function testSingleCellSheet() returns error? {
-    Workbook wb = check new Workbook(TEST_DATA_DIR + "edge_single_cell.xlsx");
+    Workbook wb = check openFile(TEST_DATA_DIR + "edge_single_cell.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     string[][] rows = check sheet.getRows();
@@ -558,4 +592,192 @@ function testSingleCellSheet() returns error? {
     test:assertEquals(rows[0][0], "alone", "Cell value");
 
     check wb.close();
+}
+
+// =============================================================================
+// DELETE SHEET TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testDeleteSheetByName() returns error? {
+    Workbook wb = check createWorkbook();
+
+    // Create multiple sheets
+    _ = check wb.createSheet("Sheet1");
+    _ = check wb.createSheet("Sheet2");
+    _ = check wb.createSheet("Sheet3");
+    test:assertEquals(wb.getSheetCount(), 3, "Should have 3 sheets");
+
+    // Delete middle sheet
+    check wb.deleteSheet("Sheet2");
+    test:assertEquals(wb.getSheetCount(), 2, "Should have 2 sheets after delete");
+
+    // Verify remaining sheets
+    string[] names = wb.getSheetNames();
+    test:assertEquals(names[0], "Sheet1", "First sheet should be Sheet1");
+    test:assertEquals(names[1], "Sheet3", "Second sheet should be Sheet3");
+
+    // Verify Sheet2 is not found
+    Sheet|SheetNotFoundError result = wb.getSheet("Sheet2");
+    test:assertTrue(result is SheetNotFoundError, "Sheet2 should not be found");
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testDeleteSheetByIndex() returns error? {
+    Workbook wb = check createWorkbook();
+
+    // Create multiple sheets
+    _ = check wb.createSheet("First");
+    _ = check wb.createSheet("Second");
+    _ = check wb.createSheet("Third");
+    test:assertEquals(wb.getSheetCount(), 3, "Should have 3 sheets");
+
+    // Delete first sheet (index 0)
+    check wb.deleteSheetByIndex(0);
+    test:assertEquals(wb.getSheetCount(), 2, "Should have 2 sheets after delete");
+
+    // Verify remaining sheets
+    string[] names = wb.getSheetNames();
+    test:assertEquals(names[0], "Second", "First sheet should now be Second");
+    test:assertEquals(names[1], "Third", "Second sheet should now be Third");
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook", "negative"]
+}
+function testDeleteSheetByNameNotFound() returns error? {
+    Workbook wb = check createWorkbook();
+    _ = check wb.createSheet("Sheet1");
+
+    SheetNotFoundError? result = wb.deleteSheet("NonExistent");
+    test:assertTrue(result is SheetNotFoundError, "Should return SheetNotFoundError");
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook", "negative"]
+}
+function testDeleteSheetByIndexOutOfRange() returns error? {
+    Workbook wb = check createWorkbook();
+    _ = check wb.createSheet("Sheet1");
+
+    SheetNotFoundError? result = wb.deleteSheetByIndex(99);
+    test:assertTrue(result is SheetNotFoundError, "Should return SheetNotFoundError for out of range index");
+
+    check wb.close();
+}
+
+// =============================================================================
+// SAVE AND SAVEAS TESTS
+// =============================================================================
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testSaveInMemoryWorkbookError() returns error? {
+    // In-memory workbooks have no source path, so save() should fail
+    Workbook wb = check createWorkbook();
+    _ = check wb.createSheet("Data");
+
+    Error? result = wb.save();
+    test:assertTrue(result is Error, "save() should fail for in-memory workbook");
+    if result is Error {
+        test:assertTrue(result.message().includes("no source file"),
+            "Error should mention no source file");
+    }
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testSaveAsUpdateSourcePath() returns error? {
+    // saveAs() should update the source path, so subsequent save() works
+    Workbook wb = check createWorkbook();
+    Sheet sheet = check wb.createSheet("Data");
+    string[][] data = [["Name", "Value"], ["Test", "123"]];
+    check sheet.putRows(data);
+
+    string tempFile = getTempFilePath("saveas_test");
+
+    // First saveAs
+    check wb.saveAs(tempFile);
+
+    // Modify data
+    string[][] moreData = [["More", "Data"]];
+    check sheet.putRows(moreData, startRowIndex = 2);
+
+    // Now save() should work (to the same path)
+    check wb.save();
+    check wb.close();
+
+    // Verify by reading back
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 3, "Should have 3 rows");
+    test:assertEquals(parsed[2][0], "More", "Added row should exist");
+
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testCreateFileAndSave() returns error? {
+    // createFile() sets source path, so save() should work
+    string tempFile = getTempFilePath("createfile_test");
+
+    Workbook wb = check createFile(tempFile);
+    Sheet sheet = check wb.createSheet("Data");
+    string[][] data = [["Header1", "Header2"], ["A", "B"]];
+    check sheet.putRows(data);
+
+    // save() should work because createFile sets the path
+    check wb.save();
+    check wb.close();
+
+    // Verify file was created
+    test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
+
+    // Verify content
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed.length(), 2, "Should have 2 rows");
+    test:assertEquals(parsed[0][0], "Header1", "First header");
+
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testOpenFileAndSaveOverwrites() returns error? {
+    // First create a file
+    string tempFile = getTempFilePath("openfile_overwrite");
+    string[][] initialData = [["Original", "Data"]];
+    check write(initialData, tempFile);
+
+    // Open and modify
+    Workbook wb = check openFile(tempFile);
+    Sheet sheet = check wb.getSheetByIndex(0);
+    string[][] newData = [["Modified", "Content"]];
+    check sheet.putRows(newData);
+
+    // save() should overwrite the original file
+    check wb.save();
+    check wb.close();
+
+    // Verify modifications persisted
+    string[][] parsed = check parse(tempFile);
+    test:assertEquals(parsed[0][0], "Modified", "Should be overwritten");
+
+    check removeTempFile(tempFile);
 }

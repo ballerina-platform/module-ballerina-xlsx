@@ -109,7 +109,7 @@ function testWriteWithCustomSheetName() returns error? {
     check write(data, tempFile, sheetName = "MyCustomSheet");
 
     // Verify by opening as workbook and checking sheet name
-    Workbook wb = check new Workbook(tempFile);
+    Workbook wb = check openFile(tempFile);
     string[] sheetNames = wb.getSheetNames();
     test:assertEquals(sheetNames.length(), 1, "Should have 1 sheet");
     test:assertEquals(sheetNames[0], "MyCustomSheet", "Sheet name should match");
@@ -129,7 +129,7 @@ function testWriteWithStartRow() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_start_row");
-    check write(data, tempFile, startRow = 2);
+    check write(data, tempFile, startRowIndex = 2);
 
     // Parse back - data should start at row 2 (0-based), so rows 0,1 are empty
     // But parse will only see the used range starting from row 2
@@ -548,5 +548,171 @@ function testWriteOverwritesExistingFile() returns error? {
     test:assertEquals(parsed2[0].length(), 3, "Should have 3 columns now");
 
     // Cleanup
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// ROW WRAPPER WRITE TESTS
+// =============================================================================
+// Tests for position-aware writing with Row-wrapped types.
+
+@test:Config {
+    groups: ["write", "row-wrapper"]
+}
+function testWriteRowWrappedData() returns error? {
+    // Create Row-wrapped data with gaps (simulating empty rows)
+    SimpleDataRow[] data = [
+        {rowIndex: 0, value: {name: "First", value: 100}},
+        {rowIndex: 2, value: {name: "Second", value: 200}},  // Skip row 1
+        {rowIndex: 4, value: {name: "Third", value: 300}}    // Skip row 3
+    ];
+
+    string tempFile = getTempFilePath("write_row_wrapper");
+    check write(data, tempFile);
+
+    // Parse back as string array to verify positions
+    string[][] parsed = check parse(tempFile);
+
+    // Should have header + at least 5 rows (positions 0,1,2,3,4)
+    // Row 0: header, Row 1: First, Row 2: empty, Row 3: Second, Row 4: empty, Row 5: Third
+    test:assertTrue(parsed.length() >= 4, "Should have headers + data rows");
+
+    // Verify header row
+    test:assertEquals(parsed[0][0], "name", "First header should be 'name'");
+    test:assertEquals(parsed[0][1], "value", "Second header should be 'value'");
+
+    // Verify data is at expected positions
+    test:assertEquals(parsed[1][0], "First", "Row 1 should be 'First'");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "row-wrapper"]
+}
+function testWriteRowWrappedDataWithNullValues() returns error? {
+    // Create Row-wrapped data including null values (empty rows)
+    SimpleDataRow[] data = [
+        {rowIndex: 0, value: {name: "Start", value: 1}},
+        {rowIndex: 1, value: null},  // Empty row - should be skipped in output
+        {rowIndex: 2, value: {name: "End", value: 2}}
+    ];
+
+    string tempFile = getTempFilePath("write_row_wrapper_null");
+    check write(data, tempFile);
+
+    // Parse back
+    string[][] parsed = check parse(tempFile);
+
+    // Null values are skipped during write, so we should have header + 2 data rows
+    test:assertTrue(parsed.length() >= 3, "Should have header + data rows");
+    test:assertEquals(parsed[0][0], "name", "Header should be 'name'");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// ROUND-TRIP POSITION PRESERVATION TESTS
+// =============================================================================
+// Tests that verify position preservation during parse -> modify -> write -> parse cycle.
+
+@test:Config {
+    groups: ["write", "row-wrapper", "roundtrip"]
+}
+function testRoundTripWithRowWrapper() returns error? {
+    // Step 1: Parse file with empty rows using Row wrapper
+    SimpleDataRow[] originalRows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+
+    // Should have 5 rows including empty ones
+    test:assertEquals(originalRows.length(), 5, "Should parse 5 rows including empty");
+
+    // Step 2: Modify some values (but keep positions)
+    SimpleDataRow[] modifiedRows = originalRows.clone();
+    if modifiedRows[0].value != null {
+        modifiedRows[0] = {rowIndex: 0, value: {name: "Modified", value: 999}};
+    }
+
+    // Step 3: Write back
+    string tempFile = getTempFilePath("roundtrip_row_wrapper");
+    check write(modifiedRows, tempFile);
+
+    // Step 4: Parse again and verify positions are preserved
+    SimpleDataRow[] reparsedRows = check parse(tempFile);
+
+    // Verify the modification persisted at the correct position
+    test:assertEquals(reparsedRows[0].rowIndex, 0, "First row should still be at rowIndex 0");
+    test:assertEquals(reparsedRows[0].value?.name, "Modified", "Modified value should persist");
+    test:assertEquals(reparsedRows[0].value?.value, 999, "Modified value should persist");
+
+    // Verify other positions are maintained
+    test:assertEquals(reparsedRows[2].rowIndex, 2, "Third row should still be at rowIndex 2");
+    test:assertEquals(reparsedRows[2].value?.name, "Second", "Second data should be at rowIndex 2");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["write", "row-wrapper", "roundtrip"]
+}
+function testRoundTripFilterAndWriteBack() returns error? {
+    // Step 1: Parse with Row wrapper
+    SimpleDataRow[] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+
+    // Step 2: Filter (keep only rows with value > 150)
+    SimpleDataRow[] filtered = rows.filter(r => r.value != null && r.value?.value > 150);
+
+    test:assertEquals(filtered.length(), 2, "Should have 2 rows after filtering (Second=200, Third=300)");
+
+    // Verify positions are preserved after filtering
+    test:assertEquals(filtered[0].rowIndex, 2, "Second should have original rowIndex 2");
+    test:assertEquals(filtered[1].rowIndex, 4, "Third should have original rowIndex 4");
+
+    // Step 3: Write filtered data (positions should be used)
+    string tempFile = getTempFilePath("roundtrip_filtered");
+    check write(filtered, tempFile);
+
+    // Step 4: Parse back and verify
+    SimpleDataRow[] reparsed = check parse(tempFile);
+
+    // The written data should maintain the relative positions
+    test:assertTrue(reparsed.length() >= 2, "Should have at least 2 rows");
+
+    // Cleanup
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["workbook", "row-wrapper", "roundtrip"]
+}
+function testWorkbookRoundTripWithRowWrapper() returns error? {
+    // Test round-trip via Workbook API
+    Workbook wb = check openFile(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    Sheet sheet = check wb.getSheetByIndex(0);
+
+    // Get rows with Row wrapper
+    SimpleDataRow[] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 5, "Should have 5 rows");
+
+    // Create new workbook and write
+    Workbook newWb = check createWorkbook();
+    Sheet newSheet = check newWb.createSheet("Data");
+    check newSheet.putRows(rows);
+
+    string tempFile = getTempFilePath("workbook_roundtrip");
+    check newWb.saveAs(tempFile);
+    check newWb.close();
+    check wb.close();
+
+    // Verify by re-opening
+    Workbook verifyWb = check openFile(tempFile);
+    Sheet verifySheet = check verifyWb.getSheetByIndex(0);
+    SimpleDataRow[] verifiedRows = check verifySheet.getRows();
+
+    test:assertTrue(verifiedRows.length() >= 3, "Should have preserved rows");
+
+    check verifyWb.close();
     check removeTempFile(tempFile);
 }

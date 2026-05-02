@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/constraint;
 import ballerina/file;
 import ballerina/test;
 
@@ -101,6 +102,90 @@ function testConstraintValidationWithFailSafe() returns error? {
 }
 
 // =============================================================================
+// ACTUAL CONSTRAINT VIOLATION TESTS
+// =============================================================================
+// These tests verify that constraint violations are properly detected and reported.
+
+// Type with age constraint (must be between 18 and 120)
+type ConstrainedEmployee record {|
+    string name;
+    @constraint:Int {minValue: 18, maxValue: 120}
+    int age;
+    string department;
+|};
+
+@test:Config {
+    groups: ["constraint"],
+    before: setupConstraintViolationTestData
+}
+function testConstraintViolationReturnsError() returns error? {
+    // Parse data with constraint violation (age = -5)
+    // Should return ConstraintValidationError
+    ConstrainedEmployee[]|Error result = parse(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx");
+
+    test:assertTrue(result is ConstraintValidationError,
+        "Should return ConstraintValidationError for invalid age");
+}
+
+@test:Config {
+    groups: ["constraint"],
+    before: setupConstraintViolationTestData
+}
+function testConstraintViolationWithFailSafeSkipsInvalidRows() returns error? {
+    // With failSafe enabled, invalid rows should be skipped
+    ParseOptions opts = {
+        enableConstraintValidation: true,
+        failSafe: {
+            enableConsoleLogs: false
+        }
+    };
+
+    ConstrainedEmployee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
+
+    // Should only return valid rows (rows with age between 18 and 120)
+    test:assertEquals(employees.length(), 2, "Should skip rows with invalid age");
+    test:assertEquals(employees[0].name, "John");  // age 30 - valid
+    test:assertEquals(employees[1].name, "Bob");   // age 45 - valid
+}
+
+@test:Config {
+    groups: ["constraint"],
+    before: setupConstraintViolationTestData
+}
+function testConstraintViolationDisabledAllowsInvalidData() returns error? {
+    // With constraint validation disabled, invalid data should pass through
+    ParseOptions opts = {
+        enableConstraintValidation: false
+    };
+
+    ConstrainedEmployee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
+
+    // All rows should be returned including invalid ones
+    test:assertEquals(employees.length(), 4, "Should return all rows when validation disabled");
+}
+
+// Setup function for constraint violation test data
+function setupConstraintViolationTestData() returns error? {
+    string testFilePath = CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx";
+
+    if check file:test(testFilePath, file:EXISTS) {
+        check file:remove(testFilePath);
+    }
+
+    // Create test data with constraint violations
+    // age must be between 18 and 120
+    string[][] testData = [
+        ["name", "age", "department"],
+        ["John", "30", "Engineering"],   // Valid
+        ["Jane", "-5", "Marketing"],     // Invalid: age < 18
+        ["Bob", "45", "Sales"],          // Valid
+        ["Alice", "150", "HR"]           // Invalid: age > 120
+    ];
+
+    check write(testData, testFilePath);
+}
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
@@ -121,4 +206,19 @@ function setupConstraintTestData() returns error? {
     ];
 
     check write(testData, testFilePath);
+}
+
+@test:AfterSuite
+function cleanupConstraintTestData() returns error? {
+    string[] filesToRemove = [
+        "constraint_test.xlsx",
+        "constraint_violation_test.xlsx"
+    ];
+
+    foreach string fileName in filesToRemove {
+        string filePath = CONSTRAINT_TEST_DIR + fileName;
+        if check file:test(filePath, file:EXISTS) {
+            check file:remove(filePath);
+        }
+    }
 }

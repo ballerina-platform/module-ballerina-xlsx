@@ -36,6 +36,7 @@ public enum FormulaMode {
 #
 # When reading, headers "First Name" and "Employee ID" will map to `firstName` and `id`.
 # When writing, field names will produce headers "First Name" and "Employee ID".
+# Fields without this annotation use their Ballerina field name as the Excel header.
 public type NameConfig record {|
     # The Excel column header name to map to this field.
     string value;
@@ -46,34 +47,34 @@ public const annotation NameConfig Name on record field;
 
 # Options for parsing XLSX data.
 #
-# + headerRow - Row containing column headers/names (0-based index).
-#               Set to -1 if the sheet has no headers (first row is data).
-#               Example: If headers are in row 1 (second row), set this to 1.
-# + dataStartRow - Row where actual data begins (0-based index).
-#                  If not specified, defaults to headerRow + 1.
-#                  Example: If headerRow=0, data starts at row 1 by default.
-# + includeEmptyRows - Whether to include empty rows in output (default: false)
+# + headerRowIndex - Row containing column headers/names (0-based index).
+#                    Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
+#                    Example: If headers are in row 1 (second row), set this to 1.
+# + dataStartRowIndex - Row where actual data begins (0-based index).
+#                       If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
+# + rowCount - Maximum number of data rows to read. Set to `null` to read all rows (default).
+#              Example: `rowCount: 100` reads at most 100 rows starting from dataStartRowIndex.
 # + formulaMode - How to handle formula cells (default: CACHED)
 # + enableConstraintValidation - Whether to validate type constraints (default: true).
 #                                When enabled, parsed records are validated against any Ballerina
 #                                `@constraint` annotations defined on the record type.
+#                                Note: Disable for better performance when constraints aren't needed.
 # + caseInsensitiveHeaders - Whether to match headers case-insensitively (default: false).
 #                            When enabled, header "Name" will match record field "name" or "NAME".
-# + allowDataProjection - Data projection configuration.
-#                         Set to `false` to disable data projection (strict mode - all fields must match).
-#                         When enabled (default `{}`):
-#                         - `nilAsOptionalField`: When true, nil cell values are treated as field absence
-#                           (optional fields with nil values are not set in the record)
-#                         - `absentAsNilableType`: When true, columns missing from the sheet are allowed
-#                           for nilable/optional record fields (set to nil)
+# + allowDataProjection - Data projection configuration (default: enabled/lenient mode).
+#                         - Default `{}`: Lenient mode - sheet columns don't need to match all record fields
+#                         - Set to `false`: Strict mode - all record fields must have matching columns
+#                         Sub-options when enabled:
+#                         - `nilAsOptionalField`: Treat nil cells as field absence for optional fields
+#                         - `absentAsNilableType`: Allow missing columns for nilable/optional fields
 # + failSafe - Fail-safe error handling configuration.
 #              When set, parsing continues on row-level errors (type conversion, validation).
 #              Errors are logged and problematic rows are skipped.
 #              Critical errors (file not found, corrupted file) still fail immediately.
 public type ParseOptions record {|
-    int headerRow = 0;
-    int dataStartRow?;
-    boolean includeEmptyRows = false;
+    int? headerRowIndex = 0;
+    int dataStartRowIndex?;
+    int? rowCount = ();
     FormulaMode formulaMode = CACHED;
     boolean enableConstraintValidation = true;
     boolean caseInsensitiveHeaders = false;
@@ -88,31 +89,32 @@ public type ParseOptions record {|
 #
 # + sheetName - Name of the sheet to create (default: "Sheet1")
 # + writeHeaders - Whether to write headers from record field names (default: true)
-# + startRow - Row number to start writing (0-based, default: 0)
+# + startRowIndex - Row number to start writing (0-based, default: 0)
 public type WriteOptions record {|
     string sheetName = "Sheet1";
     boolean writeHeaders = true;
-    int startRow = 0;
+    int startRowIndex = 0;
 |};
 
 # Options for reading rows from a sheet.
 #
-# + headerRow - Row containing column headers/names (0-based index).
-#               Set to -1 if the sheet has no headers (first row is data).
-# + dataStartRow - Row where actual data begins (0-based index).
-#                  If not specified, defaults to headerRow + 1.
-# + includeEmptyRows - Whether to include empty rows (default: false)
+# + headerRowIndex - Row containing column headers/names (0-based index).
+#                    Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
+# + dataStartRowIndex - Row where actual data begins (0-based index).
+#                       If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
+# + rowCount - Maximum number of data rows to read. Set to `null` to read all rows (default).
 # + formulaMode - How to handle formula cells (default: CACHED)
 # + enableConstraintValidation - Whether to validate type constraints (default: true).
 #                                When enabled, parsed records are validated against any Ballerina
 #                                `@constraint` annotations defined on the record type.
+#                                Note: Disable for better performance when constraints aren't needed.
 # + caseInsensitiveHeaders - Whether to match headers case-insensitively (default: false).
 # + allowDataProjection - Data projection configuration (see ParseOptions for details).
 # + failSafe - Fail-safe error handling configuration (see ParseOptions).
 public type RowReadOptions record {|
-    int headerRow = 0;
-    int dataStartRow?;
-    boolean includeEmptyRows = false;
+    int? headerRowIndex = 0;
+    int dataStartRowIndex?;
+    int? rowCount = ();
     FormulaMode formulaMode = CACHED;
     boolean enableConstraintValidation = true;
     boolean caseInsensitiveHeaders = false;
@@ -126,17 +128,76 @@ public type RowReadOptions record {|
 # Options for writing rows to a sheet.
 #
 # + writeHeaders - Whether to write headers (default: true)
-# + startRow - Row number to start writing (0-based, default: 0)
+# + startRowIndex - Row number to start writing (0-based, default: 0)
 public type RowWriteOptions record {|
     boolean writeHeaders = true;
-    int startRow = 0;
+    int startRowIndex = 0;
 |};
 
-# Supported data types for writing to XLSX files.
+# Supported data types for XLSX read/write operations.
 # - `anydata[][]` - 2D array of any data (raw cell values)
 # - `record{}[]` - Array of records (field names become headers)
 # - `map<anydata>[]` - Array of maps (keys become headers)
-public type WritableData anydata[][]|record {}[]|map<anydata>[];
+public type Data anydata[][]|record {}[]|map<anydata>[];
+
+// =============================================================================
+// Cell Range Type
+// =============================================================================
+
+# Represents a rectangular cell range in a sheet.
+#
+# All indices are 0-based (matching internal representation).
+# For example, row 0 is the first row (Excel row 1), column 0 is column A.
+#
+# + firstRowIndex - Index of the first row in the range (0-based)
+# + lastRowIndex - Index of the last row in the range (0-based)
+# + firstColumnIndex - Index of the first column in the range (0-based)
+# + lastColumnIndex - Index of the last column in the range (0-based)
+public type CellRange record {|
+    int firstRowIndex;
+    int lastRowIndex;
+    int firstColumnIndex;
+    int lastColumnIndex;
+|};
+
+// =============================================================================
+// Row Wrapper Type (Position Preservation)
+// =============================================================================
+
+# Row wrapper type for preserving original row positions during round-trip operations.
+#
+# When parsing Excel files with empty rows, positions are normally lost. Use this type
+# to preserve original row positions, which is essential for:
+# - Round-trip operations where formulas reference specific rows
+# - Maintaining data integrity when writing back modified data
+#
+# **Usage:** Spread this type into your record and add a nullable `value` field:
+#
+# ```ballerina
+# type PersonRow record {|
+#     *xlsx:Row;           // Spreads rowIndex field
+#     Person? value;       // Your data type (nullable for empty rows)
+# |};
+#
+# // Parse with position preservation
+# PersonRow[] rows = check xlsx:parse("data.xlsx");
+# // rows[0] = { rowIndex: 0, value: { name: "Alice", age: 30 } }
+# // rows[1] = { rowIndex: 1, value: null }  // empty row with position preserved
+# // rows[2] = { rowIndex: 2, value: { name: "Bob", age: 25 } }
+#
+# // Write back - positions are restored
+# check xlsx:write(rows, "output.xlsx");
+# ```
+#
+# **Behavior:**
+# - When target type has `rowIndex` field, ALL rows within used range are included
+# - Empty rows have `value = null` with their original `rowIndex`
+# - On write, rows are placed at their original Excel positions (using `rowIndex`)
+public type Row record {|
+    # 0-based row index relative to data start row.
+    # This preserves the original Excel row position for round-trip operations.
+    int rowIndex;
+|};
 
 // =============================================================================
 // Fail-Safe Error Handling Types

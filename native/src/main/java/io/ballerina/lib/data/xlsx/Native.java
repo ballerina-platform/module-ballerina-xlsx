@@ -95,4 +95,136 @@ public final class Native {
         // Deferred to v2: XLSX format requires SharedStringsTable to be loaded first
         return DiagnosticLog.error("parseAsStream is deferred to v2. Use parse() instead.");
     }
+
+    // ==========================================================================
+    // TABLE API
+    // ==========================================================================
+
+    /**
+     * Parse data from an Excel table by name.
+     *
+     * @param env       Ballerina environment
+     * @param filePath  Path to the XLSX file
+     * @param tableName Name of the table to parse
+     * @param options   Parsing options
+     * @param typedesc  Target type descriptor
+     * @return Parsed data as BArray or error
+     */
+    public static Object parseTable(Environment env, BString filePath, BString tableName,
+                                    BMap<BString, Object> options, BTypedesc typedesc) {
+        Path path = Paths.get(filePath.getValue());
+
+        // Check if file exists before parsing
+        if (!Files.exists(path)) {
+            return DiagnosticLog.fileNotFoundError("Failed to read file: " + filePath.getValue(),
+                    new java.io.FileNotFoundException(filePath.getValue()));
+        }
+
+        try {
+            // Open workbook, find table, parse data
+            org.apache.poi.ss.usermodel.Workbook workbook =
+                    org.apache.poi.ss.usermodel.WorkbookFactory.create(path.toFile());
+
+            if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
+                workbook.close();
+                return DiagnosticLog.error("Tables are only supported in XLSX format");
+            }
+
+            org.apache.poi.xssf.usermodel.XSSFWorkbook xssfWorkbook =
+                    (org.apache.poi.xssf.usermodel.XSSFWorkbook) workbook;
+            String name = tableName.getValue();
+
+            // Search all sheets for the table
+            for (int i = 0; i < xssfWorkbook.getNumberOfSheets(); i++) {
+                org.apache.poi.xssf.usermodel.XSSFSheet sheet =
+                        (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
+                for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
+                    if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
+                        // Found the table - parse its data
+                        Object result = io.ballerina.lib.data.xlsx.xlsx.TableParser.parseTable(
+                                env, table, sheet, options, typedesc);
+                        workbook.close();
+                        return result;
+                    }
+                }
+            }
+
+            workbook.close();
+            return DiagnosticLog.tableNotFoundError(name);
+
+        } catch (java.io.IOException e) {
+            return DiagnosticLog.error("Failed to parse XLSX file: " + e.getMessage(), e);
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error parsing table: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Write data to an existing Excel table.
+     *
+     * @param data      Data to write
+     * @param filePath  Path to the XLSX file
+     * @param tableName Name of the table to write to
+     * @param options   Write options
+     * @return null on success, error on failure
+     */
+    public static Object writeTable(BArray data, BString filePath, BString tableName,
+                                    BMap<BString, Object> options) {
+        Path path = Paths.get(filePath.getValue());
+
+        // Check if file exists
+        if (!Files.exists(path)) {
+            return DiagnosticLog.fileNotFoundError("Failed to read file: " + filePath.getValue(),
+                    new java.io.FileNotFoundException(filePath.getValue()));
+        }
+
+        try {
+            // Open workbook for modification
+            java.io.FileInputStream fis = new java.io.FileInputStream(path.toFile());
+            org.apache.poi.ss.usermodel.Workbook workbook =
+                    org.apache.poi.ss.usermodel.WorkbookFactory.create(fis);
+            fis.close();
+
+            if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
+                workbook.close();
+                return DiagnosticLog.error("Tables are only supported in XLSX format");
+            }
+
+            org.apache.poi.xssf.usermodel.XSSFWorkbook xssfWorkbook =
+                    (org.apache.poi.xssf.usermodel.XSSFWorkbook) workbook;
+            String name = tableName.getValue();
+
+            // Search all sheets for the table
+            for (int i = 0; i < xssfWorkbook.getNumberOfSheets(); i++) {
+                org.apache.poi.xssf.usermodel.XSSFSheet sheet =
+                        (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
+                for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
+                    if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
+                        // Found the table - write data to it
+                        Object result = io.ballerina.lib.data.xlsx.xlsx.TableParser.writeToTable(
+                                table, sheet, data, options);
+                        if (result != null) {
+                            workbook.close();
+                            return result;  // Error
+                        }
+
+                        // Save the workbook
+                        java.io.FileOutputStream fos = new java.io.FileOutputStream(path.toFile());
+                        workbook.write(fos);
+                        fos.close();
+                        workbook.close();
+                        return null;  // Success
+                    }
+                }
+            }
+
+            workbook.close();
+            return DiagnosticLog.tableNotFoundError(name);
+
+        } catch (java.io.IOException e) {
+            return DiagnosticLog.error("Failed to write to XLSX file: " + e.getMessage(), e);
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error writing to table: " + e.getMessage(), e);
+        }
+    }
 }

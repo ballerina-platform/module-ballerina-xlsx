@@ -38,6 +38,30 @@ public class Sheet {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 
+    # Get the used cell range of the sheet as a structured record.
+    #
+    # Returns 0-based row and column indices representing the rectangular area
+    # containing all cells with actual data. Returns `nil` if the sheet is empty.
+    #
+    # This is useful for:
+    # - Determining sheet bounds before iterating
+    # - Planning data writes at specific positions
+    # - Understanding the actual data footprint of a sheet
+    #
+    # ```ballerina
+    # xlsx:Workbook wb = check new("data.xlsx");
+    # xlsx:Sheet sheet = check wb.getSheet("Sales");
+    # xlsx:CellRange? range = sheet.getUsedCellRange();
+    # if range != () {
+    #     io:println("Data spans rows ", range.firstRowIndex, " to ", range.lastRowIndex);
+    # }
+    # ```
+    #
+    # + return - CellRange record with 0-based indices, or nil if sheet is empty
+    public function getUsedCellRange() returns CellRange? = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
+    } external;
+
     # Get the number of rows with data.
     #
     # + return - Row count
@@ -90,7 +114,8 @@ public class Sheet {
     # Employee employee = check sheet.getRow(5);
     # ```
     #
-    # + index - Row index (0-based, relative to data start row)
+    # + index - Row index (0-based, relative to data start row).
+#           Example: If dataStartRowIndex=1, getRow(0) returns Excel row 1, getRow(2) returns Excel row 3.
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error
@@ -119,6 +144,95 @@ public class Sheet {
     # + options - Write options
     # + return - Error if write fails
     public function putRows(anydata[] data, *RowWriteOptions options) returns Error? = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
+    } external;
+
+    // =============================================================================
+    // TABLE METHODS
+    // =============================================================================
+
+    # Get a table from this sheet by name.
+    #
+    # ```ballerina
+    # xlsx:Table empTable = check sheet.getTable("EmployeeTable");
+    # ```
+    #
+    # + name - Table name
+    # + return - Table or error if not found
+    public function getTable(string name) returns Table|TableNotFoundError = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
+    } external;
+
+    # Get all tables in this sheet.
+    #
+    # ```ballerina
+    # xlsx:Table[] tables = sheet.getTables();
+    # foreach xlsx:Table t in tables {
+    #     io:println("Table: ", t.getName());
+    # }
+    # ```
+    #
+    # + return - Array of tables (may be empty)
+    public function getTables() returns Table[] = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
+    } external;
+
+    # Create a new table with the specified range.
+    #
+    # The range must include at least a header row. If headers are not provided,
+    # the first row of the range is used as headers.
+    #
+    # ```ballerina
+    # // Create from range string
+    # xlsx:Table t1 = check sheet.createTable("SalesTable", "A1:D10");
+    #
+    # // Create from CellRange with custom headers
+    # xlsx:Table t2 = check sheet.createTable("BonusTable", {
+    #     firstRowIndex: 0, lastRowIndex: 5,
+    #     firstColumnIndex: 0, lastColumnIndex: 3
+    # }, ["Name", "Department", "Amount", "Date"]);
+    # ```
+    #
+    # + name - Unique table name (across workbook)
+    # + range - Table range as CellRange record or A1 notation string
+    # + headers - Optional custom headers; if not provided, first row is used
+    # + return - Created table or error
+    public function createTable(string name, CellRange|string range, string[]? headers = ())
+            returns Table|Error = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
+    } external;
+
+    # Create a new table from data, automatically calculating the range.
+    #
+    # Writes the data first, then creates a table around it.
+    #
+    # ```ballerina
+    # Employee[] employees = [...];
+    # xlsx:Table empTable = check sheet.createTableFromData("EmployeeTable", employees);
+    # ```
+    #
+    # + name - Unique table name (across workbook)
+    # + data - Data to write (records or arrays)
+    # + startRowIndex - Starting row for the table (default: 0)
+    # + startColumnIndex - Starting column for the table (default: 0)
+    # + return - Created table or error
+    public function createTableFromData(string name, Data data,
+            int startRowIndex = 0, int startColumnIndex = 0)
+            returns Table|Error = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
+    } external;
+
+    # Delete a table from this sheet.
+    #
+    # The table structure is removed but the underlying data is preserved.
+    #
+    # ```ballerina
+    # check sheet.deleteTable("OldTable");
+    # ```
+    #
+    # + name - Table name to delete
+    # + return - Error if table not found
+    public function deleteTable(string name) returns TableNotFoundError? = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 }

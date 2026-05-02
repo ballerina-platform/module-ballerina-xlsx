@@ -16,16 +16,17 @@
 
 import ballerina/log;
 
-# Internal function called from native code to print error logs.
+# Internal function called from native code to print warning logs for fail-safe mode.
 #
 # This function is invoked by the Java FailSafeUtils when console logging is enabled.
-# It uses the Ballerina log module to output errors to the console.
+# It uses WARN level because fail-safe mode intentionally skips invalid rows —
+# this is expected behavior, not an error.
 #
-# + message - The error message to log
+# + message - The warning message to log
 # + err - Optional error object
 # + stackTrace - Optional stack trace
 # + keyValues - Optional key-value pairs for structured logging (e.g., offendingRow)
 isolated function printError(string message, error? err = (), error:StackFrame[]? stackTrace = (),
         *log:KeyValues keyValues) {
-    log:printError(message, err, stackTrace, keyValues = keyValues);
+    log:printWarn(message, err, stackTrace, keyValues = keyValues);
 }

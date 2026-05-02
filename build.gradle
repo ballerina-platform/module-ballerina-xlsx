@@ -70,12 +70,14 @@ subprojects {
         /* Standard libraries (for tests) */
         ballerinaStdLibs "io.ballerina.stdlib:io-ballerina:${stdlibIoVersion}"
         ballerinaStdLibs "io.ballerina.stdlib:file-ballerina:${stdlibFileVersion}"
+        ballerinaStdLibs "io.ballerina.stdlib:constraint-ballerina:${stdlibConstraintVersion}"
     }
 }
 
 def moduleVersion = project.version.replace("-SNAPSHOT", "")
 
 task build {
+    dependsOn(':xlsx-native:build')
     dependsOn(':xlsx-ballerina:build')
 }
 

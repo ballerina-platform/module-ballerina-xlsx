@@ -9,6 +9,7 @@ pluginManagement {
     plugins {
         id "net.researchgate.release" version "${releasePluginVersion}"
         id "io.ballerina.plugin" version "${ballerinaGradlePluginVersion}"
+        id "de.undercouch.download" version "${downloadPluginVersion}"
     }
 
     repositories {
@@ -34,6 +35,9 @@ include ':xlsx-ballerina'
 
 project(':xlsx-native').projectDir = file("native")
 project(':xlsx-ballerina').projectDir = file("ballerina")
+
+include ':checkstyle'
+project(':checkstyle').projectDir = file("build-config${File.separator}checkstyle")
 
 gradleEnterprise {
     buildScan {

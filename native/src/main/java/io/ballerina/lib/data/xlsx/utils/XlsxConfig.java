@@ -23,22 +23,31 @@ import io.ballerina.runtime.api.values.BString;
 
 /**
  * Configuration holder for XLSX parsing and writing options.
- *
- * @since 0.1.0
  */
 public class XlsxConfig {
 
     // Parse options
-    private int headerRow = Constants.DEFAULT_HEADER_ROW;
-    private Integer dataStartRow;
-    private boolean includeEmptyRows = false;
+    private Integer headerRowIndex = Constants.DEFAULT_HEADER_ROW;  // null = no headers (use col0, col1, ...)
+    private Integer dataStartRowIndex;
+    private Integer rowCount;  // null = read all rows
     private String formulaMode = Constants.FORMULA_MODE_CACHED;
     private boolean enableConstraintValidation = true;
+    private boolean caseInsensitiveHeaders = false;
+
+    // Data projection options
+    private boolean allowDataProjection = true;  // false disables projection entirely
+    private boolean nilAsOptionalField = false;
+    private boolean absentAsNilableType = false;
+
+    // Fail-safe options
+    private BMap<?, ?> failSafe = null;
+    private boolean enableConsoleLogs = true;
+    private boolean includeSourceDataInConsole = false;
 
     // Write options
     private String writeSheetName = Constants.DEFAULT_SHEET_NAME;
     private boolean writeHeaders = true;
-    private int startRow = 0;
+    private int startRowIndex = 0;
 
     /**
      * Create config from Ballerina parse options map.
@@ -53,21 +62,23 @@ public class XlsxConfig {
             return config;
         }
 
-        // Header configuration
-        Object headerRowVal = options.get(Constants.HEADER_ROW);
-        if (headerRowVal != null) {
-            config.headerRow = ((Long) headerRowVal).intValue();
+        // Header configuration - headerRowIndex can be null (no headers)
+        Object headerRowIndexVal = options.get(Constants.HEADER_ROW_INDEX);
+        if (headerRowIndexVal == null) {
+            config.headerRowIndex = null;  // No headers - use col0, col1, ...
+        } else {
+            config.headerRowIndex = ((Long) headerRowIndexVal).intValue();
         }
 
-        Object dataStartRowVal = options.get(Constants.DATA_START_ROW);
-        if (dataStartRowVal != null) {
-            config.dataStartRow = ((Long) dataStartRowVal).intValue();
+        Object dataStartRowIndexVal = options.get(Constants.DATA_START_ROW_INDEX);
+        if (dataStartRowIndexVal != null) {
+            config.dataStartRowIndex = ((Long) dataStartRowIndexVal).intValue();
         }
 
-        // Row handling
-        Object includeEmptyVal = options.get(Constants.INCLUDE_EMPTY_ROWS);
-        if (includeEmptyVal != null) {
-            config.includeEmptyRows = (Boolean) includeEmptyVal;
+        // Row count limit
+        Object rowCountVal = options.get(Constants.ROW_COUNT);
+        if (rowCountVal != null) {
+            config.rowCount = ((Long) rowCountVal).intValue();
         }
 
         // Formula handling
@@ -80,6 +91,52 @@ public class XlsxConfig {
         Object constraintVal = options.get(Constants.ENABLE_CONSTRAINT_VALIDATION);
         if (constraintVal != null) {
             config.enableConstraintValidation = (Boolean) constraintVal;
+        }
+
+        // Case-insensitive headers
+        Object caseInsensitiveVal = options.get(Constants.CASE_INSENSITIVE_HEADERS);
+        if (caseInsensitiveVal != null) {
+            config.caseInsensitiveHeaders = (Boolean) caseInsensitiveVal;
+        }
+
+        // Data projection options
+        Object projectionVal = options.get(Constants.ALLOW_DATA_PROJECTION);
+        if (projectionVal != null) {
+            if (projectionVal instanceof Boolean) {
+                // allowDataProjection = false disables projection
+                config.allowDataProjection = (Boolean) projectionVal;
+            } else if (projectionVal instanceof BMap<?, ?>) {
+                // allowDataProjection is a record with options
+                config.allowDataProjection = true;
+                BMap<?, ?> projectionOpts = (BMap<?, ?>) projectionVal;
+
+                Object nilAsOptionalVal = projectionOpts.get(Constants.NIL_AS_OPTIONAL_FIELD);
+                if (nilAsOptionalVal != null) {
+                    config.nilAsOptionalField = (Boolean) nilAsOptionalVal;
+                }
+
+                Object absentAsNilableVal = projectionOpts.get(Constants.ABSENT_AS_NILABLE_TYPE);
+                if (absentAsNilableVal != null) {
+                    config.absentAsNilableType = (Boolean) absentAsNilableVal;
+                }
+            }
+        }
+
+        // Fail-safe options
+        Object failSafeVal = options.get(Constants.FAIL_SAFE);
+        if (failSafeVal instanceof BMap<?, ?>) {
+            config.failSafe = (BMap<?, ?>) failSafeVal;
+
+            // Extract console logging options
+            Object enableConsoleLogsVal = config.failSafe.get(Constants.ENABLE_CONSOLE_LOGS);
+            if (enableConsoleLogsVal != null) {
+                config.enableConsoleLogs = (Boolean) enableConsoleLogsVal;
+            }
+
+            Object includeSourceDataVal = config.failSafe.get(Constants.INCLUDE_SOURCE_DATA_IN_CONSOLE);
+            if (includeSourceDataVal != null) {
+                config.includeSourceDataInConsole = (Boolean) includeSourceDataVal;
+            }
         }
 
         return config;
@@ -108,9 +165,9 @@ public class XlsxConfig {
             config.writeHeaders = (Boolean) writeHeadersVal;
         }
 
-        Object startRowVal = options.get(Constants.START_ROW);
-        if (startRowVal != null) {
-            config.startRow = ((Long) startRowVal).intValue();
+        Object startRowIndexVal = options.get(Constants.START_ROW_INDEX);
+        if (startRowIndexVal != null) {
+            config.startRowIndex = ((Long) startRowIndexVal).intValue();
         }
 
         return config;
@@ -118,21 +175,48 @@ public class XlsxConfig {
 
     // Getters
 
-    public int getHeaderRow() {
-        return headerRow;
+    /**
+     * Get the header row index, or null if no headers (header-less mode).
+     */
+    public Integer getHeaderRowIndex() {
+        return headerRowIndex;
     }
 
-    public int getDataStartRow() {
-        // Default: row after header
-        return dataStartRow != null ? dataStartRow : headerRow + 1;
+    /**
+     * Check if the sheet has headers.
+     */
+    public boolean hasHeaders() {
+        return headerRowIndex != null;
     }
 
-    public boolean hasExplicitDataStartRow() {
-        return dataStartRow != null;
+    /**
+     * Get the data start row index.
+     * Default: row after header, or row 0 if no headers.
+     */
+    public int getDataStartRowIndex() {
+        if (dataStartRowIndex != null) {
+            return dataStartRowIndex;
+        }
+        // Default: row after header, or 0 if no headers
+        return headerRowIndex != null ? headerRowIndex + 1 : 0;
     }
 
-    public boolean isIncludeEmptyRows() {
-        return includeEmptyRows;
+    public boolean hasExplicitDataStartRowIndex() {
+        return dataStartRowIndex != null;
+    }
+
+    /**
+     * Get the row count limit, or null if no limit (read all rows).
+     */
+    public Integer getRowCount() {
+        return rowCount;
+    }
+
+    /**
+     * Check if a row count limit is set.
+     */
+    public boolean hasRowCountLimit() {
+        return rowCount != null;
     }
 
     public String getFormulaMode() {
@@ -147,6 +231,24 @@ public class XlsxConfig {
         return enableConstraintValidation;
     }
 
+    public boolean isCaseInsensitiveHeaders() {
+        return caseInsensitiveHeaders;
+    }
+
+    // Data projection getters
+
+    public boolean isAllowDataProjection() {
+        return allowDataProjection;
+    }
+
+    public boolean isNilAsOptionalField() {
+        return nilAsOptionalField;
+    }
+
+    public boolean isAbsentAsNilableType() {
+        return absentAsNilableType;
+    }
+
     public String getWriteSheetName() {
         return writeSheetName;
     }
@@ -155,7 +257,25 @@ public class XlsxConfig {
         return writeHeaders;
     }
 
-    public int getStartRow() {
-        return startRow;
+    public int getStartRowIndex() {
+        return startRowIndex;
+    }
+
+    // Fail-safe getters
+
+    public BMap<?, ?> getFailSafe() {
+        return failSafe;
+    }
+
+    public boolean isFailSafeEnabled() {
+        return failSafe != null;
+    }
+
+    public boolean isEnableConsoleLogs() {
+        return enableConsoleLogs;
+    }
+
+    public boolean isIncludeSourceDataInConsole() {
+        return includeSourceDataInConsole;
     }
 }

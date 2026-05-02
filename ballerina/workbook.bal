@@ -16,39 +16,91 @@
 
 import ballerina/jballerina.java;
 
+// =============================================================================
+// WORKBOOK FACTORY FUNCTIONS
+// =============================================================================
+
+# Opens an existing XLSX file.
+#
+# ```ballerina
+# xlsx:Workbook wb = check xlsx:openFile("report.xlsx");
+# string[] sheets = wb.getSheetNames();
+# check wb.close();
+# ```
+#
+# + path - Path to the existing XLSX file
+# + return - Workbook handle or FileNotFoundError if file doesn't exist
+public function openFile(string path) returns Workbook|Error {
+    Workbook wb = new;
+    check wb.initFromPath(path);
+    return wb;
+}
+
+# Creates a new XLSX file at the specified path.
+#
+# The file is not written until save() or saveAs() is called.
+# Calling save() will write to the specified path.
+#
+# ```ballerina
+# xlsx:Workbook wb = check xlsx:createFile("report.xlsx");
+# xlsx:Sheet sheet = check wb.createSheet("Data");
+# check sheet.putRows(data);
+# check wb.save();  // Writes to report.xlsx
+# check wb.close();
+# ```
+#
+# + path - Path where the file will be created when saved
+# + return - Workbook handle
+public function createFile(string path) returns Workbook|Error {
+    Workbook wb = new;
+    check wb.initNew();
+    check wb.setSourcePathNative(path);
+    return wb;
+}
+
+# Creates a new in-memory workbook with no file association.
+#
+# Use saveAs(path) to write the workbook to a file. Calling save()
+# without a prior saveAs() will return an error.
+#
+# ```ballerina
+# xlsx:Workbook wb = check xlsx:createWorkbook();
+# xlsx:Sheet sheet = check wb.createSheet("Data");
+# check sheet.putRows(data);
+# check wb.saveAs("output.xlsx");  // Must use saveAs for in-memory workbooks
+# check wb.close();
+# ```
+#
+# + return - Workbook handle
+public function createWorkbook() returns Workbook|Error {
+    Workbook wb = new;
+    check wb.initNew();
+    return wb;
+}
+
+// =============================================================================
+// WORKBOOK CLASS
+// =============================================================================
+
 # Represents an Excel workbook.
 #
 # A workbook contains one or more sheets and provides methods to
-# access sheets, create new sheets, and save to files.
+# access sheets, create new sheets, delete sheets, and save to files.
+#
+# Use the factory functions to create workbook instances:
+# - `xlsx:openFile(path)` - Open existing file
+# - `xlsx:createFile(path)` - Create file (writes on save)
+# - xlsx:createWorkbook() - Create in-memory workbook
 #
 # ```ballerina
-# // Open existing workbook
-# xlsx:Workbook wb = check new("report.xlsx");
-#
-# // Create new empty workbook
-# xlsx:Workbook wb = check new();
-#
-# // Work with sheets
+# xlsx:Workbook wb = check xlsx:openFile("report.xlsx");
 # string[] sheets = wb.getSheetNames();
 # xlsx:Sheet sheet = check wb.getSheet("Sales");
-#
-# // Save and close
-# check wb.save("updated.xlsx");
+# // ... modify data ...
+# check wb.save();  // Overwrites original file
 # check wb.close();
 # ```
 public class Workbook {
-
-    # Initialize a workbook.
-    #
-    # + path - Path to XLSX file, or nil to create new empty workbook
-    # + return - Error if file not found or initialization fails
-    public function init(string? path = ()) returns Error? {
-        if path is string {
-            check self.initFromPath(path);
-        } else {
-            check self.initNew();
-        }
-    }
 
     # Initialize workbook from a file path.
     # + path - Path to the XLSX file
@@ -63,6 +115,14 @@ public class Workbook {
     # + return - Error if creation fails
     function initNew() returns Error? = @java:Method {
         name: "createNewWorkbook",
+        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+    } external;
+
+    # Set the source path for the workbook.
+    # + path - Path to associate with this workbook
+    # + return - Error if setting path fails
+    function setSourcePathNative(string path) returns Error? = @java:Method {
+        name: "setSourcePath",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -138,15 +198,70 @@ public class Workbook {
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Save the workbook to a file.
+    # Delete a sheet by name.
     #
     # ```ballerina
-    # check workbook.save("output.xlsx");
+    # check workbook.deleteSheet("TempData");
+    # ```
+    #
+    # + name - Name of the sheet to delete
+    # + return - SheetNotFoundError if sheet doesn't exist
+    public function deleteSheet(string name) returns SheetNotFoundError? = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+    } external;
+
+    # Delete a sheet by index.
+    #
+    # ```ballerina
+    # check workbook.deleteSheetByIndex(0);  // Delete first sheet
+    # ```
+    #
+    # + index - Index of the sheet to delete (0-based)
+    # + return - SheetNotFoundError if index out of range
+    public function deleteSheetByIndex(int index) returns SheetNotFoundError? = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+    } external;
+
+    # Save the workbook to its source file.
+    #
+    # Overwrites the original file for workbooks created with `openFile()`
+    # or `createFile()`. Returns error for in-memory workbooks created
+    # with createWorkbook() - use saveAs() instead.
+    #
+    # ```ballerina
+    # xlsx:Workbook wb = check xlsx:openFile("data.xlsx");
+    # // ... modify ...
+    # check wb.save();  // Overwrites data.xlsx
+    # ```
+    #
+    # + return - Error if no source path or save fails
+    public function save() returns Error? = @java:Method {
+        name: "saveToSource",
+        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+    } external;
+
+    # Save the workbook to a new location.
+    #
+    # After calling saveAs(), subsequent calls to save() will
+    # write to this new location.
+    #
+    # ```ballerina
+    # xlsx:Workbook wb = check xlsx:createWorkbook();
+    # xlsx:Sheet sheet = check wb.createSheet("Data");
+    # check sheet.putRows(data);
+    # check wb.saveAs("output.xlsx");
+    # // Now wb.save() would write to output.xlsx
     # ```
     #
     # + path - Path to save the XLSX file
     # + return - Error if save fails
-    public function save(string path) returns Error? = @java:Method {
+    public function saveAs(string path) returns Error? {
+        check self.saveToPathNative(path);
+        check self.setSourcePathNative(path);
+    }
+
+    function saveToPathNative(string path) returns Error? = @java:Method {
+        name: "saveToPath",
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -156,6 +271,40 @@ public class Workbook {
     #
     # + return - Error if close fails
     public function close() returns Error? = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+    } external;
+
+    // =============================================================================
+    // TABLE METHODS
+    // =============================================================================
+
+    # Get a table by name from anywhere in the workbook.
+    #
+    # Table names are unique across the entire workbook, so no sheet
+    # specification is needed.
+    #
+    # ```ballerina
+    # xlsx:Table empTable = check wb.getTable("EmployeeTable");
+    # Employee[] employees = check empTable.getRows();
+    # ```
+    #
+    # + name - Table name
+    # + return - Table or error if not found
+    public function getTable(string name) returns Table|TableNotFoundError = @java:Method {
+        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+    } external;
+
+    # Get all tables across all sheets in the workbook.
+    #
+    # ```ballerina
+    # xlsx:Table[] allTables = wb.getAllTables();
+    # foreach xlsx:Table t in allTables {
+    #     io:println("Table: ", t.getName(), " in sheet: ", t.getSheetName());
+    # }
+    # ```
+    #
+    # + return - Array of all tables (may be empty)
+    public function getAllTables() returns Table[] = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
     } external;
 }

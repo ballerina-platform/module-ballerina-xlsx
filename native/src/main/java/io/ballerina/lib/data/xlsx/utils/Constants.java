@@ -23,8 +23,6 @@ import io.ballerina.runtime.api.values.BString;
 
 /**
  * Constants used throughout the XLSX module.
- *
- * @since 0.1.0
  */
 public final class Constants {
 
@@ -37,16 +35,22 @@ public final class Constants {
     public static final String ORG_NAME = "ballerinax";
 
     // Parse options field names
-    public static final BString HEADER_ROW = StringUtils.fromString("headerRow");
-    public static final BString DATA_START_ROW = StringUtils.fromString("dataStartRow");
-    public static final BString INCLUDE_EMPTY_ROWS = StringUtils.fromString("includeEmptyRows");
+    public static final BString HEADER_ROW_INDEX = StringUtils.fromString("headerRowIndex");
+    public static final BString DATA_START_ROW_INDEX = StringUtils.fromString("dataStartRowIndex");
+    public static final BString ROW_COUNT = StringUtils.fromString("rowCount");
     public static final BString FORMULA_MODE = StringUtils.fromString("formulaMode");
     public static final BString ENABLE_CONSTRAINT_VALIDATION = StringUtils.fromString("enableConstraintValidation");
+    public static final BString CASE_INSENSITIVE_HEADERS = StringUtils.fromString("caseInsensitiveHeaders");
+
+    // Data projection options
+    public static final BString ALLOW_DATA_PROJECTION = StringUtils.fromString("allowDataProjection");
+    public static final BString NIL_AS_OPTIONAL_FIELD = StringUtils.fromString("nilAsOptionalField");
+    public static final BString ABSENT_AS_NILABLE_TYPE = StringUtils.fromString("absentAsNilableType");
 
     // Write options field names
     public static final BString WRITE_SHEET_NAME = StringUtils.fromString("sheetName");
     public static final BString WRITE_HEADERS = StringUtils.fromString("writeHeaders");
-    public static final BString START_ROW = StringUtils.fromString("startRow");
+    public static final BString START_ROW_INDEX = StringUtils.fromString("startRowIndex");
 
     // Formula mode values
     public static final String FORMULA_MODE_CACHED = "CACHED";
@@ -55,6 +59,7 @@ public final class Constants {
     // Ballerina type names
     public static final String WORKBOOK_TYPE = "Workbook";
     public static final String SHEET_TYPE = "Sheet";
+    public static final String TABLE_TYPE = "Table";
 
     // Default values
     public static final String DEFAULT_SHEET_NAME = "Sheet1";
@@ -66,9 +71,41 @@ public final class Constants {
     public static final String FILE_NOT_FOUND_ERROR_TYPE = "FileNotFoundError";
     public static final String SHEET_NOT_FOUND_ERROR_TYPE = "SheetNotFoundError";
     public static final String TYPE_CONVERSION_ERROR_TYPE = "TypeConversionError";
+    public static final String CONSTRAINT_VALIDATION_ERROR_TYPE = "ConstraintValidationError";
+    public static final String TABLE_NOT_FOUND_ERROR_TYPE = "TableNotFoundError";
+    public static final String TABLE_OVERLAP_ERROR_TYPE = "TableOverlapError";
+    public static final String INVALID_TABLE_RANGE_ERROR_TYPE = "InvalidTableRangeError";
 
     // Limits
     public static final int MAX_FILE_SIZE_MB = 100;
     public static final int MAX_ROWS = 1_048_576;  // Excel max rows
     public static final int MAX_COLUMNS = 16_384;   // Excel max columns
+
+    // Fail-safe options field names
+    public static final BString FAIL_SAFE = StringUtils.fromString("failSafe");
+    public static final BString ENABLE_CONSOLE_LOGS = StringUtils.fromString("enableConsoleLogs");
+    public static final BString INCLUDE_SOURCE_DATA_IN_CONSOLE = StringUtils.fromString("includeSourceDataInConsole");
+    public static final BString FILE_OUTPUT_MODE = StringUtils.fromString("fileOutputMode");
+    public static final BString FILE_PATH = StringUtils.fromString("filePath");
+    public static final BString CONTENT_TYPE = StringUtils.fromString("contentType");
+    public static final BString FILE_WRITE_OPTION = StringUtils.fromString("fileWriteOption");
+    public static final BString OFFENDING_ROW = StringUtils.fromString("offendingRow");
+
+    // Fail-safe content type values
+    public static final String CONTENT_TYPE_METADATA = "METADATA";
+    public static final String CONTENT_TYPE_RAW = "RAW";
+    public static final String CONTENT_TYPE_RAW_AND_METADATA = "RAW_AND_METADATA";
+
+    // Fail-safe file write option values
+    public static final String FILE_WRITE_APPEND = "APPEND";
+    public static final String FILE_WRITE_OVERWRITE = "OVERWRITE";
+
+    // Fail-safe function name
+    public static final String PRINT_ERROR = "printError";
+
+    // Fail-safe warning messages
+    public static final String XLSX_PARSE_ERROR = "XLSX parse warning at row %d, column %d: %s";
+    public static final String FILE_IO_ERROR = "Failed to create log file at: %s. Caused by: %s";
+    public static final String FILE_OVERWRITE_ERROR = "Failed to overwrite log file at: %s. Caused by: %s";
+    public static final String FILE_WRITE_ERROR = "Failed to write log file at: %s. Caused by: %s";
 }

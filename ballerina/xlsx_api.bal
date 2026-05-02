@@ -38,7 +38,7 @@ import ballerina/jballerina.java;
 # Employee[] sales = check xlsx:parse("report.xlsx", "Sales");
 #
 # // Parse specific sheet by index with options
-# Employee[] data = check xlsx:parse("report.xlsx", 1, {headerRow: 2});
+# Employee[] data = check xlsx:parse("report.xlsx", 1, {headerRowIndex: 2});
 # ```
 #
 # + path - Path to the XLSX file
@@ -75,7 +75,61 @@ public isolated function parse(string path, string|int sheet = 0, ParseOptions o
 # + path - Path to the output XLSX file
 # + options - Write options
 # + return - Error if write fails
-public isolated function write(WritableData data, string path, *WriteOptions options) returns Error? = @java:Method {
+public isolated function write(Data data, string path, *WriteOptions options) returns Error? = @java:Method {
+    'class: "io.ballerina.lib.data.xlsx.Native"
+} external;
+
+// ============================================================================
+// TABLE API - Simple functions for Excel Tables
+// ============================================================================
+
+# Parse data from an Excel table by name.
+#
+# Tables are unique by name across the entire workbook, so no sheet
+# specification is needed. Headers are automatically excluded from results.
+#
+# Supports parsing to:
+# - `string[][]` - Raw string array
+# - `record{}[]` - Array of records (table headers map to fields)
+# - `map<anydata>[]` - Array of maps
+#
+# ```ballerina
+# // Parse table as records
+# Employee[] employees = check xlsx:parseTable("sales.xlsx", "EmployeeTable");
+#
+# // Parse with options
+# Employee[] data = check xlsx:parseTable("report.xlsx", "SalesTable", {
+#     enableConstraintValidation: true
+# });
+# ```
+#
+# + file - Path to the XLSX file
+# + tableName - Name of the table to parse
+# + options - Parse options
+# + t - Target type descriptor
+# + return - Parsed data or TableNotFoundError
+public isolated function parseTable(string file, string tableName, ParseOptions options = {},
+        typedesc<anydata[]> t = <>) returns t|Error = @java:Method {
+    'class: "io.ballerina.lib.data.xlsx.Native"
+} external;
+
+# Write data to an existing Excel table.
+#
+# Writes data to the specified table. If the data exceeds the current table
+# size, the table automatically expands to accommodate the new rows.
+#
+# ```ballerina
+# Employee[] newEmployees = [...];
+# check xlsx:writeTable(newEmployees, "sales.xlsx", "EmployeeTable");
+# ```
+#
+# + data - Data to write
+# + filePath - Path to the XLSX file containing the table
+# + tableName - Name of the table to write to
+# + options - Write options
+# + return - TableNotFoundError if table doesn't exist, or other Error
+public isolated function writeTable(Data data, string filePath, string tableName,
+        *WriteOptions options) returns Error? = @java:Method {
     'class: "io.ballerina.lib.data.xlsx.Native"
 } external;
 

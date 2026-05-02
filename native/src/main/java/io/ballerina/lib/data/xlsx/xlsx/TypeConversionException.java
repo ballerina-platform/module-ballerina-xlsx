@@ -20,8 +20,6 @@ package io.ballerina.lib.data.xlsx.xlsx;
 
 /**
  * Exception thrown when a cell value cannot be converted to the target type.
- *
- * @since 0.1.0
  */
 public class TypeConversionException extends RuntimeException {
 

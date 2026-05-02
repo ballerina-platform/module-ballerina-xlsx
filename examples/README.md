@@ -1,14 +1,12 @@
 # Examples
 
-The `ballerinax/xlsx` connector provides practical examples illustrating usage in various scenarios.
+The `ballerinax/xlsx` library provides practical examples illustrating usage in various scenarios.
 
-[//]: # (TODO: Add examples)
-1. 
-2. 
+1. [Process Employee Data](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/process-employee-data) - Write employee records to an XLSX file, read them back into typed records, filter by department, and write the results to a new file.
 
 ## Prerequisites
 
-[//]: # (TODO: Add prerequisites)
+- Ballerina Swan Lake 2201.13.1 or later
 
 ## Running an example
 

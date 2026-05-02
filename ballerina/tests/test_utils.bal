@@ -55,7 +55,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // multi_sheet.xlsx - Multiple sheets for sheet selection tests
     // -------------------------------------------------------------------------
-    Workbook wb = check new Workbook();
+    Workbook wb = check createWorkbook();
 
     Sheet sheet1 = check wb.createSheet("Sheet1");
     string[][] sheet1Data = [["A1", "B1"], ["A2", "B2"]];
@@ -69,7 +69,7 @@ function setupTestData() returns error? {
     string[][] sheet3Data = [["P1", "Q1"], ["P2", "Q2"]];
     check sheet3.putRows(sheet3Data);
 
-    check wb.save(TEST_DATA_DIR + "multi_sheet.xlsx");
+    check wb.saveAs(TEST_DATA_DIR + "multi_sheet.xlsx");
     check wb.close();
 
     // -------------------------------------------------------------------------
@@ -108,9 +108,9 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // edge_empty_sheet.xlsx - Empty sheet for edge case testing
     // -------------------------------------------------------------------------
-    Workbook wbEmpty = check new Workbook();
+    Workbook wbEmpty = check createWorkbook();
     _ = check wbEmpty.createSheet("EmptySheet");
-    check wbEmpty.save(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
+    check wbEmpty.saveAs(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
     check wbEmpty.close();
 
     // -------------------------------------------------------------------------
@@ -122,12 +122,12 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // edge_empty_rows.xlsx - Data with empty rows in between
     // -------------------------------------------------------------------------
-    Workbook wbGaps = check new Workbook();
+    Workbook wbGaps = check createWorkbook();
     Sheet sheetGaps = check wbGaps.createSheet("DataWithGaps");
     // Manually write rows with gaps using putRows at specific positions
     // Row 0: headers, Row 1: data, Row 2: empty, Row 3: data, Row 4: empty, Row 5: data
     string[][] gapsData = [
-        ["Name", "Value"],
+        ["name", "value"],
         ["First", "100"],
         ["", ""],           // Empty row (will be ghost row)
         ["Second", "200"],
@@ -135,7 +135,7 @@ function setupTestData() returns error? {
         ["Third", "300"]
     ];
     check sheetGaps.putRows(gapsData);
-    check wbGaps.save(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    check wbGaps.saveAs(TEST_DATA_DIR + "edge_empty_rows.xlsx");
     check wbGaps.close();
 
     // -------------------------------------------------------------------------
@@ -213,7 +213,8 @@ function cleanupTestData() returns error? {
         "annotated.xlsx",
         "numeric_types.xlsx",
         "nilable_fields.xlsx",
-        "case_headers.xlsx"
+        "case_headers.xlsx",
+        "extreme_numeric_test.xlsx"
     ];
 
     foreach string fileName in filesToRemove {

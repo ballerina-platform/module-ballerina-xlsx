@@ -373,7 +373,7 @@ function cleanupFailSafeLogFile() returns error? {
 }
 function testSheetGetRowsWithFailSafe() returns error? {
     // Test that Sheet.getRows() supports fail-safe error handling
-    Workbook wb = check new Workbook(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    Workbook wb = check openFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     RowReadOptions opts = {
@@ -406,7 +406,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
         check file:remove(FAIL_SAFE_ERROR_LOG);
     }
 
-    Workbook wb = check new Workbook(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    Workbook wb = check openFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     RowReadOptions opts = {
@@ -440,7 +440,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
 }
 function testSheetGetRowsWithoutFailSafeFails() returns error? {
     // Test that Sheet.getRows() without fail-safe fails on first error
-    Workbook wb = check new Workbook(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    Workbook wb = check openFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheetByIndex(0);
 
     // Without fail-safe, parsing should throw on first error
@@ -500,7 +500,7 @@ function testSheetBlankCellRequiredFieldWithFailSafe() returns error? {
     ];
     check write(data, testFile);
 
-    Workbook wb = check new Workbook(testFile);
+    Workbook wb = check openFile(testFile);
     Sheet sheet = check wb.getSheetByIndex(0);
 
     RowReadOptions opts = {
@@ -518,4 +518,21 @@ function testSheetBlankCellRequiredFieldWithFailSafe() returns error? {
 
     check wb.close();
     check file:remove(testFile);
+}
+
+@test:AfterSuite
+function cleanupFailSafeTestData() returns error? {
+    string[] filesToRemove = [
+        "failsafe_test.xlsx",
+        "blank_failsafe_test.xlsx",
+        "sheet_blank_failsafe_test.xlsx",
+        "failsafe_errors.log"
+    ];
+
+    foreach string fileName in filesToRemove {
+        string filePath = FAIL_SAFE_TEST_DIR + fileName;
+        if check file:test(filePath, file:EXISTS) {
+            check file:remove(filePath);
+        }
+    }
 }

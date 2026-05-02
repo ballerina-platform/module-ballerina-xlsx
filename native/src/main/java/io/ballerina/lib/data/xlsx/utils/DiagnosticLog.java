@@ -31,8 +31,6 @@ import java.util.ResourceBundle;
 
 /**
  * Utility class for creating diagnostic errors.
- *
- * @since 0.1.0
  */
 public final class DiagnosticLog {
 
@@ -119,7 +117,7 @@ public final class DiagnosticLog {
      * @return BError
      */
     public static BError parseError(String message, String sheetName, Integer row, Integer column) {
-        BMap<BString, Object> details = createErrorDetails(sheetName, null, row, column);
+        BMap<BString, Object> details = createErrorDetails(sheetName, null, null, row, column);
         return createTypedError(Constants.PARSE_ERROR_TYPE, message, details);
     }
 
@@ -160,7 +158,7 @@ public final class DiagnosticLog {
      */
     public static BError sheetNotFoundError(String sheetName) {
         String message = "Sheet '" + sheetName + "' not found in workbook";
-        BMap<BString, Object> details = createErrorDetails(sheetName, null, null, null);
+        BMap<BString, Object> details = createErrorDetails(sheetName, null, null, null, null);
         return createTypedError(Constants.SHEET_NOT_FOUND_ERROR_TYPE, message, details);
     }
 
@@ -186,8 +184,83 @@ public final class DiagnosticLog {
      * @return BError
      */
     public static BError typeConversionError(String message, String cellAddress, Integer row, Integer column) {
-        BMap<BString, Object> details = createErrorDetails(null, cellAddress, row, column);
+        BMap<BString, Object> details = createErrorDetails(null, null, cellAddress, row, column);
         return createTypedError(Constants.TYPE_CONVERSION_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create a constraint validation error.
+     *
+     * @param message Error message from constraint validation
+     * @param row     Row number where validation failed
+     * @param column  Column number where validation failed (if applicable)
+     * @return BError
+     */
+    public static BError constraintValidationError(String message, Integer row, Integer column) {
+        BMap<BString, Object> details = createErrorDetails(null, null, null, row, column);
+        return createTypedError(Constants.CONSTRAINT_VALIDATION_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create a table not found error.
+     *
+     * @param tableName Table name that was not found
+     * @return BError
+     */
+    public static BError tableNotFoundError(String tableName) {
+        String message = "Table '" + tableName + "' not found in workbook";
+        BMap<BString, Object> details = createErrorDetails(null, tableName, null, null, null);
+        return createTypedError(Constants.TABLE_NOT_FOUND_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create a table not found error with sheet context.
+     *
+     * @param tableName Table name that was not found
+     * @param sheetName Sheet name where table was expected
+     * @return BError
+     */
+    public static BError tableNotFoundError(String tableName, String sheetName) {
+        String message = "Table '" + tableName + "' not found in sheet '" + sheetName + "'";
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        return createTypedError(Constants.TABLE_NOT_FOUND_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create a table overlap error.
+     *
+     * @param tableName     Name of the table being created
+     * @param existingTable Name of the existing overlapping table
+     * @param sheetName     Sheet name where overlap occurs
+     * @return BError
+     */
+    public static BError tableOverlapError(String tableName, String existingTable, String sheetName) {
+        String message = "Cannot create table '" + tableName + "': range overlaps with existing table '" +
+                existingTable + "' in sheet '" + sheetName + "'";
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        return createTypedError(Constants.TABLE_OVERLAP_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create an invalid table range error.
+     *
+     * @param message   Error message describing the invalid range
+     * @param sheetName Sheet name (if applicable)
+     * @return BError
+     */
+    public static BError invalidTableRangeError(String message, String sheetName) {
+        BMap<BString, Object> details = createErrorDetails(sheetName, null, null, null, null);
+        return createTypedError(Constants.INVALID_TABLE_RANGE_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create an invalid table range error.
+     *
+     * @param message Error message describing the invalid range
+     * @return BError
+     */
+    public static BError invalidTableRangeError(String message) {
+        return createTypedError(Constants.INVALID_TABLE_RANGE_ERROR_TYPE, message, null);
     }
 
     private static BError createTypedError(String errorType, String message, BMap<BString, Object> details) {
@@ -200,12 +273,16 @@ public final class DiagnosticLog {
         );
     }
 
-    private static BMap<BString, Object> createErrorDetails(String sheetName, String cellAddress,
+    private static BMap<BString, Object> createErrorDetails(String sheetName, String tableName, String cellAddress,
                                                             Integer row, Integer column) {
-        BMap<BString, Object> details = ValueCreator.createMapValue();
+        // Create typed ErrorDetails record instead of generic map
+        BMap<BString, Object> details = ValueCreator.createRecordValue(ModuleUtils.getModule(), "ErrorDetails");
 
         if (sheetName != null) {
             details.put(StringUtils.fromString("sheetName"), StringUtils.fromString(sheetName));
+        }
+        if (tableName != null) {
+            details.put(StringUtils.fromString("tableName"), StringUtils.fromString(tableName));
         }
         if (cellAddress != null) {
             details.put(StringUtils.fromString("cellAddress"), StringUtils.fromString(cellAddress));

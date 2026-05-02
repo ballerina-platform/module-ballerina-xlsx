@@ -32,14 +32,25 @@ public type TypeConversionError distinct Error;
 # Represents an error when constraint validation fails for a record field.
 public type ConstraintValidationError distinct Error;
 
+# Represents an error when a requested table is not found.
+public type TableNotFoundError distinct Error;
+
+# Represents an error when creating a table would overlap with an existing table.
+public type TableOverlapError distinct Error;
+
+# Represents an error when a table range specification is invalid.
+public type InvalidTableRangeError distinct Error;
+
 # Details for XLSX errors.
 #
 # + sheetName - Name of the sheet where error occurred (if applicable)
+# + tableName - Name of the table where error occurred (if applicable)
 # + cellAddress - Cell address where error occurred (if applicable)
 # + rowNumber - Row number where error occurred (if applicable)
 # + columnNumber - Column number where error occurred (if applicable)
 public type ErrorDetails record {|
     string sheetName?;
+    string tableName?;
     string cellAddress?;
     int rowNumber?;
     int columnNumber?;

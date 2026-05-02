@@ -29,8 +29,6 @@ import org.apache.poi.ss.util.CellReference;
  * Utility class for detecting the actual used range of a sheet.
  * This prevents issues with "ghost rows" - rows that have formatting
  * but no actual data.
- *
- * @since 0.1.0
  */
 public final class UsedRangeDetector {
 
