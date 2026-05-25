@@ -32,13 +32,13 @@ import ballerina/jballerina.java;
 #
 # ```ballerina
 # // Parse first sheet as records
-# Employee[] employees = check xlsx:parse("employees.xlsx");
+# Employee[] employees = check xlsx:parseSheet("employees.xlsx");
 #
 # // Parse specific sheet by name
-# Employee[] sales = check xlsx:parse("report.xlsx", "Sales");
+# Employee[] sales = check xlsx:parseSheet("report.xlsx", "Sales");
 #
 # // Parse specific sheet by index with options
-# Employee[] data = check xlsx:parse("report.xlsx", 1, {headerRowIndex: 2});
+# Employee[] data = check xlsx:parseSheet("report.xlsx", 1, {headerRowIndex: 2});
 # ```
 #
 # + path - Path to the XLSX file
@@ -46,7 +46,7 @@ import ballerina/jballerina.java;
 # + options - Parse options
 # + t - Target type descriptor
 # + return - Parsed data or error
-public isolated function parse(string path, string|int sheet = 0, ParseOptions options = {},
+public isolated function parseSheet(string path, string|int sheet = 0, ParseOptions options = {},
         typedesc<anydata[]> t = <>) returns t|Error = @java:Method {
     'class: "io.ballerina.lib.data.xlsx.Native"
 } external;
@@ -65,17 +65,17 @@ public isolated function parse(string path, string|int sheet = 0, ParseOptions o
 # Employee[] employees = [{name: "John", age: 30}];
 #
 # // Write to file
-# check xlsx:write(employees, "output.xlsx");
+# check xlsx:writeSheet(employees, "output.xlsx");
 #
 # // Write with options
-# check xlsx:write(employees, "report.xlsx", sheetName = "Employees");
+# check xlsx:writeSheet(employees, "report.xlsx", sheetName = "Employees");
 # ```
 #
 # + data - Data to write
 # + path - Path to the output XLSX file
 # + options - Write options
 # + return - Error if write fails
-public isolated function write(Data data, string path, *WriteOptions options) returns Error? = @java:Method {
+public isolated function writeSheet(Data data, string path, *WriteOptions options) returns Error? = @java:Method {
     'class: "io.ballerina.lib.data.xlsx.Native"
 } external;
 

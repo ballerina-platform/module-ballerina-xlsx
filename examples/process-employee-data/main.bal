@@ -20,17 +20,17 @@ public function main() returns error? {
         {name: "Dave", department: "Sales", salary: 67000},
         {name: "Eve", department: "Engineering", salary: 102000}
     ];
-    check xlsx:write(employees, "resources/employees.xlsx");
+    check xlsx:writeSheet(employees, "resources/employees.xlsx");
     io:println(string `Created employees.xlsx`);
 
     // Read the spreadsheet back into typed records
-    Employee[] parsed = check xlsx:parse("resources/employees.xlsx");
+    Employee[] parsed = check xlsx:parseSheet("resources/employees.xlsx");
 
     // Filter engineering team and write to a new file
     Employee[] engineers = from Employee e in parsed
         where e.department == "Engineering"
         select e;
 
-    check xlsx:write(engineers, "resources/engineers.xlsx");
+    check xlsx:writeSheet(engineers, "resources/engineers.xlsx");
     io:println(string `Wrote ${engineers.length()} engineers to engineers.xlsx`);
 }

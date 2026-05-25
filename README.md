@@ -7,7 +7,7 @@
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/ballerina-platform/module-ballerina-xlsx.svg)](https://github.com/ballerina-platform/module-ballerina-xlsx/commits/main)
 [![GitHub Issues](https://img.shields.io/github/issues/ballerina-platform/ballerina-library/module/xlsx.svg?label=Open%20Issues)](https://github.com/ballerina-platform/ballerina-library/labels/module%2Fxlsx)
 
-The `ballerinax/xlsx` library provides functionality to read and write Microsoft Excel files in the XLSX format with type-safe data binding to Ballerina records. It exposes a simple file-based API for single-sheet operations and a richer Workbook/Sheet/Table API for multi-sheet workbooks and Excel Tables.
+The `ballerinax/xlsx` library provides functionality to read and write Microsoft Excel files in the XLSX format with type-safe data binding to Ballerina records. It exposes a simple file-based API (`parseSheet` / `writeSheet`) for single-sheet ETL and an object-based Workbook API for multi-sheet operations, byte-array I/O, and Excel Tables.
 
 All processing is done locally with no external service dependencies.
 
@@ -34,7 +34,7 @@ type Employee record {|
     string department;
 |};
 
-Employee[] employees = check xlsx:parse("employees.xlsx");
+Employee[] employees = check xlsx:parseSheet("employees.xlsx");
 ```
 
 #### Write records to an XLSX file
@@ -45,7 +45,7 @@ Employee[] employees = [
     {name: "Jane", age: 28, department: "HR"}
 ];
 
-check xlsx:write(employees, "output.xlsx", sheetName = "Employees");
+check xlsx:writeSheet(employees, "output.xlsx", sheetName = "Employees");
 ```
 
 #### Map non-matching headers with `@xlsx:Name`
@@ -59,13 +59,13 @@ type Employee record {|
     int tenure;
 |};
 
-Employee[] employees = check xlsx:parse("employees.xlsx");
+Employee[] employees = check xlsx:parseSheet("employees.xlsx");
 ```
 
 #### Work with multiple sheets via the Workbook API
 
 ```ballerina
-xlsx:Workbook wb = check xlsx:openFile("report.xlsx");
+xlsx:Workbook wb = check new("report.xlsx");
 
 xlsx:Sheet sales = check wb.getSheet("Sales");
 Employee[] salesRows = check sales.getRows();
@@ -79,11 +79,60 @@ check wb.close();
 
 #### Read and write Excel Tables
 
+For one-shot table-by-name flows, the tier 1 functions are simplest (tables are unique across the workbook, so no sheet specifier is needed):
+
 ```ballerina
 Employee[] employees = check xlsx:parseTable("sales.xlsx", "EmployeeTable");
 
 Employee[] additions = [{name: "Alice", age: 31, department: "Eng"}];
-check xlsx:writeTable(additions, "sales.xlsx", "EmployeeTable");
+check xlsx:writeTable([...employees, ...additions], "sales.xlsx", "EmployeeTable");
+// writeTable auto-expands the table to fit the data
+```
+
+For totals rows, rename, resize, or coordination with other workbook operations, go through the Workbook API:
+
+```ballerina
+xlsx:Workbook wb = check new("sales.xlsx");
+xlsx:Table empTable = check wb.getTable("EmployeeTable");
+
+Employee[] employees = check empTable.getRows();
+if empTable.hasTotalsRow() {
+    map<anydata> totals = check empTable.getTotalsRow();
+    // ...
+}
+
+check wb.save();
+check wb.close();
+```
+
+#### Bind dates and times to `time:Civil`, `time:Date`, or `time:TimeOfDay`
+
+Declare the field's type to control the shape — typed time records, or ISO 8601 strings:
+
+```ballerina
+import ballerina/time;
+
+type Transaction record {|
+    int id;
+    time:Civil timestamp;      // date-time cell → time:Civil
+    time:Date settledOn;       // date-only cell → time:Date
+    decimal amount;
+|};
+
+Transaction[] txns = check xlsx:parseSheet("transactions.xlsx");
+```
+
+#### Read from bytes, write to bytes
+
+```ballerina
+byte[] inputBytes = check sftp->get("/in/report.xlsx");
+xlsx:Workbook wb = check new(inputBytes);
+
+// ...read, modify...
+
+byte[] outputBytes = check wb.toBytes();
+check sftp->put("/out/report.xlsx", outputBytes);
+check wb.close();
 ```
 
 ### Step 3: Run the Ballerina application

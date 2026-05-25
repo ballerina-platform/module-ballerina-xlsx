@@ -22,7 +22,7 @@ import ballerina/test;
 // =============================================================================
 
 @test:Config {
-    groups: ["write"]
+    groups: ["writeSheet"]
 }
 function testWriteStringArray() returns error? {
     string[][] data = [
@@ -32,13 +32,13 @@ function testWriteStringArray() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_string");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
     // Verify file was created
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
     // Verify by parsing back and checking exact content
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     assertStringArrayEquals(parsed, data, "Write/read round-trip");
 
     // Cleanup
@@ -46,7 +46,7 @@ function testWriteStringArray() returns error? {
 }
 
 @test:Config {
-    groups: ["write"]
+    groups: ["writeSheet"]
 }
 function testWriteRecords() returns error? {
     Person[] people = [
@@ -55,13 +55,13 @@ function testWriteRecords() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_records");
-    check write(people, tempFile);
+    check writeSheet(people, tempFile);
 
     // Verify file was created
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
     // Verify by parsing back as string array to check headers
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
 
     // Verify headers exist (order may vary)
@@ -78,7 +78,7 @@ function testWriteRecords() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "options"]
+    groups: ["writeSheet", "options"]
 }
 function testWriteWithoutHeaders() returns error? {
     Person[] people = [
@@ -86,10 +86,10 @@ function testWriteWithoutHeaders() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_no_headers");
-    check write(people, tempFile, writeHeaders = false);
+    check writeSheet(people, tempFile, writeHeaders = false);
 
     // Parse back - should only have data row, no headers
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 1, "Should have only 1 row (no headers)");
 
     // First row should be data, not header names
@@ -100,13 +100,13 @@ function testWriteWithoutHeaders() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "options"]
+    groups: ["writeSheet", "options"]
 }
 function testWriteWithCustomSheetName() returns error? {
     string[][] data = [["Data", "Value"], ["A", "1"]];
 
     string tempFile = getTempFilePath("write_sheet_name");
-    check write(data, tempFile, sheetName = "MyCustomSheet");
+    check writeSheet(data, tempFile, sheetName = "MyCustomSheet");
 
     // Verify by opening as workbook and checking sheet name
     Workbook wb = check openFile(tempFile);
@@ -120,7 +120,7 @@ function testWriteWithCustomSheetName() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "options"]
+    groups: ["writeSheet", "options"]
 }
 function testWriteWithStartRow() returns error? {
     string[][] data = [
@@ -129,11 +129,11 @@ function testWriteWithStartRow() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_start_row");
-    check write(data, tempFile, startRowIndex = 2);
+    check writeSheet(data, tempFile, startRowIndex = 2);
 
     // Parse back - data should start at row 2 (0-based), so rows 0,1 are empty
     // But parse will only see the used range starting from row 2
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     // The data we wrote should be there
     test:assertEquals(parsed.length(), 2, "Should have 2 rows");
@@ -149,7 +149,7 @@ function testWriteWithStartRow() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["write"]
+    groups: ["writeSheet"]
 }
 function testRoundTripStringArray() returns error? {
     string[][] original = [
@@ -162,10 +162,10 @@ function testRoundTripStringArray() returns error? {
     string tempFile = getTempFilePath("roundtrip_string");
 
     // Write to XLSX
-    check write(original, tempFile);
+    check writeSheet(original, tempFile);
 
     // Read back
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     // Verify exact match
     assertStringArrayEquals(parsed, original, "Round-trip string array");
@@ -175,7 +175,7 @@ function testRoundTripStringArray() returns error? {
 }
 
 @test:Config {
-    groups: ["write"]
+    groups: ["writeSheet"]
 }
 function testRoundTripRecords() returns error? {
     Employee[] original = [
@@ -186,10 +186,10 @@ function testRoundTripRecords() returns error? {
     string tempFile = getTempFilePath("roundtrip_records");
 
     // Write to XLSX
-    check write(original, tempFile);
+    check writeSheet(original, tempFile);
 
     // Read back as records
-    Employee[] parsed = check parse(tempFile);
+    Employee[] parsed = check parseSheet(tempFile);
 
     // Verify
     assertEmployeesEqual(parsed, original);
@@ -199,7 +199,7 @@ function testRoundTripRecords() returns error? {
 }
 
 @test:Config {
-    groups: ["write"]
+    groups: ["writeSheet"]
 }
 function testRoundTripWithSpecialCharacters() returns error? {
     string[][] original = [
@@ -212,8 +212,8 @@ function testRoundTripWithSpecialCharacters() returns error? {
 
     string tempFile = getTempFilePath("roundtrip_special");
 
-    check write(original, tempFile);
-    string[][] parsed = check parse(tempFile);
+    check writeSheet(original, tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     // Verify special characters preserved
     test:assertEquals(parsed[1][1], "Special chars: @#$%^&*()", "Special chars preserved");
@@ -228,7 +228,7 @@ function testRoundTripWithSpecialCharacters() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["write", "types"]
+    groups: ["writeSheet", "types"]
 }
 function testWriteIntegerValues() returns error? {
     // Write records with int values
@@ -239,10 +239,10 @@ function testWriteIntegerValues() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_int");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
     // Read back and verify
-    NumericTypes[] parsed = check parse(tempFile);
+    NumericTypes[] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 3, "Should have 3 records");
     test:assertEquals(parsed[0].intValue, 42, "First int should be 42");
     test:assertEquals(parsed[1].intValue, -100, "Second int should be -100");
@@ -253,7 +253,7 @@ function testWriteIntegerValues() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "types"]
+    groups: ["writeSheet", "types"]
 }
 function testWriteDecimalValues() returns error? {
     NumericTypes[] data = [
@@ -262,9 +262,9 @@ function testWriteDecimalValues() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_decimal");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    NumericTypes[] parsed = check parse(tempFile);
+    NumericTypes[] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 2, "Should have 2 records");
     // Decimal comparison with tolerance
     test:assertTrue(parsed[0].decimalValue > 3.14d && parsed[0].decimalValue < 3.15d,
@@ -277,7 +277,7 @@ function testWriteDecimalValues() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "types"]
+    groups: ["writeSheet", "types"]
 }
 function testWriteBooleanValues() returns error? {
     Person[] data = [
@@ -286,9 +286,9 @@ function testWriteBooleanValues() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_boolean");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    Person[] parsed = check parse(tempFile);
+    Person[] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 2, "Should have 2 records");
     test:assertEquals(parsed[0].active, true, "First should be active");
     test:assertEquals(parsed[1].active, false, "Second should be inactive");
@@ -298,7 +298,7 @@ function testWriteBooleanValues() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "types"]
+    groups: ["writeSheet", "types"]
 }
 function testWriteMapArray() returns error? {
     map<anydata>[] data = [
@@ -307,10 +307,10 @@ function testWriteMapArray() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_map");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
     // Read back as string array to verify structure
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
 
     // Verify headers (map keys become headers)
@@ -328,7 +328,7 @@ function testWriteMapArray() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["write", "annotation"]
+    groups: ["writeSheet", "annotation"]
 }
 function testAnnotatedRecordWrite() returns error? {
     AnnotatedEmployee[] employees = [
@@ -337,10 +337,10 @@ function testAnnotatedRecordWrite() returns error? {
     ];
 
     string tempFile = getTempFilePath("annotated_write");
-    check write(employees, tempFile);
+    check writeSheet(employees, tempFile);
 
     // Parse back as string[][] to verify headers match annotation values
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
 
@@ -359,7 +359,7 @@ function testAnnotatedRecordWrite() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "annotation"]
+    groups: ["writeSheet", "annotation"]
 }
 function testAnnotatedRecordRoundTrip() returns error? {
     AnnotatedEmployee[] original = [
@@ -368,10 +368,10 @@ function testAnnotatedRecordRoundTrip() returns error? {
     ];
 
     string tempFile = getTempFilePath("annotated_roundtrip");
-    check write(original, tempFile);
+    check writeSheet(original, tempFile);
 
     // Parse back using the same annotated record type
-    AnnotatedEmployee[] parsed = check parse(tempFile);
+    AnnotatedEmployee[] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have 2 employee records");
     test:assertEquals(parsed[0].firstName, "Alice", "First employee firstName");
@@ -389,19 +389,19 @@ function testAnnotatedRecordRoundTrip() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["write", "edge"]
+    groups: ["writeSheet", "edge"]
 }
 function testWriteEmptyArray() returns error? {
     string[][] data = [];
 
     string tempFile = getTempFilePath("write_empty");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
     // File should be created (empty workbook)
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
     // Parse back - should be empty
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 0, "Should be empty");
 
     // Cleanup
@@ -409,15 +409,15 @@ function testWriteEmptyArray() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "edge"]
+    groups: ["writeSheet", "edge"]
 }
 function testWriteSingleRow() returns error? {
     string[][] data = [["Single", "Row", "Data"]];
 
     string tempFile = getTempFilePath("write_single_row");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 1, "Should have 1 row");
     test:assertEquals(parsed[0].length(), 3, "Should have 3 columns");
     test:assertEquals(parsed[0][0], "Single", "First cell");
@@ -428,15 +428,15 @@ function testWriteSingleRow() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "edge"]
+    groups: ["writeSheet", "edge"]
 }
 function testWriteSingleCell() returns error? {
     string[][] data = [["OnlyCell"]];
 
     string tempFile = getTempFilePath("write_single_cell");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 1, "Should have 1 row");
     test:assertEquals(parsed[0].length(), 1, "Should have 1 column");
     test:assertEquals(parsed[0][0], "OnlyCell", "Cell value");
@@ -446,7 +446,7 @@ function testWriteSingleCell() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "edge"]
+    groups: ["writeSheet", "edge"]
 }
 function testWriteUnicodeData() returns error? {
     string[][] data = [
@@ -457,9 +457,9 @@ function testWriteUnicodeData() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_unicode");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 4, "Should have 4 rows");
     test:assertEquals(parsed[0][0], "Language", "Header");
     test:assertEquals(parsed[1][0], "Japanese", "First data row label");
@@ -473,7 +473,7 @@ function testWriteUnicodeData() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "edge"]
+    groups: ["writeSheet", "edge"]
 }
 function testWriteLargeDataset() returns error? {
     // Create a moderately large dataset
@@ -485,9 +485,9 @@ function testWriteLargeDataset() returns error? {
     }
 
     string tempFile = getTempFilePath("write_large");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 101, "Should have 101 rows (header + 100 data)");
     test:assertEquals(parsed[1][0], "1", "First data ID should be 1");
     test:assertEquals(parsed[100][0], "100", "Last data ID should be 100");
@@ -497,7 +497,7 @@ function testWriteLargeDataset() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "edge"]
+    groups: ["writeSheet", "edge"]
 }
 function testWriteWideData() returns error? {
     // Create wide data with 10 columns
@@ -509,9 +509,9 @@ function testWriteWideData() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_wide");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 3, "Should have header + 2 data rows");
     test:assertEquals(parsed[0].length(), 10, "Should have 10 columns");
 
@@ -524,25 +524,25 @@ function testWriteWideData() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["write"]
+    groups: ["writeSheet"]
 }
 function testWriteOverwritesExistingFile() returns error? {
     string tempFile = getTempFilePath("overwrite");
 
     // Write first data
     string[][] data1 = [["First", "Data"]];
-    check write(data1, tempFile);
+    check writeSheet(data1, tempFile);
 
     // Verify first write
-    string[][] parsed1 = check parse(tempFile);
+    string[][] parsed1 = check parseSheet(tempFile);
     test:assertEquals(parsed1[0][0], "First", "First write should have 'First'");
 
     // Overwrite with different data
     string[][] data2 = [["Second", "Data", "More"]];
-    check write(data2, tempFile);
+    check writeSheet(data2, tempFile);
 
     // Verify overwrite - should have new data, not old
-    string[][] parsed2 = check parse(tempFile);
+    string[][] parsed2 = check parseSheet(tempFile);
     test:assertEquals(parsed2.length(), 1, "Should have 1 row");
     test:assertEquals(parsed2[0][0], "Second", "Should be overwritten with 'Second'");
     test:assertEquals(parsed2[0].length(), 3, "Should have 3 columns now");
@@ -557,7 +557,7 @@ function testWriteOverwritesExistingFile() returns error? {
 // Tests for position-aware writing with Row-wrapped types.
 
 @test:Config {
-    groups: ["write", "row-wrapper"]
+    groups: ["writeSheet", "row-wrapper"]
 }
 function testWriteRowWrappedData() returns error? {
     // Create Row-wrapped data with gaps (simulating empty rows)
@@ -568,10 +568,10 @@ function testWriteRowWrappedData() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_row_wrapper");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
     // Parse back as string array to verify positions
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     // Should have header + at least 5 rows (positions 0,1,2,3,4)
     // Row 0: header, Row 1: First, Row 2: empty, Row 3: Second, Row 4: empty, Row 5: Third
@@ -589,7 +589,7 @@ function testWriteRowWrappedData() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "row-wrapper"]
+    groups: ["writeSheet", "row-wrapper"]
 }
 function testWriteRowWrappedDataWithNullValues() returns error? {
     // Create Row-wrapped data including null values (empty rows)
@@ -600,10 +600,10 @@ function testWriteRowWrappedDataWithNullValues() returns error? {
     ];
 
     string tempFile = getTempFilePath("write_row_wrapper_null");
-    check write(data, tempFile);
+    check writeSheet(data, tempFile);
 
     // Parse back
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     // Null values are skipped during write, so we should have header + 2 data rows
     test:assertTrue(parsed.length() >= 3, "Should have header + data rows");
@@ -619,11 +619,11 @@ function testWriteRowWrappedDataWithNullValues() returns error? {
 // Tests that verify position preservation during parse -> modify -> write -> parse cycle.
 
 @test:Config {
-    groups: ["write", "row-wrapper", "roundtrip"]
+    groups: ["writeSheet", "row-wrapper", "roundtrip"]
 }
 function testRoundTripWithRowWrapper() returns error? {
     // Step 1: Parse file with empty rows using Row wrapper
-    SimpleDataRow[] originalRows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    SimpleDataRow[] originalRows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Should have 5 rows including empty ones
     test:assertEquals(originalRows.length(), 5, "Should parse 5 rows including empty");
@@ -636,10 +636,10 @@ function testRoundTripWithRowWrapper() returns error? {
 
     // Step 3: Write back
     string tempFile = getTempFilePath("roundtrip_row_wrapper");
-    check write(modifiedRows, tempFile);
+    check writeSheet(modifiedRows, tempFile);
 
     // Step 4: Parse again and verify positions are preserved
-    SimpleDataRow[] reparsedRows = check parse(tempFile);
+    SimpleDataRow[] reparsedRows = check parseSheet(tempFile);
 
     // Verify the modification persisted at the correct position
     test:assertEquals(reparsedRows[0].rowIndex, 0, "First row should still be at rowIndex 0");
@@ -655,11 +655,11 @@ function testRoundTripWithRowWrapper() returns error? {
 }
 
 @test:Config {
-    groups: ["write", "row-wrapper", "roundtrip"]
+    groups: ["writeSheet", "row-wrapper", "roundtrip"]
 }
 function testRoundTripFilterAndWriteBack() returns error? {
     // Step 1: Parse with Row wrapper
-    SimpleDataRow[] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    SimpleDataRow[] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Step 2: Filter (keep only rows with value > 150)
     SimpleDataRow[] filtered = rows.filter(r => r.value != null && r.value?.value > 150);
@@ -672,10 +672,10 @@ function testRoundTripFilterAndWriteBack() returns error? {
 
     // Step 3: Write filtered data (positions should be used)
     string tempFile = getTempFilePath("roundtrip_filtered");
-    check write(filtered, tempFile);
+    check writeSheet(filtered, tempFile);
 
     // Step 4: Parse back and verify
-    SimpleDataRow[] reparsed = check parse(tempFile);
+    SimpleDataRow[] reparsed = check parseSheet(tempFile);
 
     // The written data should maintain the relative positions
     test:assertTrue(reparsed.length() >= 2, "Should have at least 2 rows");

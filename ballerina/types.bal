@@ -180,13 +180,13 @@ public type CellRange record {|
 # |};
 #
 # // Parse with position preservation
-# PersonRow[] rows = check xlsx:parse("data.xlsx");
+# PersonRow[] rows = check xlsx:parseSheet("data.xlsx");
 # // rows[0] = { rowIndex: 0, value: { name: "Alice", age: 30 } }
 # // rows[1] = { rowIndex: 1, value: null }  // empty row with position preserved
 # // rows[2] = { rowIndex: 2, value: { name: "Bob", age: 25 } }
 #
 # // Write back - positions are restored
-# check xlsx:write(rows, "output.xlsx");
+# check xlsx:writeSheet(rows, "output.xlsx");
 # ```
 #
 # **Behavior:**
@@ -256,7 +256,7 @@ public type FileOutputMode record {|
 #
 # # Example: Console logging only
 # ```ballerina
-# Employee[] employees = check xlsx:parse("data.xlsx", 0, {
+# Employee[] employees = check xlsx:parseSheet("data.xlsx", 0, {
 #     failSafe: {
 #         enableConsoleLogs: true,
 #         includeSourceDataInConsole: true
@@ -266,7 +266,7 @@ public type FileOutputMode record {|
 #
 # # Example: File logging only
 # ```ballerina
-# Employee[] employees = check xlsx:parse("data.xlsx", 0, {
+# Employee[] employees = check xlsx:parseSheet("data.xlsx", 0, {
 #     failSafe: {
 #         enableConsoleLogs: false,
 #         fileOutputMode: {

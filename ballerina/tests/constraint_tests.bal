@@ -42,7 +42,7 @@ const string CONSTRAINT_TEST_DIR = "tests/resources/testdata/";
 function testConstraintValidationEnabledDefault() returns error? {
     // Parse with constraint validation enabled (default)
     // Should work even if constraint module is not available
-    Employee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_test.xlsx");
+    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx");
 
     // Should parse successfully
     test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
@@ -60,7 +60,7 @@ function testConstraintValidationExplicitlyEnabled() returns error? {
         enableConstraintValidation: true
     };
 
-    Employee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
+    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
 
     // Should parse successfully
     test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
@@ -76,7 +76,7 @@ function testConstraintValidationDisabled() returns error? {
         enableConstraintValidation: false
     };
 
-    Employee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
+    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
 
     // Should parse successfully
     test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
@@ -95,7 +95,7 @@ function testConstraintValidationWithFailSafe() returns error? {
         }
     };
 
-    Employee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
+    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
 
     // Should parse successfully
     test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
@@ -121,7 +121,7 @@ type ConstrainedEmployee record {|
 function testConstraintViolationReturnsError() returns error? {
     // Parse data with constraint violation (age = -5)
     // Should return ConstraintValidationError
-    ConstrainedEmployee[]|Error result = parse(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx");
+    ConstrainedEmployee[]|Error result = parseSheet(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx");
 
     test:assertTrue(result is ConstraintValidationError,
         "Should return ConstraintValidationError for invalid age");
@@ -140,7 +140,7 @@ function testConstraintViolationWithFailSafeSkipsInvalidRows() returns error? {
         }
     };
 
-    ConstrainedEmployee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
+    ConstrainedEmployee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
 
     // Should only return valid rows (rows with age between 18 and 120)
     test:assertEquals(employees.length(), 2, "Should skip rows with invalid age");
@@ -158,7 +158,7 @@ function testConstraintViolationDisabledAllowsInvalidData() returns error? {
         enableConstraintValidation: false
     };
 
-    ConstrainedEmployee[] employees = check parse(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
+    ConstrainedEmployee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
 
     // All rows should be returned including invalid ones
     test:assertEquals(employees.length(), 4, "Should return all rows when validation disabled");
@@ -182,7 +182,7 @@ function setupConstraintViolationTestData() returns error? {
         ["Alice", "150", "HR"]           // Invalid: age > 120
     ];
 
-    check write(testData, testFilePath);
+    check writeSheet(testData, testFilePath);
 }
 
 // =============================================================================
@@ -205,7 +205,7 @@ function setupConstraintTestData() returns error? {
         ["Bob", "45", "Sales"]
     ];
 
-    check write(testData, testFilePath);
+    check writeSheet(testData, testFilePath);
 }
 
 @test:AfterSuite

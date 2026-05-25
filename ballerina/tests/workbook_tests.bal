@@ -175,7 +175,7 @@ function testWorkbookSave() returns error? {
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
     // Verify by reading back
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 2, "Should have 2 rows");
     test:assertEquals(parsed[0][0], "Name", "First header");
     test:assertEquals(parsed[1][0], "Test", "First data");
@@ -429,7 +429,7 @@ function testWorkbookOpenModifySave() returns error? {
     // First create a file
     string tempFile = getTempFilePath("lifecycle");
     string[][] initialData = [["Original", "Data"]];
-    check write(initialData, tempFile);
+    check writeSheet(initialData, tempFile);
 
     // Open, modify, save
     Workbook wb = check openFile(tempFile);
@@ -443,7 +443,7 @@ function testWorkbookOpenModifySave() returns error? {
     check wb.close();
 
     // Verify modifications
-    string[][] result = check parse(tempFile);
+    string[][] result = check parseSheet(tempFile);
     test:assertTrue(result.length() >= 2, "Should have original + new data");
 
     check removeTempFile(tempFile);
@@ -722,7 +722,7 @@ function testSaveAsUpdateSourcePath() returns error? {
     check wb.close();
 
     // Verify by reading back
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 3, "Should have 3 rows");
     test:assertEquals(parsed[2][0], "More", "Added row should exist");
 
@@ -749,7 +749,7 @@ function testCreateFileAndSave() returns error? {
     test:assertTrue(check file:test(tempFile, file:EXISTS), "File should exist");
 
     // Verify content
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed.length(), 2, "Should have 2 rows");
     test:assertEquals(parsed[0][0], "Header1", "First header");
 
@@ -763,7 +763,7 @@ function testOpenFileAndSaveOverwrites() returns error? {
     // First create a file
     string tempFile = getTempFilePath("openfile_overwrite");
     string[][] initialData = [["Original", "Data"]];
-    check write(initialData, tempFile);
+    check writeSheet(initialData, tempFile);
 
     // Open and modify
     Workbook wb = check openFile(tempFile);
@@ -776,7 +776,7 @@ function testOpenFileAndSaveOverwrites() returns error? {
     check wb.close();
 
     // Verify modifications persisted
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed[0][0], "Modified", "Should be overwritten");
 
     check removeTempFile(tempFile);

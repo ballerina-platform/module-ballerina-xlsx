@@ -39,7 +39,7 @@ function setupTestData() returns error? {
         ["Jane", "25", "Los Angeles"],
         ["Bob", "35", "Chicago"]
     ];
-    check write(simpleData, TEST_DATA_DIR + "simple.xlsx");
+    check writeSheet(simpleData, TEST_DATA_DIR + "simple.xlsx");
 
     // -------------------------------------------------------------------------
     // employees.xlsx - Typed record data
@@ -50,7 +50,7 @@ function setupTestData() returns error? {
         ["Jane Smith", "28", "Marketing"],
         ["Bob Johnson", "35", "Sales"]
     ];
-    check write(employeeData, TEST_DATA_DIR + "employees.xlsx");
+    check writeSheet(employeeData, TEST_DATA_DIR + "employees.xlsx");
 
     // -------------------------------------------------------------------------
     // multi_sheet.xlsx - Multiple sheets for sheet selection tests
@@ -82,7 +82,7 @@ function setupTestData() returns error? {
         ["Item1", "100", "Active"],           // Row 3: Data
         ["Item2", "200", "Inactive"]          // Row 4: Data
     ];
-    check write(complexHeaderData, TEST_DATA_DIR + "complex_headers.xlsx");
+    check writeSheet(complexHeaderData, TEST_DATA_DIR + "complex_headers.xlsx");
 
     // -------------------------------------------------------------------------
     // formulas.xlsx - Cells with formulas
@@ -93,7 +93,7 @@ function setupTestData() returns error? {
         ["10", "20", "=A2+B2"],
         ["15", "25", "=A3+B3"]
     ];
-    check write(formulaData, TEST_DATA_DIR + "formulas.xlsx");
+    check writeSheet(formulaData, TEST_DATA_DIR + "formulas.xlsx");
 
     // -------------------------------------------------------------------------
     // types_variety.xlsx - Various data types for type conversion tests
@@ -103,7 +103,7 @@ function setupTestData() returns error? {
         ["Hello", "42", "99.99", "true"],
         ["World", "-10", "0.001", "false"]
     ];
-    check write(typesData, TEST_DATA_DIR + "types_variety.xlsx");
+    check writeSheet(typesData, TEST_DATA_DIR + "types_variety.xlsx");
 
     // -------------------------------------------------------------------------
     // edge_empty_sheet.xlsx - Empty sheet for edge case testing
@@ -117,7 +117,7 @@ function setupTestData() returns error? {
     // edge_single_cell.xlsx - Single cell for edge case testing
     // -------------------------------------------------------------------------
     string[][] singleCellData = [["alone"]];
-    check write(singleCellData, TEST_DATA_DIR + "edge_single_cell.xlsx");
+    check writeSheet(singleCellData, TEST_DATA_DIR + "edge_single_cell.xlsx");
 
     // -------------------------------------------------------------------------
     // edge_empty_rows.xlsx - Data with empty rows in between
@@ -148,7 +148,7 @@ function setupTestData() returns error? {
         ["Arabic", "\u{0645}\u{0631}\u{062D}\u{0628}\u{0627}", "\u{2605}"],       // مرحبا, star
         ["Emoji", "Hello!", "\u{1F600}"]                                          // grinning face
     ];
-    check write(unicodeData, TEST_DATA_DIR + "edge_unicode.xlsx");
+    check writeSheet(unicodeData, TEST_DATA_DIR + "edge_unicode.xlsx");
 
     // -------------------------------------------------------------------------
     // annotated.xlsx - Data with headers matching @xlsx:Name annotations
@@ -159,7 +159,7 @@ function setupTestData() returns error? {
         ["Bob", "102", "Marketing"],
         ["Charlie", "103", "Sales"]
     ];
-    check write(annotatedData, TEST_DATA_DIR + "annotated.xlsx");
+    check writeSheet(annotatedData, TEST_DATA_DIR + "annotated.xlsx");
 
     // -------------------------------------------------------------------------
     // numeric_types.xlsx - Numeric values for type conversion
@@ -170,7 +170,7 @@ function setupTestData() returns error? {
         ["-100", "0.001"],
         ["0", "999.999"]
     ];
-    check write(numericData, TEST_DATA_DIR + "numeric_types.xlsx");
+    check writeSheet(numericData, TEST_DATA_DIR + "numeric_types.xlsx");
 
     // -------------------------------------------------------------------------
     // nilable_fields.xlsx - Data with missing/empty values
@@ -181,7 +181,7 @@ function setupTestData() returns error? {
         ["Jane", "", ""],                    // Missing age and department
         ["Bob", "25", ""]                    // Missing department
     ];
-    check write(nilableData, TEST_DATA_DIR + "nilable_fields.xlsx");
+    check writeSheet(nilableData, TEST_DATA_DIR + "nilable_fields.xlsx");
 
     // -------------------------------------------------------------------------
     // case_headers.xlsx - Mixed-case headers for case-insensitive testing
@@ -193,7 +193,7 @@ function setupTestData() returns error? {
         ["John", "30", "Engineering"],
         ["Jane", "25", "Marketing"]
     ];
-    check write(caseHeadersData, TEST_DATA_DIR + "case_headers.xlsx");
+    check writeSheet(caseHeadersData, TEST_DATA_DIR + "case_headers.xlsx");
 }
 
 // Cleanup test data files after running tests

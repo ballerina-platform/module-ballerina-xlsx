@@ -56,10 +56,10 @@ function testWriteAndParseDateField() returns error? {
     ];
 
     string tempFile = getTempFilePath("datetime_date");
-    check write(events, tempFile);
+    check writeSheet(events, tempFile);
 
     // Parse back
-    EventWithDate[] parsed = check parse(tempFile);
+    EventWithDate[] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have 2 events");
     test:assertEquals(parsed[0].name, "Meeting", "First event name");
@@ -86,10 +86,10 @@ function testWriteAndParseTimeField() returns error? {
     ];
 
     string tempFile = getTempFilePath("datetime_time");
-    check write(events, tempFile);
+    check writeSheet(events, tempFile);
 
     // Parse back
-    EventWithTime[] parsed = check parse(tempFile);
+    EventWithTime[] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have 2 events");
     test:assertEquals(parsed[0].name, "Morning Standup", "First event name");
@@ -120,10 +120,10 @@ function testWriteAndParseDateTimeField() returns error? {
     ];
 
     string tempFile = getTempFilePath("datetime_civil");
-    check write(events, tempFile);
+    check writeSheet(events, tempFile);
 
     // Parse back
-    EventWithDateTime[] parsed = check parse(tempFile);
+    EventWithDateTime[] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have 2 events");
 
@@ -161,10 +161,10 @@ function testWriteAndParseNilableDateField() returns error? {
     ];
 
     string tempFile = getTempFilePath("datetime_nilable");
-    check write(events, tempFile);
+    check writeSheet(events, tempFile);
 
     // Parse back
-    EventWithNilableDate[] parsed = check parse(tempFile);
+    EventWithNilableDate[] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have 2 events");
     test:assertEquals(parsed[0].name, "Scheduled", "First event name");
@@ -234,10 +234,10 @@ function testDateFallbackToStringWhenTargetIsString() returns error? {
     ];
 
     string tempFile = getTempFilePath("datetime_string_fallback");
-    check write(events, tempFile);
+    check writeSheet(events, tempFile);
 
     // Parse as string[][] (should get ISO date string)
-    string[][] parsed = check parse(tempFile);
+    string[][] parsed = check parseSheet(tempFile);
 
     test:assertEquals(parsed.length(), 2, "Should have header + 1 data row");
     test:assertEquals(parsed[0][0], "name", "First header");

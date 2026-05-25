@@ -22,27 +22,27 @@ import ballerina/test;
 // =============================================================================
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseToStringArray() returns error? {
-    string[][] rows = check parse(TEST_DATA_DIR + "simple.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
 
     // Verify exact content matches expected data
     assertStringArrayEquals(rows, EXPECTED_SIMPLE_DATA, "simple.xlsx parse");
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseToRecords() returns error? {
-    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx");
+    Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
 
     // Verify exact content matches expected data
     assertEmployeesEqual(employees, EXPECTED_EMPLOYEES);
 }
 
 @test:Config {
-    groups: ["parse", "options"]
+    groups: ["parseSheet", "options"]
 }
 function testParseWithHeaderRowOption() returns error? {
     // complex_headers.xlsx has: Row 0=title, Row 1=metadata, Row 2=headers, Row 3+=data
@@ -50,7 +50,7 @@ function testParseWithHeaderRowOption() returns error? {
         headerRowIndex: 2,
         dataStartRowIndex: 3
     };
-    string[][] rows = check parse(TEST_DATA_DIR + "complex_headers.xlsx", 0, opts);
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "complex_headers.xlsx", 0, opts);
 
     // When dataStartRowIndex is specified, only data rows are returned (starting from row 3)
     test:assertEquals(rows.length(), 2, "Should have 2 data rows");
@@ -63,44 +63,44 @@ function testParseWithHeaderRowOption() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseWithSheetSelectionByName() returns error? {
     // Select Sheet2 by name
-    string[][] rows = check parse(TEST_DATA_DIR + "multi_sheet.xlsx", "Sheet2");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "multi_sheet.xlsx", "Sheet2");
 
     // Verify we got Sheet2 data
     assertStringArrayEquals(rows, EXPECTED_SHEET2_DATA, "Sheet2 data");
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseWithSheetSelectionByIndex() returns error? {
     // Select second sheet (index 1)
-    string[][] rows = check parse(TEST_DATA_DIR + "multi_sheet.xlsx", 1);
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "multi_sheet.xlsx", 1);
 
     // Verify we got Sheet2 data (index 1)
     assertStringArrayEquals(rows, EXPECTED_SHEET2_DATA, "Sheet index 1 data");
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseDefaultsToFirstSheet() returns error? {
     // No sheet specified - should default to first sheet
-    string[][] rows = check parse(TEST_DATA_DIR + "multi_sheet.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "multi_sheet.xlsx");
 
     // Verify we got Sheet1 data
     assertStringArrayEquals(rows, EXPECTED_SHEET1_DATA, "Default to Sheet1");
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseThirdSheet() returns error? {
     // Select Sheet3 by name
-    string[][] rows = check parse(TEST_DATA_DIR + "multi_sheet.xlsx", "Sheet3");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "multi_sheet.xlsx", "Sheet3");
 
     // Verify we got Sheet3 data
     assertStringArrayEquals(rows, EXPECTED_SHEET3_DATA, "Sheet3 data");
@@ -111,13 +111,13 @@ function testParseThirdSheet() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseFormulaCachedMode() returns error? {
     ParseOptions opts = {
         formulaMode: CACHED
     };
-    string[][] rows = check parse(TEST_DATA_DIR + "formulas.xlsx", 0, opts);
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "formulas.xlsx", 0, opts);
 
     // In CACHED mode, formula cells return their cached calculated values.
     // For formulas written via POI without evaluation, the default cached value is "0".
@@ -129,13 +129,13 @@ function testParseFormulaCachedMode() returns error? {
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testParseFormulaTextMode() returns error? {
     ParseOptions opts = {
         formulaMode: TEXT
     };
-    string[][] rows = check parse(TEST_DATA_DIR + "formulas.xlsx", 0, opts);
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "formulas.xlsx", 0, opts);
 
     // In TEXT mode, formula cells return the formula string with "=" prefix
     test:assertEquals(rows.length(), 3, "Should have 3 rows");
@@ -149,10 +149,10 @@ function testParseFormulaTextMode() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "types"]
+    groups: ["parseSheet", "types"]
 }
 function testParseNumericToInt() returns error? {
-    NumericTypes[] data = check parse(TEST_DATA_DIR + "numeric_types.xlsx");
+    NumericTypes[] data = check parseSheet(TEST_DATA_DIR + "numeric_types.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records");
     test:assertEquals(data[0].intValue, 42, "First intValue should be 42");
@@ -161,10 +161,10 @@ function testParseNumericToInt() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "types"]
+    groups: ["parseSheet", "types"]
 }
 function testParseNumericToDecimal() returns error? {
-    NumericTypes[] data = check parse(TEST_DATA_DIR + "numeric_types.xlsx");
+    NumericTypes[] data = check parseSheet(TEST_DATA_DIR + "numeric_types.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records");
     // Decimal comparison with tolerance for floating point
@@ -175,10 +175,10 @@ function testParseNumericToDecimal() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "types"]
+    groups: ["parseSheet", "types"]
 }
 function testParseToTypedRecordWithVariousTypes() returns error? {
-    TypeVariety[] data = check parse(TEST_DATA_DIR + "types_variety.xlsx");
+    TypeVariety[] data = check parseSheet(TEST_DATA_DIR + "types_variety.xlsx");
 
     test:assertEquals(data.length(), 2, "Should have 2 records");
 
@@ -196,10 +196,10 @@ function testParseToTypedRecordWithVariousTypes() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "types"]
+    groups: ["parseSheet", "types"]
 }
 function testParseToMapArray() returns error? {
-    map<anydata>[] data = check parse(TEST_DATA_DIR + "simple.xlsx");
+    map<anydata>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records (excluding header)");
     test:assertEquals(data[0]["Name"], "John", "First record Name should be 'John'");
@@ -212,14 +212,14 @@ function testParseToMapArray() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "options"]
+    groups: ["parseSheet", "options"]
 }
 function testParseWithCustomDataStartRow() returns error? {
     ParseOptions opts = {
         headerRowIndex: 0,
         dataStartRowIndex: 2  // Skip first data row
     };
-    string[][] rows = check parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     // When dataStartRowIndex is specified, only data rows starting from that row are returned
     test:assertEquals(rows.length(), 2, "Should have 2 data rows (skipped first data row)");
@@ -228,11 +228,11 @@ function testParseWithCustomDataStartRow() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "options"]
+    groups: ["parseSheet", "options"]
 }
 function testParseSkipsEmptyRows() returns error? {
     // Default behavior: empty rows are skipped
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Empty rows should be skipped
     // Original: header, First, empty, Second, empty, Third
@@ -248,12 +248,12 @@ function testParseSkipsEmptyRows() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "annotation"]
+    groups: ["parseSheet", "annotation"]
 }
 function testParseWithXlsxNameAnnotation() returns error? {
     // annotated.xlsx has headers: "First Name", "Employee ID", "Department Name"
     // AnnotatedEmployee maps these to: firstName, id, department
-    AnnotatedEmployee[] data = check parse(TEST_DATA_DIR + "annotated.xlsx");
+    AnnotatedEmployee[] data = check parseSheet(TEST_DATA_DIR + "annotated.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 employees");
     test:assertEquals(data[0].firstName, "Alice", "First employee firstName");
@@ -268,10 +268,10 @@ function testParseWithXlsxNameAnnotation() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "negative"]
+    groups: ["parseSheet", "negative"]
 }
 function testParseSheetNotFoundByName() returns error? {
-    string[][]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", "NonExistentSheet");
+    string[][]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", "NonExistentSheet");
 
     test:assertTrue(result is Error, "Should return error for non-existent sheet");
     if result is Error {
@@ -281,10 +281,10 @@ function testParseSheetNotFoundByName() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "negative"]
+    groups: ["parseSheet", "negative"]
 }
 function testParseSheetNotFoundByIndex() returns error? {
-    string[][]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 99);
+    string[][]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 99);
 
     test:assertTrue(result is Error, "Should return error for invalid sheet index");
     if result is Error {
@@ -294,10 +294,10 @@ function testParseSheetNotFoundByIndex() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "negative"]
+    groups: ["parseSheet", "negative"]
 }
 function testParseFileNotFound() returns error? {
-    string[][]|Error result = parse(TEST_DATA_DIR + "nonexistent.xlsx");
+    string[][]|Error result = parseSheet(TEST_DATA_DIR + "nonexistent.xlsx");
 
     test:assertTrue(result is Error, "Should return error for non-existent file");
     if result is Error {
@@ -311,20 +311,20 @@ function testParseFileNotFound() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "edge"]
+    groups: ["parseSheet", "edge"]
 }
 function testParseEmptySheet() returns error? {
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
 
     // Empty sheet should return empty array
     test:assertEquals(rows.length(), 0, "Empty sheet should return empty array");
 }
 
 @test:Config {
-    groups: ["parse", "edge"]
+    groups: ["parseSheet", "edge"]
 }
 function testParseSingleCell() returns error? {
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_single_cell.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_single_cell.xlsx");
 
     test:assertEquals(rows.length(), 1, "Should have 1 row");
     test:assertEquals(rows[0].length(), 1, "Should have 1 column");
@@ -332,10 +332,10 @@ function testParseSingleCell() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "edge"]
+    groups: ["parseSheet", "edge"]
 }
 function testParseUnicodeData() returns error? {
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_unicode.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_unicode.xlsx");
 
     test:assertEquals(rows.length(), 5, "Should have 5 rows (header + 4 data)");
 
@@ -359,11 +359,11 @@ function testParseUnicodeData() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "edge"]
+    groups: ["parseSheet", "edge"]
 }
 function testParseDataWithEmptyRowsInMiddle() returns error? {
     // Default behavior: empty rows are skipped
-    string[][] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Should skip empty rows and have: header, First/100, Second/200, Third/300
     test:assertTrue(rows.length() >= 4, "Should have at least 4 rows after filtering empty");
@@ -398,14 +398,14 @@ function testParseDataWithEmptyRowsInMiddle() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseWithDefaultProjection() returns error? {
     // Default projection: allowDataProjection = {}, nilAsOptionalField = false, absentAsNilableType = false
     // simple.xlsx has: Name, Age, City columns
     // RecordWithOptionalFields has: name, age?, city? fields
     // All columns match, so should work with default settings
-    RecordWithOptionalFields[] data = check parse(TEST_DATA_DIR + "simple.xlsx");
+    RecordWithOptionalFields[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records");
     test:assertEquals(data[0].name, "John", "First name should be 'John'");
@@ -415,7 +415,7 @@ function testParseWithDefaultProjection() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseWithAbsentAsNilableTypeTrue() returns error? {
     // Test absentAsNilableType = true: missing columns should be set to nil for nilable fields
@@ -427,7 +427,7 @@ function testParseWithAbsentAsNilableTypeTrue() returns error? {
             nilAsOptionalField: false
         }
     };
-    RecordWithExtraField[] data = check parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    RecordWithExtraField[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     test:assertEquals(data.length(), 3, "Should have 3 records");
     test:assertEquals(data[0].name, "John", "First name should be 'John'");
@@ -436,7 +436,7 @@ function testParseWithAbsentAsNilableTypeTrue() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseWithAbsentAsNilableTypeFalseAndRequiredField() returns error? {
     // Test absentAsNilableType = false with a record that has a required field without matching column
@@ -450,7 +450,7 @@ function testParseWithAbsentAsNilableTypeFalseAndRequiredField() returns error? 
 
     // simple.xlsx has: Name, Age, City - no 'department' column
     // StrictModeRecord has: name, age, department (required)
-    StrictModeRecord[]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    StrictModeRecord[]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     test:assertTrue(result is Error, "Should return error for required field without matching column");
     if result is Error {
@@ -460,7 +460,7 @@ function testParseWithAbsentAsNilableTypeFalseAndRequiredField() returns error? 
 }
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseWithAllowDataProjectionFalse() returns error? {
     // Test allowDataProjection = false (strict mode)
@@ -471,7 +471,7 @@ function testParseWithAllowDataProjectionFalse() returns error? {
 
     // simple.xlsx has: Name, Age, City
     // StrictModeRecord has: name, age, department - 'department' has no match
-    StrictModeRecord[]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    StrictModeRecord[]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     test:assertTrue(result is Error, "Should return error when projection disabled and fields don't match");
     if result is Error {
@@ -482,7 +482,7 @@ function testParseWithAllowDataProjectionFalse() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
     // Test allowDataProjection = false with matching fields should work
@@ -494,7 +494,7 @@ function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
 
     // Use RecordWithOptionalFields which maps to Name, Age, City (all present)
     // Note: Field names are case-insensitive for matching
-    RecordWithOptionalFields[]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    RecordWithOptionalFields[]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     // This might fail if field name case doesn't match
     // If it fails, it's expected behavior for strict mode
@@ -505,7 +505,7 @@ function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldTrue() returns error? {
     // Test nilAsOptionalField for map<anydata>[] - nil values should be skipped
@@ -518,14 +518,14 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
 
     // edge_empty_rows.xlsx has some empty cells which become nil
     // With nilAsOptionalField=true, nil values should not be added to the map
-    map<anydata>[] data = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
+    map<anydata>[] data = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
 
     // Just verify parsing succeeds - actual behavior depends on data content
     test:assertTrue(data.length() >= 0, "Should parse successfully");
 }
 
 @test:Config {
-    groups: ["parse", "projection"]
+    groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldFalse() returns error? {
     // Test nilAsOptionalField=false for map<anydata>[] - nil values should be included
@@ -536,7 +536,7 @@ function testParseMapWithNilAsOptionalFieldFalse() returns error? {
         }
     };
 
-    map<anydata>[] data = check parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    map<anydata>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     test:assertEquals(data.length(), 3, "Should have 3 records");
     // All cells have values in simple.xlsx, so we're just verifying the option is accepted
@@ -547,7 +547,7 @@ function testParseMapWithNilAsOptionalFieldFalse() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "options"]
+    groups: ["parseSheet", "options"]
 }
 function testCaseInsensitiveHeadersEnabled() returns error? {
     // case_headers.xlsx has headers: "NAME", "AGE", "Department" (mixed case)
@@ -557,7 +557,7 @@ function testCaseInsensitiveHeadersEnabled() returns error? {
         caseInsensitiveHeaders: true
     };
 
-    CaseTestEmployee[] employees = check parse(TEST_DATA_DIR + "case_headers.xlsx", 0, opts);
+    CaseTestEmployee[] employees = check parseSheet(TEST_DATA_DIR + "case_headers.xlsx", 0, opts);
 
     test:assertEquals(employees.length(), 2, "Should have 2 employees");
     test:assertEquals(employees[0].name, "John", "First employee name");
@@ -569,7 +569,7 @@ function testCaseInsensitiveHeadersEnabled() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "options"]
+    groups: ["parseSheet", "options"]
 }
 function testCaseInsensitiveHeadersDisabled() returns error? {
     // case_headers.xlsx has headers: "NAME", "AGE", "Department" (mixed case)
@@ -583,7 +583,7 @@ function testCaseInsensitiveHeadersDisabled() returns error? {
         }
     };
 
-    CaseTestEmployee[]|Error result = parse(TEST_DATA_DIR + "case_headers.xlsx", 0, opts);
+    CaseTestEmployee[]|Error result = parseSheet(TEST_DATA_DIR + "case_headers.xlsx", 0, opts);
 
     // Should fail because "NAME" != "name", "AGE" != "age", "Department" != "department"
     test:assertTrue(result is Error, "Should fail when case-sensitive and headers don't match");
@@ -598,7 +598,7 @@ function testCaseInsensitiveHeadersDisabled() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "options"]
+    groups: ["parseSheet", "options"]
 }
 function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
     // Test case-insensitive headers via Workbook/Sheet API
@@ -623,7 +623,7 @@ function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "error"]
+    groups: ["parseSheet", "error"]
 }
 function testErrorTypeIsTypeConversionError() returns error? {
     // Create test file with invalid data that can't be converted to int
@@ -632,9 +632,9 @@ function testErrorTypeIsTypeConversionError() returns error? {
         ["name", "age"],
         ["John", "not_a_number"]  // Invalid age - should cause TypeConversionError
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
-    ErrorTypeTestRecord[]|error result = parse(testFile);
+    ErrorTypeTestRecord[]|error result = parseSheet(testFile);
 
     // Should be TypeConversionError, not generic Error
     test:assertTrue(result is TypeConversionError,
@@ -651,7 +651,7 @@ function testErrorTypeIsTypeConversionError() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "error"]
+    groups: ["parseSheet", "error"]
 }
 function testSheetGetRowsErrorTypePreservation() returns error? {
     // Test that Sheet.getRows() also preserves error types
@@ -660,7 +660,7 @@ function testSheetGetRowsErrorTypePreservation() returns error? {
         ["name", "age"],
         ["Jane", "invalid_age"]  // Invalid age
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
     Workbook wb = check openFile(testFile);
     Sheet sheet = check wb.getSheetByIndex(0);
@@ -684,7 +684,7 @@ function testSheetGetRowsErrorTypePreservation() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "error"]
+    groups: ["parseSheet", "error"]
 }
 function testBlankCellRequiredFieldError() returns error? {
     // Create test file with blank cell for required non-nilable field
@@ -694,9 +694,9 @@ function testBlankCellRequiredFieldError() returns error? {
         ["John", "30"],
         ["Jane", ""]  // Blank age - required non-nilable field
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
-    RequiredAgeRecord[]|error result = parse(testFile);
+    RequiredAgeRecord[]|error result = parseSheet(testFile);
 
     // Should fail with TypeConversionError for blank required field
     test:assertTrue(result is TypeConversionError,
@@ -712,7 +712,7 @@ function testBlankCellRequiredFieldError() returns error? {
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testBlankCellOptionalFieldSuccess() returns error? {
     // Blank cell for optional field should succeed
@@ -722,9 +722,9 @@ function testBlankCellOptionalFieldSuccess() returns error? {
         ["John", ""],   // Blank age - but field is optional
         ["Jane", "25"]
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
-    OptionalAgeRecord[] result = check parse(testFile);
+    OptionalAgeRecord[] result = check parseSheet(testFile);
 
     test:assertEquals(result.length(), 2, "Should parse both rows");
     test:assertEquals(result[0].name, "John", "First record name should be John");
@@ -734,7 +734,7 @@ function testBlankCellOptionalFieldSuccess() returns error? {
 }
 
 @test:Config {
-    groups: ["parse"]
+    groups: ["parseSheet"]
 }
 function testBlankCellNilableFieldSuccess() returns error? {
     // Blank cell for nilable field should succeed with null
@@ -744,9 +744,9 @@ function testBlankCellNilableFieldSuccess() returns error? {
         ["John", ""],   // Blank age - but field is nilable
         ["Jane", "25"]
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
-    NilableAgeRecord[] result = check parse(testFile);
+    NilableAgeRecord[] result = check parseSheet(testFile);
 
     test:assertEquals(result.length(), 2, "Should parse both rows");
     test:assertEquals(result[0].age, (), "First record age should be nil");
@@ -761,12 +761,12 @@ function testBlankCellNilableFieldSuccess() returns error? {
 // Tests for Row-wrapped types that preserve row positions during parsing.
 
 @test:Config {
-    groups: ["parse", "row-wrapper"]
+    groups: ["parseSheet", "row-wrapper"]
 }
 function testParseWithRowWrapper() returns error? {
     // edge_empty_rows.xlsx has: header, First, empty, Second, empty, Third
     // With Row wrapper, ALL rows should be included (including empty ones)
-    SimpleDataRow[] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    SimpleDataRow[] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Should have 5 rows (First, empty, Second, empty, Third)
     // Header is at row 0, data starts at row 1
@@ -800,11 +800,11 @@ function testParseWithRowWrapper() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "row-wrapper"]
+    groups: ["parseSheet", "row-wrapper"]
 }
 function testParseRowWrapperWithEmployees() returns error? {
     // employees.xlsx has no empty rows, so all rows should have values
-    EmployeeRow[] rows = check parse(TEST_DATA_DIR + "employees.xlsx");
+    EmployeeRow[] rows = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
 
     test:assertEquals(rows.length(), 3, "Should have 3 employee rows");
 
@@ -821,11 +821,11 @@ function testParseRowWrapperWithEmployees() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "row-wrapper"]
+    groups: ["parseSheet", "row-wrapper"]
 }
 function testParseRowWrapperFilterPreservesPositions() returns error? {
     // Parse with Row wrapper
-    SimpleDataRow[] rows = check parse(TEST_DATA_DIR + "edge_empty_rows.xlsx");
+    SimpleDataRow[] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
     // Filter out empty rows
     SimpleDataRow[] nonEmptyRows = rows.filter(r => r.value != null);
@@ -864,7 +864,7 @@ function testSheetGetRowsWithRowWrapper() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "options", "edge-cases"]
+    groups: ["parseSheet", "options", "edge-cases"]
 }
 function testHeaderRowBeyondSheetBounds() returns error? {
     // headerRowIndex = 100 on a small sheet (4 rows) should return ParseError
@@ -874,7 +874,7 @@ function testHeaderRowBeyondSheetBounds() returns error? {
     };
 
     // Use record parsing to test headerRowIndex validation
-    Employee[]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    Employee[]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     // Record parsing validates headerRowIndex - when beyond bounds, returns ParseError
     test:assertTrue(result is ParseError, "Should return ParseError when headerRowIndex beyond sheet bounds");
@@ -884,7 +884,7 @@ function testHeaderRowBeyondSheetBounds() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "options", "edge-cases"]
+    groups: ["parseSheet", "options", "edge-cases"]
 }
 function testNegativeHeaderRowBeyondMinusOne() returns error? {
     // Only -1 is valid for "no headers", other negatives should error or be handled
@@ -892,7 +892,7 @@ function testNegativeHeaderRowBeyondMinusOne() returns error? {
         headerRowIndex: -5
     };
 
-    string[][]|Error result = parse(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    string[][]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
     // Should either normalize to valid value or return error
     // The actual behavior depends on implementation
@@ -911,11 +911,11 @@ type NumericRecord record {|
 |};
 
 @test:Config {
-    groups: ["parse", "numeric", "edge-cases"],
+    groups: ["parseSheet", "numeric", "edge-cases"],
     before: setupExtremeNumericTestData
 }
 function testParseExtremeIntValues() returns error? {
-    NumericRecord[] records = check parse(TEST_DATA_DIR + "extreme_numeric_test.xlsx");
+    NumericRecord[] records = check parseSheet(TEST_DATA_DIR + "extreme_numeric_test.xlsx");
 
     test:assertEquals(records.length(), 3, "Should parse all 3 rows");
 
@@ -930,11 +930,11 @@ function testParseExtremeIntValues() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "numeric", "edge-cases"],
+    groups: ["parseSheet", "numeric", "edge-cases"],
     before: setupExtremeNumericTestData
 }
 function testParseLargeDecimalValues() returns error? {
-    NumericRecord[] records = check parse(TEST_DATA_DIR + "extreme_numeric_test.xlsx");
+    NumericRecord[] records = check parseSheet(TEST_DATA_DIR + "extreme_numeric_test.xlsx");
 
     test:assertEquals(records.length(), 3, "Should parse all 3 rows");
 
@@ -960,7 +960,7 @@ function setupExtremeNumericTestData() returns error? {
         ["3", "0", "0.0"]                                          // Zero
     ];
 
-    check write(testData, testFilePath);
+    check writeSheet(testData, testFilePath);
 }
 
 // =============================================================================
@@ -968,7 +968,7 @@ function setupExtremeNumericTestData() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "headerless"]
+    groups: ["parseSheet", "headerless"]
 }
 function testParseHeaderlessToMap() returns error? {
     // Create test file without headers - just raw data
@@ -977,13 +977,13 @@ function testParseHeaderlessToMap() returns error? {
         ["Alice", "30"],
         ["Bob", "25"]
     ];
-    check write(data, testFile, writeHeaders = false);
+    check writeSheet(data, testFile, writeHeaders = false);
 
     // Parse with headerRowIndex = null (header-less mode)
     ParseOptions opts = {
         headerRowIndex: ()
     };
-    map<anydata>[] result = check parse(testFile, 0, opts);
+    map<anydata>[] result = check parseSheet(testFile, 0, opts);
 
     test:assertEquals(result.length(), 2, "Should have 2 rows");
     test:assertEquals(result[0]["col0"], "Alice", "First row col0 should be 'Alice'");
@@ -995,14 +995,14 @@ function testParseHeaderlessToMap() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "rowcount"]
+    groups: ["parseSheet", "rowcount"]
 }
 function testParseWithRowCountLimit() returns error? {
     // Parse employees.xlsx (has 3 data rows) with rowCount limit
     ParseOptions opts = {
         rowCount: 2
     };
-    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx", 0, opts);
+    Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx", 0, opts);
 
     test:assertEquals(employees.length(), 2, "Should have only 2 records due to rowCount limit");
     test:assertEquals(employees[0].name, "John Doe", "First employee name");
@@ -1010,20 +1010,20 @@ function testParseWithRowCountLimit() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "rowcount"]
+    groups: ["parseSheet", "rowcount"]
 }
 function testParseWithRowCountNullMeansAll() returns error? {
     // Parse with rowCount = null (default) should read all rows
     ParseOptions opts = {
         rowCount: ()  // Explicit null = read all
     };
-    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx", 0, opts);
+    Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx", 0, opts);
 
     test:assertEquals(employees.length(), 3, "Should have all 3 records when rowCount is null");
 }
 
 @test:Config {
-    groups: ["parse", "headerless"]
+    groups: ["parseSheet", "headerless"]
 }
 function testParseHeaderlessToRecord() returns error? {
     // Create test file without headers
@@ -1032,13 +1032,13 @@ function testParseHeaderlessToRecord() returns error? {
         ["John", "Engineer"],
         ["Jane", "Designer"]
     ];
-    check write(data, testFile, writeHeaders = false);
+    check writeSheet(data, testFile, writeHeaders = false);
 
     // Parse with headerRowIndex = null
     ParseOptions opts = {
         headerRowIndex: ()
     };
-    HeaderlessRecord[] result = check parse(testFile, 0, opts);
+    HeaderlessRecord[] result = check parseSheet(testFile, 0, opts);
 
     test:assertEquals(result.length(), 2, "Should have 2 records");
     test:assertEquals(result[0].col0, "John", "First record col0");
@@ -1054,13 +1054,13 @@ function testParseHeaderlessToRecord() returns error? {
 // =============================================================================
 
 @test:Config {
-    groups: ["parse", "openrecord"]
+    groups: ["parseSheet", "openrecord"]
 }
 function testParseToOpenRecord() returns error? {
     // employees.xlsx has columns: name, age, department
     // OpenEmployee only defines: name, age (no department)
     // The 'department' column should be populated into the rest field
-    OpenEmployee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx");
+    OpenEmployee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
 
     test:assertEquals(employees.length(), 3, "Should have 3 employees");
 
@@ -1085,7 +1085,7 @@ function testParseToOpenRecord() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "openrecord"]
+    groups: ["parseSheet", "openrecord"]
 }
 function testParseToOpenRecordWithMultipleExtraColumns() returns error? {
     // Create test file with extra columns beyond defined fields
@@ -1095,10 +1095,10 @@ function testParseToOpenRecordWithMultipleExtraColumns() returns error? {
         ["Alice", "25", "Engineering", "50000", "NYC"],
         ["Bob", "30", "Marketing", "60000", "LA"]
     ];
-    check write(data, testFile, writeHeaders = false);  // Headers in first row
+    check writeSheet(data, testFile, writeHeaders = false);  // Headers in first row
 
     // Parse to OpenEmployee (only defines name and age)
-    OpenEmployee[] employees = check parse(testFile);
+    OpenEmployee[] employees = check parseSheet(testFile);
 
     test:assertEquals(employees.length(), 2, "Should have 2 employees");
 
@@ -1118,12 +1118,12 @@ function testParseToOpenRecordWithMultipleExtraColumns() returns error? {
 }
 
 @test:Config {
-    groups: ["parse", "openrecord"]
+    groups: ["parseSheet", "openrecord"]
 }
 function testParseClosedRecordIgnoresExtraColumns() returns error? {
     // Verify that closed records (Employee) do NOT get extra columns
     // employees.xlsx has exactly the columns Employee expects
-    Employee[] employees = check parse(TEST_DATA_DIR + "employees.xlsx");
+    Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
 
     test:assertEquals(employees.length(), 3, "Should have 3 employees");
     test:assertEquals(employees[0].name, "John Doe", "First employee name");

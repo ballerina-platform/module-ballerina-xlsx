@@ -53,8 +53,8 @@ public final class Native {
      * @param typedesc  Target type descriptor
      * @return Parsed data as BArray or error
      */
-    public static Object parse(Environment env, BString filePath, Object sheet,
-                               BMap<BString, Object> options, BTypedesc typedesc) {
+    public static Object parseSheet(Environment env, BString filePath, Object sheet,
+                                    BMap<BString, Object> options, BTypedesc typedesc) {
         Path path = Paths.get(filePath.getValue());
 
         // Check if file exists before parsing
@@ -75,7 +75,7 @@ public final class Native {
      * @param options  Write options
      * @return null on success, error on failure
      */
-    public static Object write(BArray data, BString filePath, BMap<BString, Object> options) {
+    public static Object writeSheet(BArray data, BString filePath, BMap<BString, Object> options) {
         return XlsxWriter.writeToFile(filePath.getValue(), data, options);
     }
 
@@ -93,7 +93,7 @@ public final class Native {
     public static Object parseAsStream(Environment env, BStream xlsxStream, Object sheet,
                                        BMap<BString, Object> options, BTypedesc typedesc) {
         // Deferred to v2: XLSX format requires SharedStringsTable to be loaded first
-        return DiagnosticLog.error("parseAsStream is deferred to v2. Use parse() instead.");
+        return DiagnosticLog.error("parseAsStream is deferred to v2. Use parseSheet() instead.");
     }
 
     // ==========================================================================

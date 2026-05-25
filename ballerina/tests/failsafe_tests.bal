@@ -50,7 +50,7 @@ const string FAIL_SAFE_ERROR_LOG = "tests/resources/testdata/failsafe_errors.log
 }
 function testFailFastModeDefault() returns error? {
     // Without fail-safe, parsing should throw on first error
-    FailSafeEmployee[]|error result = parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    FailSafeEmployee[]|error result = parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
 
     // Should be a TypeConversionError because "invalid" can't convert to int
     test:assertTrue(result is TypeConversionError, "Should be TypeConversionError");
@@ -86,7 +86,7 @@ function testFailSafeWithConsoleLogs() returns error? {
         }
     };
 
-    FailSafeEmployee[] employees = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] employees = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Should have parsed the valid rows (skipped invalid ones)
     // The test file has 4 rows: 2 valid, 2 with invalid ages
@@ -121,7 +121,7 @@ function testFailSafeWithFileLogging() returns error? {
         }
     };
 
-    FailSafeEmployee[] employees = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] employees = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Verify parsing succeeded with valid rows
     test:assertEquals(employees.length(), 2, "Should have 2 valid employees");
@@ -161,7 +161,7 @@ function testFailSafeFileLoggingRawMode() returns error? {
     };
 
     // Parse the file - we're testing that errors go to the log file, not the parsed result
-    FailSafeEmployee[] _ = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] _ = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Verify log file was created with RAW content
     test:assertTrue(check file:test(FAIL_SAFE_ERROR_LOG, file:EXISTS), "Error log file should exist");
@@ -183,7 +183,7 @@ function testFailSafeConsoleLogsDisabled() returns error? {
         }
     };
 
-    FailSafeEmployee[] result = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] result = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Should still skip invalid rows even without logging
     test:assertEquals(result.length(), 2, "Should have 2 valid employees");
@@ -198,7 +198,7 @@ function testFailSafeWithEmptyConfig() returns error? {
         failSafe: {}
     };
 
-    FailSafeEmployee[] employees = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] employees = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Should have parsed valid rows
     test:assertEquals(employees.length(), 2, "Should have 2 valid employees with empty failSafe config");
@@ -228,7 +228,7 @@ function testFailSafeConsoleAndFileTogether() returns error? {
         }
     };
 
-    FailSafeEmployee[] employees = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] employees = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Verify parsing succeeded with valid rows
     test:assertEquals(employees.length(), 2, "Should have 2 valid employees");
@@ -271,7 +271,7 @@ function testFailSafeIncludeSourceDataInConsole() returns error? {
         }
     };
 
-    FailSafeEmployee[] _ = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] _ = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Verify log file contains offending row data
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
@@ -308,7 +308,7 @@ function testFailSafeMetadataOnlyMode() returns error? {
         }
     };
 
-    FailSafeEmployee[] _ = check parse(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    FailSafeEmployee[] _ = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
 
     // Verify log file was created
     test:assertTrue(check file:test(FAIL_SAFE_ERROR_LOG, file:EXISTS),
@@ -352,7 +352,7 @@ function setupFailSafeTestData() returns error? {
         ["Bob", "abc", "HR"]              // Invalid age
     ];
 
-    check write(testData, testFilePath);
+    check writeSheet(testData, testFilePath);
 }
 
 // Cleanup function to remove error log file
@@ -468,7 +468,7 @@ function testBlankCellRequiredFieldWithFailSafe() returns error? {
         ["Jane", "", "Marketing"],    // Blank age - will be skipped
         ["Carol", "28", "Sales"]
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
     ParseOptions opts = {
         failSafe: {
@@ -476,7 +476,7 @@ function testBlankCellRequiredFieldWithFailSafe() returns error? {
         }
     };
 
-    FailSafeEmployee[] result = check parse(testFile, 0, opts);
+    FailSafeEmployee[] result = check parseSheet(testFile, 0, opts);
 
     // Jane should be skipped (blank required field), John and Carol should be parsed
     test:assertEquals(result.length(), 2, "Should have 2 records (blank row skipped)");
@@ -498,7 +498,7 @@ function testSheetBlankCellRequiredFieldWithFailSafe() returns error? {
         ["Jane", "", "Marketing"],    // Blank age - will be skipped
         ["Carol", "28", "Sales"]
     ];
-    check write(data, testFile);
+    check writeSheet(data, testFile);
 
     Workbook wb = check openFile(testFile);
     Sheet sheet = check wb.getSheetByIndex(0);
