@@ -236,13 +236,13 @@ type SimpleData record {|
 
 // Row-wrapped version of SimpleData for position preservation
 type SimpleDataRow record {|
-    *Row;              // Spreads rowIndex field from xlsx:Row
+    *RowWrapper;       // Spreads rowIndex field from xlsx:RowWrapper
     SimpleData? value; // Nullable to represent empty rows
 |};
 
 // Row-wrapped version of Employee for position preservation
 type EmployeeRow record {|
-    *Row;
+    *RowWrapper;
     Employee? value;
 |};
 

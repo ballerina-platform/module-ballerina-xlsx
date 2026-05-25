@@ -46,7 +46,6 @@ import org.apache.poi.ss.util.CellRangeAddress;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -118,32 +117,6 @@ public final class XlsxParser {
             return DiagnosticLog.parseError("Failed to parse XLSX: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error parsing XLSX file: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Parse XLSX from input stream.
-     *
-     * @param env        Ballerina environment (for fail-safe logging)
-     * @param stream     Input stream containing XLSX data
-     * @param sheet      Sheet to read (BString for name, Long for index)
-     * @param options    Parse options
-     * @param targetType Target Ballerina type descriptor
-     * @return Parsed value
-     */
-    public static Object parseAsStream(Environment env, InputStream stream, Object sheet,
-                                       BMap<BString, Object> options, BTypedesc targetType) {
-        XlsxConfig config = XlsxConfig.fromParseOptions(options);
-
-        try (Workbook workbook = WorkbookFactory.create(stream)) {
-            Sheet selectedSheet = selectSheet(workbook, sheet);
-            return parseSheet(env, selectedSheet, config, targetType);
-        } catch (BallerinaErrorException e) {
-            return e.getBError();
-        } catch (IOException e) {
-            return DiagnosticLog.parseError("Failed to parse XLSX stream: " + e.getMessage());
-        } catch (Exception e) {
-            return DiagnosticLog.error("Error parsing XLSX stream: " + e.getMessage(), e);
         }
     }
 

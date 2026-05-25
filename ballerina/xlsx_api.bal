@@ -47,7 +47,7 @@ import ballerina/jballerina.java;
 # + t - Target type descriptor
 # + return - Parsed data or error
 public isolated function parseSheet(string path, string|int sheet = 0, ParseOptions options = {},
-        typedesc<anydata[]> t = <>) returns t|Error = @java:Method {
+        typedesc<Data> t = <>) returns t|Error = @java:Method {
     'class: "io.ballerina.lib.data.xlsx.Native"
 } external;
 
@@ -103,13 +103,13 @@ public isolated function writeSheet(Data data, string path, *WriteOptions option
 # });
 # ```
 #
-# + file - Path to the XLSX file
+# + path - Path to the XLSX file
 # + tableName - Name of the table to parse
 # + options - Parse options
 # + t - Target type descriptor
 # + return - Parsed data or TableNotFoundError
-public isolated function parseTable(string file, string tableName, ParseOptions options = {},
-        typedesc<anydata[]> t = <>) returns t|Error = @java:Method {
+public isolated function parseTable(string path, string tableName, ParseOptions options = {},
+        typedesc<Data> t = <>) returns t|Error = @java:Method {
     'class: "io.ballerina.lib.data.xlsx.Native"
 } external;
 
@@ -124,31 +124,12 @@ public isolated function parseTable(string file, string tableName, ParseOptions 
 # ```
 #
 # + data - Data to write
-# + filePath - Path to the XLSX file containing the table
+# + path - Path to the XLSX file containing the table
 # + tableName - Name of the table to write to
 # + options - Write options
 # + return - TableNotFoundError if table doesn't exist, or other Error
-public isolated function writeTable(Data data, string filePath, string tableName,
+public isolated function writeTable(Data data, string path, string tableName,
         *WriteOptions options) returns Error? = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.Native"
-} external;
-
-// ============================================================================
-// STREAMING API - Deferred to v2
-// ============================================================================
-
-# Parse XLSX from a byte stream.
-#
-# **Note**: Deferred to v2. XLSX format requires SharedStringsTable to be
-# loaded first, making true streaming complex.
-#
-# + dataStream - Stream of byte blocks
-# + sheet - Sheet to read: name (string) or index (int, 0-based). Default: 0 (first sheet)
-# + options - Parse options
-# + t - Target type descriptor
-# + return - Parsed data or error
-public isolated function parseAsStream(stream<byte[], error?> dataStream, string|int sheet = 0,
-        ParseOptions options = {}, typedesc<anydata[]> t = <>) returns t|Error = @java:Method {
     'class: "io.ballerina.lib.data.xlsx.Native"
 } external;
 

@@ -94,7 +94,7 @@ public class Sheet {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Array of rows or error
-    public function getRows(RowReadOptions options = {}, typedesc<anydata[]> t = <>)
+    public function getRows(RowReadOptions options = {}, typedesc<Data> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
@@ -119,7 +119,7 @@ public class Sheet {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error
-    public function getRow(int index, RowReadOptions options = {}, typedesc<anydata> t = <>)
+    public function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
@@ -143,7 +143,7 @@ public class Sheet {
     # + data - Data to write
     # + options - Write options
     # + return - Error if write fails
-    public function putRows(anydata[] data, *RowWriteOptions options) returns Error? = @java:Method {
+    public function putRows(Data data, *RowWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.lib.data.xlsx.xlsx.SheetHandle"
     } external;
 

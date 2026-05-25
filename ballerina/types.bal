@@ -134,11 +134,15 @@ public type RowWriteOptions record {|
     int startRowIndex = 0;
 |};
 
-# Supported data types for XLSX read/write operations.
-# - `anydata[][]` - 2D array of any data (raw cell values)
-# - `record{}[]` - Array of records (field names become headers)
-# - `map<anydata>[]` - Array of maps (keys become headers)
-public type Data anydata[][]|record {}[]|map<anydata>[];
+# A single row in a sheet — the atomic data unit. A row is one of three shapes:
+# - `record{}` - Typed record (field names map to column headers; use `@xlsx:Name` for non-matching names)
+# - `map<anydata>` - Dynamic map (keys are column headers)
+# - `string[]` - Raw cell text in column order
+public type Row record {} | map<anydata> | string[];
+
+# Sheet-level data — an array of rows. Used as the return type of `parseSheet` and
+# `parseTable`, and as the input type of `writeSheet` and `writeTable`.
+public type Data Row[];
 
 // =============================================================================
 // Cell Range Type
@@ -175,7 +179,7 @@ public type CellRange record {|
 #
 # ```ballerina
 # type PersonRow record {|
-#     *xlsx:Row;           // Spreads rowIndex field
+#     *xlsx:RowWrapper;    // Spreads rowIndex field
 #     Person? value;       // Your data type (nullable for empty rows)
 # |};
 #
@@ -193,7 +197,7 @@ public type CellRange record {|
 # - When target type has `rowIndex` field, ALL rows within used range are included
 # - Empty rows have `value = null` with their original `rowIndex`
 # - On write, rows are placed at their original Excel positions (using `rowIndex`)
-public type Row record {|
+public type RowWrapper record {|
     # 0-based row index relative to data start row.
     # This preserves the original Excel row position for round-trip operations.
     int rowIndex;

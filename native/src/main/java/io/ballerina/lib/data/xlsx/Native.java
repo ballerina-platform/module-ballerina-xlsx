@@ -24,7 +24,6 @@ import io.ballerina.lib.data.xlsx.xlsx.XlsxWriter;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BMap;
-import io.ballerina.runtime.api.values.BStream;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
 
@@ -77,23 +76,6 @@ public final class Native {
      */
     public static Object writeSheet(BArray data, BString filePath, BMap<BString, Object> options) {
         return XlsxWriter.writeToFile(filePath.getValue(), data, options);
-    }
-
-    /**
-     * Parse XLSX from a byte stream into a Ballerina array.
-     * Note: Deferred to v2 - XLSX format requires SharedStringsTable, making true streaming complex.
-     *
-     * @param env        Ballerina environment
-     * @param xlsxStream The XLSX content as a byte stream
-     * @param sheet      Sheet to read (string name or int index)
-     * @param options    Parsing options
-     * @param typedesc   Target type descriptor
-     * @return Parsed data as BArray or error
-     */
-    public static Object parseAsStream(Environment env, BStream xlsxStream, Object sheet,
-                                       BMap<BString, Object> options, BTypedesc typedesc) {
-        // Deferred to v2: XLSX format requires SharedStringsTable to be loaded first
-        return DiagnosticLog.error("parseAsStream is deferred to v2. Use parseSheet() instead.");
     }
 
     // ==========================================================================
