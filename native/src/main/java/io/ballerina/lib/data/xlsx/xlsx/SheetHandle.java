@@ -23,7 +23,6 @@ import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.data.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.data.xlsx.utils.RecordParsingUtils;
 import io.ballerina.lib.data.xlsx.utils.RecordParsingUtils.FieldMapping;
-import io.ballerina.lib.data.xlsx.utils.RowTypeUtils;
 import io.ballerina.lib.data.xlsx.utils.UsedRangeDetector;
 import io.ballerina.lib.data.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
@@ -185,12 +184,6 @@ public final class SheetHandle {
                 // record[]
                 if (elementTag == TypeTags.RECORD_TYPE_TAG) {
                     RecordType recordType = (RecordType) resolvedElementType;
-
-                    // Check if this is a Row-wrapped type (has rowIndex and value fields)
-                    if (RowTypeUtils.isRowWrappedType(recordType)) {
-                        return getRowsAsRowWrappedRecords(env, sheet, config, recordType);
-                    }
-
                     return getRowsAsRecords(env, sheet, config, recordType);
                 }
 
@@ -449,11 +442,6 @@ public final class SheetHandle {
 
             Row row = sheet.getRow(rowIdx);
 
-            // Skip empty rows (Row wrapper type will override this behavior)
-            if (UsedRangeDetector.isRowEmpty(row)) {
-                continue;
-            }
-
             BArray rowArray = ValueCreator.createArrayValue(stringType);
             for (int colIdx = startCol; colIdx <= endCol; colIdx++) {
                 Cell cell = row != null ? row.getCell(colIdx) : null;
@@ -483,32 +471,6 @@ public final class SheetHandle {
                 sheet, usedRange, config, recordType, env, isOverwritten);
 
         return RecordParsingUtils.parseRowsToRecords(context);
-    }
-
-    /**
-     * Get rows as Row-wrapped record[] (preserves row positions).
-     */
-    private static Object getRowsAsRowWrappedRecords(Environment env, Sheet sheet, XlsxConfig config,
-                                                      RecordType rowWrappedType) {
-        CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
-        AtomicBoolean isOverwritten = new AtomicBoolean(false);
-
-        // Extract the inner value type (e.g., Person from PersonRow)
-        Type innerValueType = RowTypeUtils.extractValueType(rowWrappedType);
-
-        // If the inner value type is a record, parse with Row wrapper support
-        if (innerValueType != null && innerValueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
-            RecordType innerRecordType = (RecordType) innerValueType;
-
-            RecordParsingUtils.ParseContext context = new RecordParsingUtils.ParseContext(
-                    sheet, usedRange, config, innerRecordType, env, isOverwritten);
-
-            return RecordParsingUtils.parseRowsToRowWrappedRecords(context, rowWrappedType);
-        }
-
-        // Fallback: if inner type is not a record, return empty array
-        ArrayType arrayType = TypeCreator.createArrayType(rowWrappedType);
-        return ValueCreator.createArrayValue(arrayType);
     }
 
     /**

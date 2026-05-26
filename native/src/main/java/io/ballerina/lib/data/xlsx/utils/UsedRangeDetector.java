@@ -124,26 +124,6 @@ public final class UsedRangeDetector {
     }
 
     /**
-     * Check if a row is empty (no real data).
-     *
-     * @param row The row to check
-     * @return true if the row has no data
-     */
-    public static boolean isRowEmpty(Row row) {
-        if (row == null) {
-            return true;
-        }
-
-        for (Cell cell : row) {
-            if (hasRealData(cell)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Convert a CellRangeAddress to A1 notation string.
      *
      * @param range The range to convert

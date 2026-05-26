@@ -234,29 +234,6 @@ type SimpleData record {|
     int value;
 |};
 
-// Row-wrapped version of SimpleData for position preservation
-type SimpleDataRow record {|
-    *RowWrapper;       // Spreads rowIndex field from xlsx:RowWrapper
-    SimpleData? value; // Nullable to represent empty rows
-|};
-
-// Row-wrapped version of Employee for position preservation
-type EmployeeRow record {|
-    *RowWrapper;
-    Employee? value;
-|};
-
-// Expected data for edge_empty_rows.xlsx with Row wrapper
-// Row 0 = header, data starts at row 1
-// Rows: First(0), Empty(1), Second(2), Empty(3), Third(4)
-final SimpleDataRow[] EXPECTED_ROW_WRAPPED_DATA = [
-    {rowIndex: 0, value: {name: "First", value: 100}},
-    {rowIndex: 1, value: null},  // empty row
-    {rowIndex: 2, value: {name: "Second", value: 200}},
-    {rowIndex: 3, value: null},  // empty row
-    {rowIndex: 4, value: {name: "Third", value: 300}}
-];
-
 // =============================================================================
 // HEADER-LESS PARSING TEST TYPES
 // =============================================================================

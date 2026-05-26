@@ -230,18 +230,16 @@ function testParseWithCustomDataStartRow() returns error? {
 @test:Config {
     groups: ["parseSheet", "options"]
 }
-function testParseSkipsEmptyRows() returns error? {
-    // Default behavior: empty rows are skipped
+function testParsePreservesEmptyRows() returns error? {
+    // v0.1 behavior: every row in the used range produces an entry — empty
+    // rows are NOT filtered. Empty cells are bound by the standard cell-binding
+    // path (string[][] → padded empty strings; record → nil for nilable fields).
     string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
-    // Empty rows should be skipped
-    // Original: header, First, empty, Second, empty, Third
-    // Expected: header, First, Second, Third (no empty rows)
-    test:assertEquals(rows.length(), 4, "Should have 4 rows (header + 3 data, no empty)");
+    // File contents: header, First, empty, Second, empty, Third
+    // All 6 rows are returned (no skipping).
+    test:assertEquals(rows.length(), 6, "Should have 6 rows (header + 3 data + 2 empty)");
 }
-
-// Note: To include empty rows with position preservation, use Row wrapper type.
-// See Row type documentation for details.
 
 // =============================================================================
 // ANNOTATION TESTS
@@ -362,11 +360,13 @@ function testParseUnicodeData() returns error? {
     groups: ["parseSheet", "edge"]
 }
 function testParseDataWithEmptyRowsInMiddle() returns error? {
-    // Default behavior: empty rows are skipped
+    // all rows in the used range come through (including empty).
+    // This test locates data rows by content rather than by index, so it works
+    // regardless of whether empty rows are present in the output.
     string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
 
-    // Should skip empty rows and have: header, First/100, Second/200, Third/300
-    test:assertTrue(rows.length() >= 4, "Should have at least 4 rows after filtering empty");
+    // File contents: header, First/100, empty, Second/200, empty, Third/300
+    test:assertTrue(rows.length() >= 4, "Should have at least 4 rows (data is found by name below)");
 
     // Find data rows (skip header)
     boolean foundFirst = false;
@@ -753,110 +753,6 @@ function testBlankCellNilableFieldSuccess() returns error? {
     test:assertEquals(result[1].age, 25, "Second record should have age 25");
 
     check file:remove(testFile);
-}
-
-// =============================================================================
-// ROW WRAPPER TESTS
-// =============================================================================
-// Tests for Row-wrapped types that preserve row positions during parsing.
-
-@test:Config {
-    groups: ["parseSheet", "row-wrapper"]
-}
-function testParseWithRowWrapper() returns error? {
-    // edge_empty_rows.xlsx has: header, First, empty, Second, empty, Third
-    // With Row wrapper, ALL rows should be included (including empty ones)
-    SimpleDataRow[] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
-
-    // Should have 5 rows (First, empty, Second, empty, Third)
-    // Header is at row 0, data starts at row 1
-    test:assertEquals(rows.length(), 5, "Should have 5 rows including empty rows");
-
-    // Verify first data row
-    test:assertEquals(rows[0].rowIndex, 0, "First row should have rowIndex 0");
-    test:assertTrue(rows[0].value != null, "First row should have value");
-    test:assertEquals(rows[0].value?.name, "First", "First row name");
-    test:assertEquals(rows[0].value?.value, 100, "First row value");
-
-    // Verify empty row (rowIndex 1)
-    test:assertEquals(rows[1].rowIndex, 1, "Second row should have rowIndex 1");
-    test:assertEquals(rows[1].value, null, "Empty row should have null value");
-
-    // Verify second data row
-    test:assertEquals(rows[2].rowIndex, 2, "Third row should have rowIndex 2");
-    test:assertTrue(rows[2].value != null, "Third row should have value");
-    test:assertEquals(rows[2].value?.name, "Second", "Third row name");
-    test:assertEquals(rows[2].value?.value, 200, "Third row value");
-
-    // Verify another empty row (rowIndex 3)
-    test:assertEquals(rows[3].rowIndex, 3, "Fourth row should have rowIndex 3");
-    test:assertEquals(rows[3].value, null, "Empty row should have null value");
-
-    // Verify third data row
-    test:assertEquals(rows[4].rowIndex, 4, "Fifth row should have rowIndex 4");
-    test:assertTrue(rows[4].value != null, "Fifth row should have value");
-    test:assertEquals(rows[4].value?.name, "Third", "Fifth row name");
-    test:assertEquals(rows[4].value?.value, 300, "Fifth row value");
-}
-
-@test:Config {
-    groups: ["parseSheet", "row-wrapper"]
-}
-function testParseRowWrapperWithEmployees() returns error? {
-    // employees.xlsx has no empty rows, so all rows should have values
-    EmployeeRow[] rows = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
-
-    test:assertEquals(rows.length(), 3, "Should have 3 employee rows");
-
-    // Verify all rows have sequential indices and non-null values
-    foreach int i in 0 ..< rows.length() {
-        test:assertEquals(rows[i].rowIndex, i, "Row index should be " + i.toString());
-        test:assertTrue(rows[i].value != null, "Row should have value at index " + i.toString());
-    }
-
-    // Verify first employee data
-    test:assertEquals(rows[0].value?.name, "John Doe", "First employee name");
-    test:assertEquals(rows[0].value?.age, 30, "First employee age");
-    test:assertEquals(rows[0].value?.department, "Engineering", "First employee department");
-}
-
-@test:Config {
-    groups: ["parseSheet", "row-wrapper"]
-}
-function testParseRowWrapperFilterPreservesPositions() returns error? {
-    // Parse with Row wrapper
-    SimpleDataRow[] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
-
-    // Filter out empty rows
-    SimpleDataRow[] nonEmptyRows = rows.filter(r => r.value != null);
-
-    test:assertEquals(nonEmptyRows.length(), 3, "Should have 3 non-empty rows");
-
-    // Verify original positions are preserved after filtering
-    test:assertEquals(nonEmptyRows[0].rowIndex, 0, "First non-empty should have original rowIndex 0");
-    test:assertEquals(nonEmptyRows[1].rowIndex, 2, "Second non-empty should have original rowIndex 2");
-    test:assertEquals(nonEmptyRows[2].rowIndex, 4, "Third non-empty should have original rowIndex 4");
-}
-
-@test:Config {
-    groups: ["workbook", "row-wrapper"]
-}
-function testSheetGetRowsWithRowWrapper() returns error? {
-    // Test Row wrapper via Workbook/Sheet API
-    Workbook wb = check openFile(TEST_DATA_DIR + "edge_empty_rows.xlsx");
-    Sheet sheet = check wb.getSheetByIndex(0);
-
-    SimpleDataRow[] rows = check sheet.getRows();
-
-    test:assertEquals(rows.length(), 5, "Should have 5 rows including empty rows");
-
-    // Verify positions preserved
-    test:assertEquals(rows[0].rowIndex, 0, "First row index");
-    test:assertEquals(rows[1].rowIndex, 1, "Second row index (empty)");
-    test:assertEquals(rows[1].value, null, "Empty row value should be null");
-    test:assertEquals(rows[2].rowIndex, 2, "Third row index");
-
-    check wb.close();
 }
 
 // =============================================================================

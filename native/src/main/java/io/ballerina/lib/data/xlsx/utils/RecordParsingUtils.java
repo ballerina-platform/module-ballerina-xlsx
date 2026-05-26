@@ -439,11 +439,6 @@ public final class RecordParsingUtils {
 
             Row row = context.sheet.getRow(rowIdx);
 
-            // Skip empty rows (Row wrapper type will override this behavior)
-            if (UsedRangeDetector.isRowEmpty(row)) {
-                continue;
-            }
-
             // Parse single row
             Object result = parseRowToRecord(row, rowIdx, columnToField, absentFields,
                     extraColumns, restFieldType, context);
@@ -461,126 +456,6 @@ public final class RecordParsingUtils {
         // Build result array
         BArray resultArray = ValueCreator.createArrayValue(arrayType);
         for (BMap<BString, Object> record : records) {
-            resultArray.append(record);
-        }
-        return resultArray;
-    }
-
-    /**
-     * Parse sheet rows to Row-wrapped record array (preserves row positions).
-     *
-     * <p>This method includes ALL rows (including empty) and preserves original positions.
-     * Each row is wrapped in a record with:</p>
-     * <ul>
-     *   <li>{@code rowIndex}: 0-based index relative to data start row</li>
-     *   <li>{@code value}: the parsed inner record, or null for empty rows</li>
-     * </ul>
-     *
-     * @param context        Parse context containing sheet, config, and type info
-     * @param rowWrappedType The Row-wrapped record type (e.g., PersonRow)
-     * @return BArray of Row-wrapped records on success, or BError on failure
-     */
-    public static Object parseRowsToRowWrappedRecords(ParseContext context, RecordType rowWrappedType) {
-        ArrayType arrayType = TypeCreator.createArrayType(rowWrappedType);
-
-        // Empty sheet check
-        if (context.usedRange == null) {
-            return ValueCreator.createArrayValue(arrayType);
-        }
-
-        // Build header-to-column mapping
-        Map<String, Integer> headerMap;
-
-        if (context.config.hasHeaders()) {
-            // Header-based parsing: read headers from specified row
-            Integer headerRowIndex = context.config.getHeaderRowIndex();
-            Row headerRow = context.sheet.getRow(headerRowIndex);
-
-            if (headerRow == null) {
-                return DiagnosticLog.parseError(
-                        "Header row " + headerRowIndex + " is empty",
-                        context.sheet.getSheetName(), headerRowIndex, null);
-            }
-
-            headerMap = buildHeaderMap(headerRow, context.usedRange,
-                    context.config.isCaseInsensitiveHeaders());
-        } else {
-            // Header-less parsing: generate column names as col0, col1, col2, ...
-            headerMap = buildHeaderMapFromIndices(context.usedRange,
-                    context.config.isCaseInsensitiveHeaders());
-        }
-
-        // Build field mappings for the inner record type
-        Map<Integer, FieldMapping> columnToField = new HashMap<>();
-        List<FieldMapping> absentFields = new ArrayList<>();
-        buildFieldMappings(context.recordType, headerMap, columnToField, absentFields);
-
-        // Build extra column mappings for open records
-        Map<Integer, String> extraColumns = new HashMap<>();
-        boolean isOpenRecord = isOpenRecord(context.recordType);
-        Type restFieldType = null;
-        if (isOpenRecord) {
-            buildExtraColumnMappings(headerMap, columnToField, extraColumns);
-            restFieldType = context.recordType.getRestFieldType();
-        }
-
-        // Validate absent fields
-        try {
-            validateAbsentFields(absentFields, context.sheet.getSheetName(), context.config);
-        } catch (BallerinaErrorException e) {
-            return e.getBError();
-        }
-
-        // Parse data rows - include ALL rows (don't skip empty)
-        int dataStartRow = context.config.getDataStartRowIndex();
-        int endRow = context.usedRange.getLastRow();
-
-        // Apply rowCount limit if set
-        // For Row-wrapped types, rowCount counts ALL rows (including empty) to preserve positions
-        Integer rowCountLimit = context.config.getRowCount();
-        if (rowCountLimit != null) {
-            int limitedEndRow = dataStartRow + rowCountLimit - 1;
-            endRow = Math.min(endRow, limitedEndRow);
-        }
-
-        List<BMap<BString, Object>> rowWrappedRecords = new ArrayList<>();
-
-        for (int rowIdx = dataStartRow; rowIdx <= endRow; rowIdx++) {
-            Row row = context.sheet.getRow(rowIdx);
-
-            // Calculate 0-based row index relative to data start
-            int relativeRowIndex = rowIdx - dataStartRow;
-
-            // Create Row-wrapped record
-            BMap<BString, Object> rowWrappedRecord = ValueCreator.createRecordValue(rowWrappedType);
-            rowWrappedRecord.put(StringUtils.fromString(RowTypeUtils.ROW_INDEX_FIELD), (long) relativeRowIndex);
-
-            // Check if row is empty
-            if (UsedRangeDetector.isRowEmpty(row)) {
-                // Empty row: set value to null
-                rowWrappedRecord.put(StringUtils.fromString(RowTypeUtils.VALUE_FIELD), null);
-            } else {
-                // Non-empty row: parse the inner record
-                Object result = parseRowToRecord(row, rowIdx, columnToField, absentFields,
-                        extraColumns, restFieldType, context);
-
-                if (result instanceof BError) {
-                    return result;  // Fail-fast: return error
-                }
-                if (result == null) {
-                    // Fail-safe: row was skipped due to error, set value to null
-                    rowWrappedRecord.put(StringUtils.fromString(RowTypeUtils.VALUE_FIELD), null);
-                } else {
-                    rowWrappedRecord.put(StringUtils.fromString(RowTypeUtils.VALUE_FIELD), result);
-                }
-            }
-
-            rowWrappedRecords.add(rowWrappedRecord);
-        }
-
-        // Build result array
-        BArray resultArray = ValueCreator.createArrayValue(arrayType);
-        for (BMap<BString, Object> record : rowWrappedRecords) {
             resultArray.append(record);
         }
         return resultArray;
@@ -767,11 +642,6 @@ public final class RecordParsingUtils {
             }
 
             Row row = context.sheet.getRow(rowIdx);
-
-            // Skip empty rows (Row wrapper type will override this behavior)
-            if (UsedRangeDetector.isRowEmpty(row)) {
-                continue;
-            }
 
             // Parse single row
             Object result = parseRowToMap(row, rowIdx, columnToHeader, constraintType, context);

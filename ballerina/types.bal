@@ -165,45 +165,6 @@ public type CellRange record {|
 |};
 
 // =============================================================================
-// Row Wrapper Type (Position Preservation)
-// =============================================================================
-
-# Row wrapper type for preserving original row positions during round-trip operations.
-#
-# When parsing Excel files with empty rows, positions are normally lost. Use this type
-# to preserve original row positions, which is essential for:
-# - Round-trip operations where formulas reference specific rows
-# - Maintaining data integrity when writing back modified data
-#
-# **Usage:** Spread this type into your record and add a nullable `value` field:
-#
-# ```ballerina
-# type PersonRow record {|
-#     *xlsx:RowWrapper;    // Spreads rowIndex field
-#     Person? value;       // Your data type (nullable for empty rows)
-# |};
-#
-# // Parse with position preservation
-# PersonRow[] rows = check xlsx:parseSheet("data.xlsx");
-# // rows[0] = { rowIndex: 0, value: { name: "Alice", age: 30 } }
-# // rows[1] = { rowIndex: 1, value: null }  // empty row with position preserved
-# // rows[2] = { rowIndex: 2, value: { name: "Bob", age: 25 } }
-#
-# // Write back - positions are restored
-# check xlsx:writeSheet(rows, "output.xlsx");
-# ```
-#
-# **Behavior:**
-# - When target type has `rowIndex` field, ALL rows within used range are included
-# - Empty rows have `value = null` with their original `rowIndex`
-# - On write, rows are placed at their original Excel positions (using `rowIndex`)
-public type RowWrapper record {|
-    # 0-based row index relative to data start row.
-    # This preserves the original Excel row position for round-trip operations.
-    int rowIndex;
-|};
-
-// =============================================================================
 // Fail-Safe Error Handling Types
 // =============================================================================
 

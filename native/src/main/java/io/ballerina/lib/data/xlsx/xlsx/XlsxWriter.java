@@ -20,7 +20,6 @@ package io.ballerina.lib.data.xlsx.xlsx;
 
 import io.ballerina.lib.data.xlsx.utils.AnnotationUtils;
 import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
-import io.ballerina.lib.data.xlsx.utils.RowTypeUtils;
 import io.ballerina.lib.data.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.Field;
@@ -81,15 +80,7 @@ public final class XlsxWriter {
                 writeArrayData(sheet, data, startRow);
             } else if (elementTag == TypeTags.RECORD_TYPE_TAG) {
                 RecordType recordType = (RecordType) resolvedElementType;
-
-                // Check if this is a Row-wrapped type (has rowIndex and value fields)
-                if (RowTypeUtils.isRowWrappedType(recordType)) {
-                    // Position-aware writing for Row-wrapped types
-                    writeRowWrappedData(sheet, data, recordType, config, startRow);
-                } else {
-                    // Sequential writing for regular records
-                    writeRecordData(sheet, data, recordType, config, startRow);
-                }
+                writeRecordData(sheet, data, recordType, config, startRow);
             } else if (elementTag == TypeTags.MAP_TAG) {
                 // map[] - write maps with headers
                 writeMapData(sheet, data, config, startRow);
@@ -242,15 +233,7 @@ public final class XlsxWriter {
                 writeArrayData(sheet, data, startRow);
             } else if (elementTag == TypeTags.RECORD_TYPE_TAG) {
                 RecordType recordType = (RecordType) resolvedElementType;
-
-                // Check if this is a Row-wrapped type (has rowIndex and value fields)
-                if (RowTypeUtils.isRowWrappedType(recordType)) {
-                    // Position-aware writing for Row-wrapped types
-                    writeRowWrappedData(sheet, data, recordType, config, startRow);
-                } else {
-                    // Sequential writing for regular records
-                    writeRecordData(sheet, data, recordType, config, startRow);
-                }
+                writeRecordData(sheet, data, recordType, config, startRow);
             } else if (elementTag == TypeTags.MAP_TAG) {
                 writeMapData(sheet, data, config, startRow);
             } else {
@@ -261,100 +244,6 @@ public final class XlsxWriter {
 
         } catch (Exception e) {
             return DiagnosticLog.error("Error writing to sheet: " + e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Write Row-wrapped record[] data to sheet with position awareness.
-     *
-     * <p>This method writes data to specific row positions based on the rowIndex field
-     * in each Row-wrapped record, preserving original Excel row positions.</p>
-     *
-     * @param sheet          The sheet to write to
-     * @param data           Array of Row-wrapped records
-     * @param rowWrappedType The Row-wrapped record type
-     * @param config         Write configuration
-     * @param startRow       Starting row for data
-     */
-    private static void writeRowWrappedData(Sheet sheet, BArray data, RecordType rowWrappedType,
-                                             XlsxConfig config, int startRow) {
-        if (data.size() == 0) {
-            return;
-        }
-
-        // Extract inner record type for field info
-        Type innerValueType = RowTypeUtils.extractValueType(rowWrappedType);
-        if (innerValueType == null || innerValueType.getTag() != TypeTags.RECORD_TYPE_TAG) {
-            return;  // Cannot write if inner type is not a record
-        }
-        RecordType innerRecordType = (RecordType) innerValueType;
-
-        // Get field names for data access (from inner record type)
-        Map<String, Field> fields = innerRecordType.getFields();
-        List<String> fieldNames = new ArrayList<>(fields.keySet());
-
-        // Build header names using @xlsx:Name annotations where present
-        List<String> headerNames = new ArrayList<>();
-        for (String fieldName : fieldNames) {
-            headerNames.add(AnnotationUtils.getHeaderName(innerRecordType, fieldName));
-        }
-
-        int headerRowIndex = startRow;
-
-        // Write headers if configured
-        if (config.isWriteHeaders()) {
-            Row headerRow = sheet.createRow(headerRowIndex);
-            for (int i = 0; i < headerNames.size(); i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headerNames.get(i));
-            }
-        }
-
-        // Data starts after header (if headers written) or at startRow
-        int dataRowOffset = config.isWriteHeaders() ? startRow + 1 : startRow;
-
-        // Write data rows at their original positions
-        for (int i = 0; i < data.size(); i++) {
-            @SuppressWarnings("unchecked")
-            BMap<BString, Object> rowWrappedRecord = (BMap<BString, Object>) data.get(i);
-
-            // Get rowIndex from the Row-wrapped record
-            Object rowIndexObj = rowWrappedRecord.get(
-                    io.ballerina.runtime.api.utils.StringUtils.fromString(RowTypeUtils.ROW_INDEX_FIELD));
-            if (rowIndexObj == null) {
-                continue;  // Skip if no rowIndex
-            }
-            int rowIndex = ((Long) rowIndexObj).intValue();
-
-            // Get value from the Row-wrapped record
-            Object value = rowWrappedRecord.get(
-                    io.ballerina.runtime.api.utils.StringUtils.fromString(RowTypeUtils.VALUE_FIELD));
-
-            // Skip empty rows (value is null)
-            if (value == null) {
-                continue;
-            }
-
-            @SuppressWarnings("unchecked")
-            BMap<BString, Object> innerRecord = (BMap<BString, Object>) value;
-
-            // Calculate actual Excel row position
-            int actualRowIndex = dataRowOffset + rowIndex;
-
-            // Create or get the row at the specified position
-            Row row = sheet.getRow(actualRowIndex);
-            if (row == null) {
-                row = sheet.createRow(actualRowIndex);
-            }
-
-            // Write field values
-            for (int j = 0; j < fieldNames.size(); j++) {
-                Cell cell = row.createCell(j);
-                String fieldName = fieldNames.get(j);
-                Object fieldValue = innerRecord.get(
-                        io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
-                CellConverter.setCellValue(cell, fieldValue);
-            }
         }
     }
 }

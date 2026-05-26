@@ -20,7 +20,6 @@ package io.ballerina.lib.data.xlsx.xlsx;
 
 import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.data.xlsx.utils.RecordParsingUtils;
-import io.ballerina.lib.data.xlsx.utils.RowTypeUtils;
 import io.ballerina.lib.data.xlsx.utils.UsedRangeDetector;
 import io.ballerina.lib.data.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
@@ -180,12 +179,6 @@ public final class XlsxParser {
             // record{}[] - array of records
             if (elementTag == TypeTags.RECORD_TYPE_TAG) {
                 RecordType recordType = (RecordType) resolvedElementType;
-
-                // Check if this is a Row-wrapped type (has rowIndex and value fields)
-                if (RowTypeUtils.isRowWrappedType(recordType)) {
-                    return parseToRowWrappedArray(env, sheet, config, recordType);
-                }
-
                 return parseToRecordArray(env, sheet, config, recordType);
             }
 
@@ -233,11 +226,6 @@ public final class XlsxParser {
 
             Row row = sheet.getRow(rowIdx);
 
-            // Skip empty rows (Row wrapper type will override this behavior)
-            if (UsedRangeDetector.isRowEmpty(row)) {
-                continue;
-            }
-
             BArray rowArray = ValueCreator.createArrayValue(stringType);
             for (int colIdx = startCol; colIdx <= endCol; colIdx++) {
                 Cell cell = row != null ? row.getCell(colIdx) : null;
@@ -283,47 +271,5 @@ public final class XlsxParser {
                 sheet, usedRange, config, mapType, env, isOverwritten);
 
         return RecordParsingUtils.parseRowsToMaps(context);
-    }
-
-    /**
-     * Parse sheet to Row-wrapped record array (preserves row positions).
-     *
-     * <p>Row-wrapped types have the structure:</p>
-     * <pre>
-     * type PersonRow record {|
-     *     int rowIndex;
-     *     Person? value;
-     * |};
-     * </pre>
-     *
-     * <p>This method includes ALL rows (including empty) and preserves original positions.</p>
-     *
-     * @param env            Ballerina environment
-     * @param sheet          Sheet to parse
-     * @param config         Parse configuration
-     * @param rowWrappedType The Row-wrapped record type
-     * @return BArray of Row-wrapped records on success, or BError on failure
-     */
-    private static Object parseToRowWrappedArray(Environment env, Sheet sheet, XlsxConfig config,
-                                                  RecordType rowWrappedType) {
-        CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
-        AtomicBoolean isOverwritten = new AtomicBoolean(false);
-
-        // Extract the inner value type (e.g., Person from PersonRow)
-        Type innerValueType = RowTypeUtils.extractValueType(rowWrappedType);
-
-        // If the inner value type is a record, parse with Row wrapper support
-        if (innerValueType != null && innerValueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
-            RecordType innerRecordType = (RecordType) innerValueType;
-
-            RecordParsingUtils.ParseContext context = new RecordParsingUtils.ParseContext(
-                    sheet, usedRange, config, innerRecordType, env, isOverwritten);
-
-            return RecordParsingUtils.parseRowsToRowWrappedRecords(context, rowWrappedType);
-        }
-
-        // Fallback: if inner type is not a record, return empty array
-        ArrayType arrayType = TypeCreator.createArrayType(rowWrappedType);
-        return ValueCreator.createArrayValue(arrayType);
     }
 }
