@@ -31,6 +31,7 @@ import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -39,6 +40,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -92,6 +94,8 @@ public final class XlsxWriter {
             workbook.write(fos);
             return null; // Success
 
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         } catch (IOException e) {
             return DiagnosticLog.error("Failed to write XLSX file: " + e.getMessage(), e);
         } catch (Exception e) {
@@ -116,7 +120,41 @@ public final class XlsxWriter {
     }
 
     /**
+     * Read an existing header row at the given index and return a header-name → column-index map.
+     * Returns {@code null} if the row is absent or has no string-valued cells — signal to caller
+     * that the sheet has no headers and sequential positional write should be used.
+     */
+    private static Map<String, Integer> existingHeaderMap(Sheet sheet, int headerRowIdx) {
+        Row headerRow = sheet.getRow(headerRowIdx);
+        if (headerRow == null) {
+            return null;
+        }
+        Map<String, Integer> map = new HashMap<>();
+        short last = headerRow.getLastCellNum();
+        for (int c = 0; c < last; c++) {
+            Cell cell = headerRow.getCell(c);
+            if (cell != null && cell.getCellType() == CellType.STRING) {
+                String header = cell.getStringCellValue();
+                if (header != null && !header.isEmpty()) {
+                    map.put(header, c);
+                }
+            }
+        }
+        return map.isEmpty() ? null : map;
+    }
+
+    /**
      * Write record[] data to sheet.
+     *
+     * <p>Dispatches on header presence at {@code startRow}:</p>
+     * <ul>
+     *   <li>If an existing header row is detected, each record field is resolved to its
+     *       target column via {@code @xlsx:Name} (or field name) against the existing headers.
+     *       Unrelated columns in the target rows are preserved. An unmatched field raises a
+     *       {@link BallerinaErrorException} (silent column shifting).</li>
+     *   <li>Otherwise (fresh sheet), uses sequential positional write — emits headers per the
+     *       record's field order, then data rows in matching order.</li>
+     * </ul>
      */
     private static void writeRecordData(Sheet sheet, BArray data, RecordType recordType,
                                          XlsxConfig config, int startRow) {
@@ -124,7 +162,6 @@ public final class XlsxWriter {
             return;
         }
 
-        // Get field names for data access
         Map<String, Field> fields = recordType.getFields();
         List<String> fieldNames = new ArrayList<>(fields.keySet());
 
@@ -134,78 +171,146 @@ public final class XlsxWriter {
             headerNames.add(AnnotationUtils.getHeaderName(recordType, fieldName));
         }
 
-        int currentRow = startRow;
+        Map<String, Integer> existingHeaders = existingHeaderMap(sheet, startRow);
 
-        // Write headers if configured
-        if (config.isWriteHeaders()) {
-            Row headerRow = sheet.createRow(currentRow++);
-            for (int i = 0; i < headerNames.size(); i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headerNames.get(i));
-            }
-        }
-
-        // Write data rows
-        for (int i = 0; i < data.size(); i++) {
-            Object item = data.get(i);
-            if (!(item instanceof BMap)) {
-                continue; // Skip non-map items
-            }
-            @SuppressWarnings("unchecked")
-            BMap<BString, Object> record = (BMap<BString, Object>) item;
-            Row row = sheet.createRow(currentRow++);
-
+        if (existingHeaders != null) {
+            // Header-position write: resolve each field's column from existing headers.
+            // Preserves unrelated columns in target rows.
+            int[] resolvedCols = new int[fieldNames.size()];
             for (int j = 0; j < fieldNames.size(); j++) {
-                Cell cell = row.createCell(j);
-                String fieldName = fieldNames.get(j);
-                Object value = record.get(io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
-                CellConverter.setCellValue(cell, value);
+                Integer col = existingHeaders.get(headerNames.get(j));
+                if (col == null) {
+                    throw new BallerinaErrorException(DiagnosticLog.error(
+                            "Field '" + fieldNames.get(j) + "' (header '" + headerNames.get(j)
+                            + "') has no matching column in the existing sheet header row"));
+                }
+                resolvedCols[j] = col;
+            }
+
+            // Data starts on the row after the existing header row
+            int dataStartRow = startRow + 1;
+
+            for (int i = 0; i < data.size(); i++) {
+                Object item = data.get(i);
+                if (!(item instanceof BMap)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> record = (BMap<BString, Object>) item;
+                Row row = sheet.getRow(dataStartRow + i);
+                if (row == null) {
+                    row = sheet.createRow(dataStartRow + i);
+                }
+                for (int j = 0; j < fieldNames.size(); j++) {
+                    Cell cell = row.createCell(resolvedCols[j]);
+                    String fieldName = fieldNames.get(j);
+                    Object value = record.get(io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
+                    CellConverter.setCellValue(cell, value);
+                }
+            }
+        } else {
+            // Fresh-sheet write: sequential positional layout
+            int currentRow = startRow;
+
+            if (config.isWriteHeaders()) {
+                Row headerRow = sheet.createRow(currentRow++);
+                for (int i = 0; i < headerNames.size(); i++) {
+                    Cell cell = headerRow.createCell(i);
+                    cell.setCellValue(headerNames.get(i));
+                }
+            }
+
+            for (int i = 0; i < data.size(); i++) {
+                Object item = data.get(i);
+                if (!(item instanceof BMap)) {
+                    continue;
+                }
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> record = (BMap<BString, Object>) item;
+                Row row = sheet.createRow(currentRow++);
+
+                for (int j = 0; j < fieldNames.size(); j++) {
+                    Cell cell = row.createCell(j);
+                    String fieldName = fieldNames.get(j);
+                    Object value = record.get(io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
+                    CellConverter.setCellValue(cell, value);
+                }
             }
         }
     }
 
     /**
      * Write map[] data to sheet.
+     *
+     * <p>Dispatches on header presence at {@code startRow}: with existing headers, map keys are
+     * resolved to columns by name and unrelated columns in target rows are preserved;
+     * unmatched keys raise an error. Without existing headers, falls back to sequential positional
+     * write using the union of all keys as headers.</p>
      */
     private static void writeMapData(Sheet sheet, BArray data, XlsxConfig config, int startRow) {
         if (data.size() == 0) {
             return;
         }
 
-        // Get all unique keys from all maps for headers
-        // Using LinkedHashSet for O(1) contains/add while maintaining insertion order
-        LinkedHashSet<String> headerSet = new LinkedHashSet<>();
-        for (int i = 0; i < data.size(); i++) {
-            @SuppressWarnings("unchecked")
-            BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
-            for (BString key : map.getKeys()) {
-                headerSet.add(key.getValue()); // O(1), auto-dedupes
+        Map<String, Integer> existingHeaders = existingHeaderMap(sheet, startRow);
+
+        if (existingHeaders != null) {
+            // Header-position write: resolve each map key against existing headers
+            int dataStartRow = startRow + 1;
+
+            for (int i = 0; i < data.size(); i++) {
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
+                Row row = sheet.getRow(dataStartRow + i);
+                if (row == null) {
+                    row = sheet.createRow(dataStartRow + i);
+                }
+                for (BString key : map.getKeys()) {
+                    String headerName = key.getValue();
+                    Integer col = existingHeaders.get(headerName);
+                    if (col == null) {
+                        throw new BallerinaErrorException(DiagnosticLog.error(
+                                "Map key '" + headerName
+                                + "' has no matching column in the existing sheet header row"));
+                    }
+                    Cell cell = row.createCell(col);
+                    Object value = map.get(key);
+                    CellConverter.setCellValue(cell, value);
+                }
             }
-        }
-        List<String> headers = new ArrayList<>(headerSet);
-
-        int currentRow = startRow;
-
-        // Write headers if configured
-        if (config.isWriteHeaders()) {
-            Row headerRow = sheet.createRow(currentRow++);
-            for (int i = 0; i < headers.size(); i++) {
-                Cell cell = headerRow.createCell(i);
-                cell.setCellValue(headers.get(i));
+        } else {
+            // Fresh-sheet write: union of all keys as headers, sequential positional layout
+            LinkedHashSet<String> headerSet = new LinkedHashSet<>();
+            for (int i = 0; i < data.size(); i++) {
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
+                for (BString key : map.getKeys()) {
+                    headerSet.add(key.getValue());
+                }
             }
-        }
+            List<String> headers = new ArrayList<>(headerSet);
 
-        // Write data rows
-        for (int i = 0; i < data.size(); i++) {
-            @SuppressWarnings("unchecked")
-            BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
-            Row row = sheet.createRow(currentRow++);
+            int currentRow = startRow;
 
-            for (int j = 0; j < headers.size(); j++) {
-                Cell cell = row.createCell(j);
-                String header = headers.get(j);
-                Object value = map.get(io.ballerina.runtime.api.utils.StringUtils.fromString(header));
-                CellConverter.setCellValue(cell, value);
+            if (config.isWriteHeaders()) {
+                Row headerRow = sheet.createRow(currentRow++);
+                for (int i = 0; i < headers.size(); i++) {
+                    Cell cell = headerRow.createCell(i);
+                    cell.setCellValue(headers.get(i));
+                }
+            }
+
+            for (int i = 0; i < data.size(); i++) {
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
+                Row row = sheet.createRow(currentRow++);
+
+                for (int j = 0; j < headers.size(); j++) {
+                    Cell cell = row.createCell(j);
+                    String header = headers.get(j);
+                    Object value = map.get(io.ballerina.runtime.api.utils.StringUtils.fromString(header));
+                    CellConverter.setCellValue(cell, value);
+                }
             }
         }
     }
@@ -242,6 +347,8 @@ public final class XlsxWriter {
 
             return null; // Success
 
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error writing to sheet: " + e.getMessage(), e);
         }

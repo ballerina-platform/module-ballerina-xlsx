@@ -551,5 +551,129 @@ function testWriteOverwritesExistingFile() returns error? {
     check removeTempFile(tempFile);
 }
 
+// =============================================================================
+// HEADER-POSITION WRITE TESTS
+// =============================================================================
+// Tests that verify writes to a sheet with existing headers resolve fields to
+// their target columns by header name (not by field iteration order), and that
+// unrelated columns are preserved.
 
+type EmpFull record {|
+    string name;
+    int age;
+    int formulaColumn;
+    string city;
+|};
+
+type EmpProjection record {|
+    string name;
+    string city;
+|};
+
+type EmpThreeCol record {|
+    string name;
+    int age;
+    string city;
+|};
+
+type EmpWithUnknownField record {|
+    string name;
+    string unknownField;
+|};
+
+type EmpSimple record {|
+    string name;
+    int age;
+|};
+
+@test:Config {
+    groups: ["writeSheet"]
+}
+function testWriteSheetPreservesUnrelatedColumns() returns error? {
+    string tempFile = getTempFilePath("preserves_unrelated_columns");
+
+    // Set up a sheet with 4 columns of data.
+    EmpFull[] originalData = [
+        {name: "Alice", age: 30, formulaColumn: 100, city: "NYC"},
+        {name: "Bob", age: 25, formulaColumn: 200, city: "LA"}
+    ];
+    check writeSheet(originalData, tempFile);
+
+    // Open via Workbook, project to 2 fields, modify city, write back to the existing sheet.
+    Workbook wb = check openFile(tempFile);
+    Sheet sheet = check wb.getSheetByIndex(0);
+
+    EmpProjection[] projection = check sheet.getRows();
+    test:assertEquals(projection.length(), 2, "Should read 2 projected rows");
+
+    // Modify city
+    projection[0] = {name: "Alice", city: "Boston"};
+    projection[1] = {name: "Bob", city: "Seattle"};
+
+    // Write back via putRows
+    check sheet.putRows(projection);
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Re-read with the full schema; FormulaColumn and Age must be unchanged.
+    EmpFull[] verified = check parseSheet(tempFile);
+
+    test:assertEquals(verified[0].name, "Alice", "Row 0 name preserved");
+    test:assertEquals(verified[0].age, 30, "Row 0 age preserved");
+    test:assertEquals(verified[0].formulaColumn, 100, "Row 0 formulaColumn preserved");
+    test:assertEquals(verified[0].city, "Boston", "Row 0 city updated");
+
+    test:assertEquals(verified[1].age, 25, "Row 1 age preserved");
+    test:assertEquals(verified[1].formulaColumn, 200, "Row 1 formulaColumn preserved");
+    test:assertEquals(verified[1].city, "Seattle", "Row 1 city updated");
+
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["writeSheet"]
+}
+function testWriteSheetErrorsOnUnmatchedField() returns error? {
+    string tempFile = getTempFilePath("errors_on_unmatched_field");
+
+    // Set up sheet with three columns: name, age, city
+    EmpThreeCol[] originalData = [{name: "Alice", age: 30, city: "NYC"}];
+    check writeSheet(originalData, tempFile);
+
+    // Try to write a record whose field has no matching header
+    Workbook wb = check openFile(tempFile);
+    Sheet sheet = check wb.getSheetByIndex(0);
+    EmpWithUnknownField[] bad = [{name: "Bob", unknownField: "value"}];
+
+    Error? result = sheet.putRows(bad);
+    test:assertTrue(result is Error, "Should error on field with no matching header");
+
+    check wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["writeSheet"]
+}
+function testWriteSheetFreshSheetIsSequential() returns error? {
+    string tempFile = getTempFilePath("fresh_sheet_sequential");
+
+    EmpSimple[] data = [
+        {name: "Alice", age: 30},
+        {name: "Bob", age: 25}
+    ];
+    check writeSheet(data, tempFile);
+
+    // Re-read raw and confirm positional layout: header at row 0, two data rows.
+    string[][] raw = check parseSheet(tempFile);
+    test:assertEquals(raw.length(), 3, "Header + 2 data rows");
+    test:assertEquals(raw[0][0], "name", "Header column 0");
+    test:assertEquals(raw[0][1], "age", "Header column 1");
+    test:assertEquals(raw[1][0], "Alice", "Row 1 column 0");
+    test:assertEquals(raw[1][1], "30", "Row 1 column 1");
+    test:assertEquals(raw[2][0], "Bob", "Row 2 column 0");
+    test:assertEquals(raw[2][1], "25", "Row 2 column 1");
+
+    check removeTempFile(tempFile);
+}
 
