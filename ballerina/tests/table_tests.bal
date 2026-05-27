@@ -846,7 +846,7 @@ function testUseTableAfterCloseReturnsError() returns error? {
 }
 
 // =============================================================================
-// Table name validation (FX-13)
+// Table name validation
 // =============================================================================
 
 @test:Config {groups: ["table"]}
@@ -868,4 +868,50 @@ function testCreateTableNameStartsWithDigit() returns error? {
     test:assertTrue(result is Error,
             "Table name starting with a digit must be rejected");
     check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testWriteTableFailureDoesNotLeak() returns error? {
+    string tempFile = TEST_DATA_DIR + "table_leak_regression.xlsx";
+
+    Workbook wb = check new;
+    Sheet sh = check wb.createSheet("Data");
+    check sh.putRows([["msg"], ["init"]]);
+    _ = check sh.createTable("Logs", "A1:A2");
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Excel's per-cell limit is 32_767 chars. Build a 65_536-char string by
+    // doubling "x" 16 times — POI rejects this during write.
+    string oversized = "x";
+    foreach int _ in 0 ..< 16 {
+        oversized = oversized + oversized;
+    }
+    record {|string msg;|}[] badRow = [{msg: oversized}];
+
+    foreach int _ in 0 ..< 50 {
+        Error? r = writeTable(badRow, tempFile, "Logs");
+        test:assertTrue(r is Error,
+                "Oversized writeTable must return an Error (not panic, not silent success)");
+    }
+
+    // After 50 failed writes, a clean write must still succeed AND persist.
+    record {|string msg;|}[] goodRow = [{msg: "after-failures"}];
+    check writeTable(goodRow, tempFile, "Logs");
+
+    // parseTable returns data rows only (no header). Robust check: look for
+    // the marker value rather than asserting an exact row count, so the test
+    // doesn't depend on writeTable's replace-vs-append semantics.
+    string[][] parsed = check parseTable(tempFile, "Logs");
+    boolean foundMarker = false;
+    foreach string[] row in parsed {
+        if row.length() > 0 && row[0] == "after-failures" {
+            foundMarker = true;
+            break;
+        }
+    }
+    test:assertTrue(foundMarker,
+            "Clean writeTable after 50 cleanup cycles must persist its data");
+
+    check file:remove(tempFile);
 }

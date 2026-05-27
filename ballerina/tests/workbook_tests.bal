@@ -833,7 +833,7 @@ function testWorkbookToBytesRoundTrip() returns error? {
 }
 
 // =============================================================================
-// Handle invalidation tests (FX-04)
+// Handle invalidation tests
 // =============================================================================
 // Vended Sheet/Table handles are invalidated on Workbook.close() / deleteSheet /
 // deleteTable. Method calls on invalidated handles return a typed Error instead
@@ -864,7 +864,7 @@ function testUseSheetAfterDeleteReturnsError() returns error? {
 }
 
 // =============================================================================
-// Sheet name validation + case-insensitive lookup + refuse-delete-last (FX-13)
+// Sheet name validation + case-insensitive lookup + refuse-delete-last
 // =============================================================================
 
 @test:Config {groups: ["workbook"]}
@@ -909,4 +909,15 @@ function testDeleteLastSheetRefused() returns error? {
     Error? result = wb.deleteSheet("OnlyOne");
     test:assertTrue(result is Error, "Deleting the last sheet must be refused");
     check wb.close();
+}
+
+@test:Config {groups: ["workbook"]}
+function testGetNameAfterCloseReturnsError() returns error? {
+    Workbook wb = check new(TEST_DATA_DIR + "simple.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    check wb.close();
+
+    string|error nameResult = trap sheet.getName();
+    test:assertTrue(nameResult is error,
+            "Sheet.getName after Workbook.close should error, not silently succeed");
 }

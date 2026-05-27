@@ -1035,10 +1035,14 @@ public final class TableHandle {
                 return StringUtils.fromString(cell.getStringCellValue());
             case NUMERIC:
                 if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
-                    // Return date as ISO format string for anydata
-                    java.util.Date date = cell.getDateCellValue();
-                    java.time.LocalDate localDate = date.toInstant()
-                            .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                    // Bypass POI's getDateCellValue (which routes through
+                    // LocaleUtil.getLocaleCalendar and inherits the system TZ).
+                    // Compute the LocalDate directly from the serial in UTC so the
+                    // ISO string is identical across machines.
+                    double serial = cell.getNumericCellValue();
+                    boolean is1904 = CellConverter.isWorkbookDate1904(cell);
+                    java.time.LocalDate localDate =
+                            CellConverter.convertSerialToLocalDate(serial, is1904);
                     return StringUtils.fromString(localDate.toString());
                 }
                 double numValue = cell.getNumericCellValue();

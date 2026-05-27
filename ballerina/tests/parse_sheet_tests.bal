@@ -1055,7 +1055,7 @@ function testParseTableWithDataTarget() returns error? {
 }
 
 // =============================================================================
-// Annotation hardening tests (FX-10)
+// Annotation hardening tests
 // =============================================================================
 // Annotation values and sheet headers are trimmed on lookup; duplicate
 // resolutions (two columns with the same header, or two fields with the same

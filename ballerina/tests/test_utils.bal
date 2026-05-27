@@ -30,6 +30,11 @@ function setDate1904Native(Workbook wb, boolean flag) returns Error? = @java:Met
     'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
 } external;
 
+function setFormulaCellNative(Workbook wb, string sheetName, int row, int col, string formula)
+        returns Error? = @java:Method {
+    'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+} external;
+
 // =============================================================================
 // TEST DATA GENERATION
 // =============================================================================
@@ -98,15 +103,24 @@ function setupTestData() returns error? {
     check writeSheet(complexHeaderData, TEST_DATA_DIR + "complex_headers.xlsx");
 
     // -------------------------------------------------------------------------
-    // formulas.xlsx - Cells with formulas
-    // Note: When written as strings, POI stores them as formula cells
+    // formulas.xlsx - Cells with real formula cells in column C.
+    // Built via the test-only setFormulaCellNative helper because the public
+    // write path treats "="-prefixed strings as text (no formula authoring).
+    // The cached formula result defaults to "0" because POI doesn't evaluate.
     // -------------------------------------------------------------------------
-    string[][] formulaData = [
-        ["A", "B", "Sum"],
-        ["10", "20", "=A2+B2"],
-        ["15", "25", "=A3+B3"]
-    ];
-    check writeSheet(formulaData, TEST_DATA_DIR + "formulas.xlsx");
+    Workbook wbFormula = check new;
+    Sheet sheetFormula = check wbFormula.createSheet("Formulas");
+    check sheetFormula.setCell(0, 0, "A");
+    check sheetFormula.setCell(0, 1, "B");
+    check sheetFormula.setCell(0, 2, "Sum");
+    check sheetFormula.setCell(1, 0, 10);
+    check sheetFormula.setCell(1, 1, 20);
+    check setFormulaCellNative(wbFormula, "Formulas", 1, 2, "A2+B2");
+    check sheetFormula.setCell(2, 0, 15);
+    check sheetFormula.setCell(2, 1, 25);
+    check setFormulaCellNative(wbFormula, "Formulas", 2, 2, "A3+B3");
+    check wbFormula.saveAs(TEST_DATA_DIR + "formulas.xlsx");
+    check wbFormula.close();
 
     // -------------------------------------------------------------------------
     // types_variety.xlsx - Various data types for type conversion tests

@@ -698,6 +698,33 @@ function testWriteSheetWithInlineLiteral() returns error? {
     check removeTempFile(tempFile);
 }
 
+// Strings beginning with "=" are written verbatim as text. Pre-v0.1 the writer
+// auto-promoted them to formulas, which crashed on common user text (e.g.
+// "=N/A" -> FormulaParseException) and opened an XLSX injection vector. This
+// test locks in the new behaviour for both string[][] and record inputs.
+@test:Config {groups: ["writeSheet"]}
+function testWriteEqualsPrefixedStringAsText() returns error? {
+    string tempFile = getTempFilePath("equals_prefixed_text");
+
+    string injection = "=HYPERLINK(\"https://example.com/phish\", \"reset password\")";
+    string[][] data = [
+        ["note", "value"],
+        ["=N/A", "missing"],
+        ["=SUM(B2:B10)", "literal sum"],
+        [injection, "injection vector"]
+    ];
+
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed.length(), 4);
+    test:assertEquals(parsed[1][0], "=N/A");
+    test:assertEquals(parsed[2][0], "=SUM(B2:B10)");
+    test:assertEquals(parsed[3][0], injection);
+
+    check removeTempFile(tempFile);
+}
+
 // =============================================================================
 // Atomic save tests
 // =============================================================================
@@ -735,4 +762,72 @@ function testWriteSheetFailureLeavesNoTempFile() returns error? {
     // The directory shouldn't exist; can't leave temp orphans in it.
     test:assertFalse(check file:test(TEST_DATA_DIR + "non_existent_dir_for_atomic_test",
             file:EXISTS), "No temp directory should have been created");
+}
+
+// Concurrent writeSheet calls must be truly isolated. Pre-fix a static
+// STYLE_CACHE leaked styles and raced across calls. The per-call style cache
+// fix makes each call independent; this test drives 10 parallel workers to
+// distinct files and verifies all 10 succeed and round-trip exactly.
+@test:Config {groups: ["writeSheet"]}
+function testConcurrentWritesIsolated() returns error? {
+    int workers = 10;
+    int rowsPerWorker = 100;
+    string[] paths = [];
+    future<Error?>[] futures = [];
+
+    foreach int w in 0 ..< workers {
+        string path = getTempFilePath("concurrent_" + w.toString());
+        paths.push(path);
+        string[][] data = [["worker", "row"]];
+        foreach int r in 0 ..< rowsPerWorker {
+            data.push([w.toString(), r.toString()]);
+        }
+        future<Error?> f = start writeSheet(data, path);
+        futures.push(f);
+    }
+
+    foreach int w in 0 ..< workers {
+        Error? err = wait futures[w];
+        test:assertTrue(err is (),
+                "Worker " + w.toString() + " must complete without error");
+    }
+
+    foreach int w in 0 ..< workers {
+        string[][] parsed = check parseSheet(paths[w]);
+        test:assertEquals(parsed.length(), rowsPerWorker + 1,
+                "Worker " + w.toString() + " file must have all rows");
+        test:assertEquals(parsed[1][0], w.toString(),
+                "Worker " + w.toString() + " first data row must be its own ID");
+        check removeTempFile(paths[w]);
+    }
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteLargeIntSilentPrecisionLoss() returns error? {
+    string tempFile = getTempFilePath("large_int_precision");
+
+    int safeBoundary = 9007199254740992;        // 2^53 — last exact int in a double
+    int firstLossy = 9007199254740993;          // 2^53 + 1 — rounds down to 2^53
+    int ibanLike = 4929187654321098765;         // ~5e18, off-grid at 2^62 spacing (1024)
+
+    // Note: int:MAX_VALUE deliberately avoided. It appears to round-trip due to
+    // double→long saturation on read masking the lossy long→double rounding on
+    // write — a coincidence at the long-max boundary, not preserved precision.
+    record {|int n;|}[] data = [
+        {n: safeBoundary},
+        {n: firstLossy},
+        {n: ibanLike}
+    ];
+    check writeSheet(data, tempFile);
+
+    record {|int n;|}[] parsed = check parseSheet(tempFile);
+
+    test:assertEquals(parsed[0].n, safeBoundary,
+            "2^53 must round-trip exactly — still within double mantissa");
+    test:assertEquals(parsed[1].n, safeBoundary,
+            "2^53+1 must silently round to 2^53 — Option B / matches POI");
+    test:assertNotEquals(parsed[2].n, ibanLike,
+            "Off-grid mid-magnitude value must NOT round-trip exactly — Option B contract");
+
+    check removeTempFile(tempFile);
 }

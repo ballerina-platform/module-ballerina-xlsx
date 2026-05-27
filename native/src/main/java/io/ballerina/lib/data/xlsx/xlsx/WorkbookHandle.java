@@ -635,6 +635,46 @@ public final class WorkbookHandle {
     }
 
     /**
+     * Write a formula cell at the given (row, column) on the named sheet.
+     *
+     * <p>Package-private — reachable only from test code via a private
+     * {@code @java:Method} external in {@code test_utils.bal}. The public
+     * Ballerina API does not author formulas on write (strings starting with
+     * "=" are written verbatim as text); this helper exists so we can build
+     * fixtures that contain real formula cells for testing
+     * {@code FormulaMode.CACHED} and {@code FormulaMode.TEXT} read paths.</p>
+     *
+     * @param workbookObj Ballerina Workbook object
+     * @param sheetName   Target sheet name
+     * @param row         0-based row index
+     * @param col         0-based column index
+     * @param formula     Formula expression without the leading "="
+     * @return null on success, error on failure
+     */
+    public static Object setFormulaCellNative(BObject workbookObj, BString sheetName,
+                                              long row, long col, BString formula) {
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            Sheet sheet = workbook.getSheet(sheetName.getValue());
+            if (sheet == null) {
+                return DiagnosticLog.error("Sheet not found: " + sheetName.getValue());
+            }
+            org.apache.poi.ss.usermodel.Row poiRow = sheet.getRow((int) row);
+            if (poiRow == null) {
+                poiRow = sheet.createRow((int) row);
+            }
+            org.apache.poi.ss.usermodel.Cell cell = poiRow.getCell((int) col);
+            if (cell == null) {
+                cell = poiRow.createCell((int) col);
+            }
+            cell.setCellFormula(formula.getValue());
+            return null;
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting formula cell: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Close the workbook and release resources.
      *
      * @param workbookObj Ballerina Workbook object

@@ -444,7 +444,7 @@ public final class CellConverter {
      * {@code Workbook} interface; we default to false for non-XSSF formats
      * (which use the 1900 epoch).
      */
-    private static boolean isWorkbookDate1904(Cell cell) {
+    static boolean isWorkbookDate1904(Cell cell) {
         Workbook wb = cell.getSheet().getWorkbook();
         if (wb instanceof XSSFWorkbook) {
             return ((XSSFWorkbook) wb).isDate1904();
@@ -467,7 +467,7 @@ public final class CellConverter {
      * 1900-02-28 (the closest real date) and shift larger serials down by one
      * to align with Excel's display.</p>
      */
-    private static LocalDate convertSerialToLocalDate(double serial, boolean isDate1904) {
+    static LocalDate convertSerialToLocalDate(double serial, boolean isDate1904) {
         long days = (long) Math.floor(serial);
         if (isDate1904) {
             return EPOCH_1904.plusDays(days);
@@ -683,15 +683,9 @@ public final class CellConverter {
                 }
             }
         } else {
-            // Default: convert to string
-            String strValue = value.toString();
-            // Check if this is a formula (starts with "=")
-            if (strValue.startsWith("=") && strValue.length() > 1) {
-                // Set as formula, stripping the leading "="
-                cell.setCellFormula(strValue.substring(1));
-            } else {
-                cell.setCellValue(strValue);
-            }
+            // Strings starting with "=" are written verbatim as text — formula
+            // authoring on write is deferred to a future xlsx:Formula wrapper.
+            cell.setCellValue(value.toString());
         }
     }
 
