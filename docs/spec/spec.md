@@ -447,7 +447,7 @@ public class Workbook {
     public function hasSheet(string name) returns boolean;
     public function getSheet(string|int sheet) returns Sheet|SheetNotFoundError;
     public function createSheet(string name) returns Sheet|Error;
-    public function deleteSheet(string|int sheet) returns SheetNotFoundError?;
+    public function deleteSheet(string|int sheet) returns Error?;
 
     # Table access (tables are unique by name across the workbook)
     public function getTable(string name) returns Table|TableNotFoundError;
@@ -498,7 +498,8 @@ public class Sheet {
     public function setColumn(string|int columnRef, anydata[] data) returns Error?;
     public function setCell(int rowIndex, int columnIndex, anydata value)
             returns Error?;
-    public function setCell(string cellAddress, anydata value) returns Error?;     # A1 notation overload
+    public function setCellByAddress(string cellAddress, anydata value)
+            returns Error?;                                                         # A1 notation
 
     # Sheet management
     public function deleteRow(int index) returns Error?;                            # shifts subsequent rows up

@@ -15,7 +15,20 @@
 // under the License.
 
 import ballerina/file;
+import ballerina/jballerina.java;
 import ballerina/test;
+
+// =============================================================================
+// TEST-ONLY NATIVE EXTERNALS
+// =============================================================================
+// Bindings to package-private Java helpers used only during fixture generation.
+// These are NOT part of the published module — they live in this test file and
+// don't compile into the bala. They exist so we can build 1904-epoch fixtures
+// programmatically, the way Apache POI / NPOI / openpyxl handle the same need.
+
+function setDate1904Native(Workbook wb, boolean flag) returns Error? = @java:Method {
+    'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+} external;
 
 // =============================================================================
 // TEST DATA GENERATION
@@ -55,7 +68,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // multi_sheet.xlsx - Multiple sheets for sheet selection tests
     // -------------------------------------------------------------------------
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
 
     Sheet sheet1 = check wb.createSheet("Sheet1");
     string[][] sheet1Data = [["A1", "B1"], ["A2", "B2"]];
@@ -108,7 +121,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // edge_empty_sheet.xlsx - Empty sheet for edge case testing
     // -------------------------------------------------------------------------
-    Workbook wbEmpty = check createWorkbook();
+    Workbook wbEmpty = check new;
     _ = check wbEmpty.createSheet("EmptySheet");
     check wbEmpty.saveAs(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
     check wbEmpty.close();
@@ -122,7 +135,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // edge_empty_rows.xlsx - Data with empty rows in between
     // -------------------------------------------------------------------------
-    Workbook wbGaps = check createWorkbook();
+    Workbook wbGaps = check new;
     Sheet sheetGaps = check wbGaps.createSheet("DataWithGaps");
     // Manually write rows with gaps using putRows at specific positions
     // Row 0: headers, Row 1: data, Row 2: empty, Row 3: data, Row 4: empty, Row 5: data
@@ -194,6 +207,22 @@ function setupTestData() returns error? {
         ["Jane", "25", "Marketing"]
     ];
     check writeSheet(caseHeadersData, TEST_DATA_DIR + "case_headers.xlsx");
+
+    // -------------------------------------------------------------------------
+    // dates_1904.xlsx - Workbook with the 1904 date epoch flag set
+    // Built programmatically (the public API doesn't expose setDate1904) so we
+    // can verify the parser honours `Workbook.isDate1904()` rather than always
+    // defaulting to the 1900 epoch. The cell at (0, 0) holds the numeric serial
+    // 44708, which is the day count from 1904-01-01 to 2026-05-27. Read via the
+    // 1904 epoch this is 2026-05-27; read via the 1900 epoch it would be off
+    // by about 4 years and 1 day.
+    // -------------------------------------------------------------------------
+    Workbook wb1904 = check new;
+    check setDate1904Native(wb1904, true);
+    Sheet sheet1904 = check wb1904.createSheet("Dates");
+    check sheet1904.setCell(0, 0, 44708);
+    check wb1904.saveAs(TEST_DATA_DIR + "dates_1904.xlsx");
+    check wb1904.close();
 }
 
 // Cleanup test data files after running tests
@@ -214,7 +243,8 @@ function cleanupTestData() returns error? {
         "numeric_types.xlsx",
         "nilable_fields.xlsx",
         "case_headers.xlsx",
-        "extreme_numeric_test.xlsx"
+        "extreme_numeric_test.xlsx",
+        "dates_1904.xlsx"
     ];
 
     foreach string fileName in filesToRemove {

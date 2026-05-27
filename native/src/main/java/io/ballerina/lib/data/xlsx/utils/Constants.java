@@ -56,10 +56,12 @@ public final class Constants {
     public static final String FORMULA_MODE_CACHED = "CACHED";
     public static final String FORMULA_MODE_TEXT = "TEXT";
 
-    // Ballerina type names
+    // Ballerina type names — Sheet and Table are public `object` types in Ballerina
+    // with non-public `SheetImpl` / `TableImpl` classes providing the implementation.
+    // Native instance construction must target the concrete class name.
     public static final String WORKBOOK_TYPE = "Workbook";
-    public static final String SHEET_TYPE = "Sheet";
-    public static final String TABLE_TYPE = "Table";
+    public static final String SHEET_TYPE = "SheetImpl";
+    public static final String TABLE_TYPE = "TableImpl";
 
     // Default values
     public static final String DEFAULT_SHEET_NAME = "Sheet1";

@@ -102,13 +102,11 @@ public final class Native {
                     new java.io.FileNotFoundException(filePath.getValue()));
         }
 
-        try {
-            // Open workbook, find table, parse data
-            org.apache.poi.ss.usermodel.Workbook workbook =
-                    org.apache.poi.ss.usermodel.WorkbookFactory.create(path.toFile());
-
+        // try-with-resources: workbook is closed on every exit path, including
+        // unchecked exceptions thrown during dispatch.
+        try (org.apache.poi.ss.usermodel.Workbook workbook =
+                     org.apache.poi.ss.usermodel.WorkbookFactory.create(path.toFile())) {
             if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
-                workbook.close();
                 return DiagnosticLog.error("Tables are only supported in XLSX format");
             }
 
@@ -122,16 +120,12 @@ public final class Native {
                         (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
                 for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
                     if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
-                        // Found the table - parse its data
-                        Object result = io.ballerina.lib.data.xlsx.xlsx.TableParser.parseTable(
+                        return io.ballerina.lib.data.xlsx.xlsx.TableHandle.parseFromXSSFTable(
                                 env, table, sheet, options, typedesc);
-                        workbook.close();
-                        return result;
                     }
                 }
             }
 
-            workbook.close();
             return DiagnosticLog.tableNotFoundError(name);
 
         } catch (java.io.IOException e) {
@@ -160,15 +154,14 @@ public final class Native {
                     new java.io.FileNotFoundException(filePath.getValue()));
         }
 
-        try {
-            // Open workbook for modification
-            java.io.FileInputStream fis = new java.io.FileInputStream(path.toFile());
-            org.apache.poi.ss.usermodel.Workbook workbook =
-                    org.apache.poi.ss.usermodel.WorkbookFactory.create(fis);
-            fis.close();
-
+        // try-with-resources: both the FileInputStream and the Workbook are closed
+        // on every exit path. POI's WorkbookFactory.create(InputStream) reads the
+        // stream fully before returning, so closing the stream after the workbook
+        // (TWR reverse order) is harmless.
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(path.toFile());
+             org.apache.poi.ss.usermodel.Workbook workbook =
+                     org.apache.poi.ss.usermodel.WorkbookFactory.create(fis)) {
             if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
-                workbook.close();
                 return DiagnosticLog.error("Tables are only supported in XLSX format");
             }
 
@@ -182,25 +175,21 @@ public final class Native {
                         (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
                 for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
                     if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
-                        // Found the table - write data to it
-                        Object result = io.ballerina.lib.data.xlsx.xlsx.TableParser.writeToTable(
+                        Object result = io.ballerina.lib.data.xlsx.xlsx.TableHandle.writeToXSSFTable(
                                 table, sheet, data, options);
                         if (result != null) {
-                            workbook.close();
                             return result;  // Error
                         }
 
-                        // Save the workbook
-                        java.io.FileOutputStream fos = new java.io.FileOutputStream(path.toFile());
-                        workbook.write(fos);
-                        fos.close();
-                        workbook.close();
+                        // Atomic save: temp file + atomic rename. If any failure occurs
+                        // before the rename succeeds, the original file is untouched.
+                        io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle.writeAtomically(
+                                path, workbook);
                         return null;  // Success
                     }
                 }
             }
 
-            workbook.close();
             return DiagnosticLog.tableNotFoundError(name);
 
         } catch (java.io.IOException e) {

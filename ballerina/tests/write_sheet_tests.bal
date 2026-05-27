@@ -109,7 +109,7 @@ function testWriteWithCustomSheetName() returns error? {
     check writeSheet(data, tempFile, sheetName = "MyCustomSheet");
 
     // Verify by opening as workbook and checking sheet name
-    Workbook wb = check openFile(tempFile);
+    Workbook wb = check new(tempFile);
     string[] sheetNames = wb.getSheetNames();
     test:assertEquals(sheetNames.length(), 1, "Should have 1 sheet");
     test:assertEquals(sheetNames[0], "MyCustomSheet", "Sheet name should match");
@@ -600,8 +600,8 @@ function testWriteSheetPreservesUnrelatedColumns() returns error? {
     check writeSheet(originalData, tempFile);
 
     // Open via Workbook, project to 2 fields, modify city, write back to the existing sheet.
-    Workbook wb = check openFile(tempFile);
-    Sheet sheet = check wb.getSheetByIndex(0);
+    Workbook wb = check new(tempFile);
+    Sheet sheet = check wb.getSheet(0);
 
     EmpProjection[] projection = check sheet.getRows();
     test:assertEquals(projection.length(), 2, "Should read 2 projected rows");
@@ -641,8 +641,8 @@ function testWriteSheetErrorsOnUnmatchedField() returns error? {
     check writeSheet(originalData, tempFile);
 
     // Try to write a record whose field has no matching header
-    Workbook wb = check openFile(tempFile);
-    Sheet sheet = check wb.getSheetByIndex(0);
+    Workbook wb = check new(tempFile);
+    Sheet sheet = check wb.getSheet(0);
     EmpWithUnknownField[] bad = [{name: "Bob", unknownField: "value"}];
 
     Error? result = sheet.putRows(bad);
@@ -677,3 +677,62 @@ function testWriteSheetFreshSheetIsSequential() returns error? {
     check removeTempFile(tempFile);
 }
 
+// =============================================================================
+// Public Data union dispatch — inline literal at writeSheet
+// =============================================================================
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetWithInlineLiteral() returns error? {
+    // No pre-typed local variable — the literal is contextually typed against the
+    // public `Data = Row[]` parameter. This forces a union-element BArray into Java
+    // and exercises the dispatchWrite UNION_TAG branch in XlsxWriter.
+    string tempFile = getTempFilePath("inline_literal_writesheet");
+    check writeSheet([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]], tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed.length(), 3);
+    test:assertEquals(parsed[0], ["Name", "Age"]);
+    test:assertEquals(parsed[1][0], "Alice");
+    test:assertEquals(parsed[2][1], "25");
+
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// Atomic save tests
+// =============================================================================
+// File writes go through a temp-file + atomic-rename pattern so a partial or
+// failed write never leaves the destination corrupt.
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetOverwritesAtomically() returns error? {
+    // Pre-create a file with content A, then overwrite with content B. The
+    // overwrite must produce a complete, valid workbook (not a half-written one).
+    string tempFile = getTempFilePath("atomic_overwrite");
+
+    string[][] contentA = [["Old"], ["data"]];
+    check writeSheet(contentA, tempFile);
+
+    string[][] contentB = [["Fresh", "Header"], ["Row1A", "Row1B"], ["Row2A", "Row2B"]];
+    check writeSheet(contentB, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed, contentB, "Overwrite must produce content B exactly");
+
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetFailureLeavesNoTempFile() returns error? {
+    // Writing to a path under a non-existent parent directory fails. The atomic
+    // save mechanism creates its temp file in the destination's parent; when the
+    // parent doesn't exist, createTempFile fails and no .tmp file is left behind.
+    string badPath = TEST_DATA_DIR + "non_existent_dir_for_atomic_test/output.xlsx";
+
+    error? result = writeSheet([["X"]], badPath);
+    test:assertTrue(result is error, "Write to nonexistent parent dir must fail");
+
+    // The directory shouldn't exist; can't leave temp orphans in it.
+    test:assertFalse(check file:test(TEST_DATA_DIR + "non_existent_dir_for_atomic_test",
+            file:EXISTS), "No temp directory should have been created");
+}

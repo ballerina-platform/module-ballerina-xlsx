@@ -155,7 +155,9 @@ public final class XlsxParser {
      * Parse a sheet to the target type.
      */
     private static Object parseSheet(Environment env, Sheet sheet, XlsxConfig config, BTypedesc targetType) {
-        Type describingType = targetType.getDescribingType();
+        // Unwrap any outer type reference (e.g., when the target is declared as the `Data` alias,
+        // getDescribingType() returns a BTypeReferenceType, not the underlying ArrayType).
+        Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
         int typeTag = describingType.getTag();
 
         // Handle array types
@@ -185,6 +187,12 @@ public final class XlsxParser {
             // map<anydata>[] - array of maps
             if (elementTag == TypeTags.MAP_TAG) {
                 return parseToMapArray(env, sheet, config, (MapType) resolvedElementType);
+            }
+
+            // Row[] (the public union) — the caller asked for the abstract row shape without
+            // narrowing. Return the most general usable representation: string[][].
+            if (elementTag == TypeTags.UNION_TAG) {
+                return parseToStringArray(sheet, config);
             }
         }
 

@@ -121,7 +121,16 @@ public final class RecordParsingUtils {
             if (cell != null) {
                 String headerValue = cell.getStringCellValue();
                 if (headerValue != null && !headerValue.trim().isEmpty()) {
-                    headerMap.put(headerValue.trim(), colIdx);
+                    String trimmed = headerValue.trim();
+                    Integer prior = headerMap.put(trimmed, colIdx);
+                    if (prior != null) {
+                        // Two columns share the same header text. Fail loud rather than
+                        // silently mapping the field to whichever column happens to come
+                        // later in iteration order.
+                        throw new BallerinaErrorException(DiagnosticLog.parseError(
+                                "Duplicate header '" + trimmed + "' at columns "
+                                        + prior + " and " + colIdx));
+                    }
                 }
             }
         }
@@ -186,6 +195,10 @@ public final class RecordParsingUtils {
 
         Map<String, Field> fields = recordType.getFields();
 
+        // Track which header each field claims, so two fields can't silently route
+        // to the same column via duplicate @xlsx:Name annotations.
+        Map<String, String> headerToField = new HashMap<>();
+
         for (Map.Entry<String, Field> entry : fields.entrySet()) {
             String fieldName = entry.getKey();
             Field field = entry.getValue();
@@ -193,6 +206,13 @@ public final class RecordParsingUtils {
 
             // Check for @xlsx:Name annotation
             String headerName = AnnotationUtils.getHeaderName(recordType, fieldName);
+            String priorField = headerToField.put(headerName, fieldName);
+            if (priorField != null) {
+                throw new BallerinaErrorException(DiagnosticLog.parseError(
+                        "Fields '" + priorField + "' and '" + fieldName
+                                + "' both resolve to header '" + headerName
+                                + "' (check for duplicate @xlsx:Name annotations)"));
+            }
 
             Integer colIndex = headerMap.get(headerName);
             if (colIndex != null) {

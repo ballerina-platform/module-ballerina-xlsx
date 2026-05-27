@@ -62,8 +62,10 @@ import java.util.Map;
  */
 public final class TableHandle {
 
-    private static final String TABLE_NATIVE_KEY = "tableNative";
-    private static final String SHEET_NATIVE_KEY = "sheetNative";
+    // Package-private so WorkbookHandle/SheetHandle can null these slots during invalidation.
+    static final String TABLE_NATIVE_KEY = "tableNative";
+    static final String SHEET_NATIVE_KEY = "sheetNative";
+    static final String PARENT_WORKBOOK_KEY = "parentWorkbook";
 
     private TableHandle() {
         // Private constructor to prevent instantiation
@@ -230,44 +232,79 @@ public final class TableHandle {
      */
     public static Object getRows(Environment env, BObject tableObj, BMap<BString, Object> options,
                                   BTypedesc targetType) {
-        XSSFTable table = getTable(tableObj);
-        XSSFSheet sheet = getSheet(tableObj);
-        XlsxConfig config = XlsxConfig.fromParseOptions(options);
-
         try {
-            Type describingType = targetType.getDescribingType();
-            int typeTag = describingType.getTag();
-
-            if (typeTag == TypeTags.ARRAY_TAG) {
-                ArrayType arrayType = (ArrayType) describingType;
-                Type elementType = arrayType.getElementType();
-                Type resolvedElementType = TypeUtils.getReferredType(elementType);
-                int elementTag = resolvedElementType.getTag();
-
-                // string[][]
-                if (elementTag == TypeTags.ARRAY_TAG) {
-                    return getTableRowsAsStringArray(table, sheet, config);
-                }
-
-                // record[]
-                if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-                    return getTableRowsAsRecords(table, sheet, config, (RecordType) resolvedElementType);
-                }
-
-                // map<anydata>[]
-                if (elementTag == TypeTags.MAP_TAG) {
-                    return getTableRowsAsMaps(table, sheet, config, (MapType) resolvedElementType);
-                }
-            }
-
-            // Default: string[][]
-            return getTableRowsAsStringArray(table, sheet, config);
-
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+            return parseTableInternal(env, table, sheet, options, targetType);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error getting table rows: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Parse a POI XSSFTable directly to the user's target shape, without going
+     * through a Ballerina Table handle. Used by {@code Native.parseTable} which
+     * has the XSSF objects from {@code WorkbookFactory.create} and never vends
+     * a Table BObject.
+     *
+     * <p>Shared dispatch with {@link #getRows(Environment, BObject, BMap, BTypedesc)} —
+     * both call into {@link #parseTableInternal} below.</p>
+     */
+    public static Object parseFromXSSFTable(Environment env, XSSFTable table, XSSFSheet sheet,
+                                             BMap<BString, Object> options, BTypedesc targetType) {
+        try {
+            return parseTableInternal(env, table, sheet, options, targetType);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error parsing table: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Shared dispatch: resolve target typedesc, route to the appropriate row-shape
+     * helper. Caller wraps in the standard try/catch (BallerinaErrorException /
+     * Exception) → BError conversion.
+     */
+    private static Object parseTableInternal(Environment env, XSSFTable table, XSSFSheet sheet,
+                                              BMap<BString, Object> options, BTypedesc targetType) {
+        XlsxConfig config = XlsxConfig.fromParseOptions(options);
+
+        // Unwrap any outer type reference (e.g., when the target is declared as `Data`).
+        Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
+        int typeTag = describingType.getTag();
+
+        if (typeTag == TypeTags.ARRAY_TAG) {
+            ArrayType arrayType = (ArrayType) describingType;
+            Type elementType = arrayType.getElementType();
+            Type resolvedElementType = TypeUtils.getReferredType(elementType);
+            int elementTag = resolvedElementType.getTag();
+
+            // string[][]
+            if (elementTag == TypeTags.ARRAY_TAG) {
+                return getTableRowsAsStringArray(table, sheet, config);
+            }
+
+            // record[]
+            if (elementTag == TypeTags.RECORD_TYPE_TAG) {
+                return getTableRowsAsRecords(table, sheet, config, (RecordType) resolvedElementType);
+            }
+
+            // map<anydata>[]
+            if (elementTag == TypeTags.MAP_TAG) {
+                return getTableRowsAsMaps(table, sheet, config, (MapType) resolvedElementType);
+            }
+
+            // Row[] (the public union) — default to string[][].
+            if (elementTag == TypeTags.UNION_TAG) {
+                return getTableRowsAsStringArray(table, sheet, config);
+            }
+        }
+
+        // Default: string[][]
+        return getTableRowsAsStringArray(table, sheet, config);
     }
 
     /**
@@ -282,11 +319,11 @@ public final class TableHandle {
      */
     public static Object getRow(Environment env, BObject tableObj, long index, BMap<BString, Object> options,
                                  BTypedesc targetType) {
-        XSSFTable table = getTable(tableObj);
-        XSSFSheet sheet = getSheet(tableObj);
-        XlsxConfig config = XlsxConfig.fromParseOptions(options);
-
         try {
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+            XlsxConfig config = XlsxConfig.fromParseOptions(options);
+
             AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
             int firstRow = area.getFirstCell().getRow();
             int lastRow = area.getLastCell().getRow();
@@ -324,6 +361,11 @@ public final class TableHandle {
                 return getTableRowAsRecord(table, sheet, row, firstCol, lastCol, config, (RecordType) resolvedType);
             }
 
+            // Row (the public union) — default to string[].
+            if (typeTag == TypeTags.UNION_TAG) {
+                return getRowAsStringArray(row, firstCol, lastCol, config);
+            }
+
             // Default: string[]
             return getRowAsStringArray(row, firstCol, lastCol, config);
 
@@ -343,63 +385,90 @@ public final class TableHandle {
      * @return null on success, error on failure
      */
     public static Object putRows(BObject tableObj, BArray data, BMap<BString, Object> options) {
-        XSSFTable table = getTable(tableObj);
-        XSSFSheet sheet = getSheet(tableObj);
-
         try {
-            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
-            int firstRow = area.getFirstCell().getRow();
-            int lastRow = area.getLastCell().getRow();
-            int firstCol = area.getFirstCell().getCol();
-            int lastCol = area.getLastCell().getCol();
-
-            // Data starts after header row
-            int dataFirstRow = firstRow + 1;
-            int totalsRowCount = table.getTotalsRowCount();
-            boolean hasTotals = totalsRowCount > 0;
-
-            long dataSize = data.getLength();
-            int currentDataRows = lastRow - firstRow - totalsRowCount;
-
-            // Check if we need to expand the table
-            if (dataSize > currentDataRows) {
-                // Calculate new last row (keeping totals if present)
-                int newDataLastRow = dataFirstRow + (int) dataSize - 1;
-                int newLastRow = hasTotals ? newDataLastRow + 1 : newDataLastRow;
-
-                // Resize the table
-                CellReference topLeft = new CellReference(firstRow, firstCol);
-                CellReference bottomRight = new CellReference(newLastRow, lastCol);
-                AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
-                CTTable ctTable = table.getCTTable();
-                ctTable.setRef(newArea.formatAsString());
-
-                // Update table references
-                table.updateHeaders();
-            }
-
-            // Write the data
-            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
-
-            // We write data directly without headers since table has its own headers
-            for (int i = 0; i < dataSize; i++) {
-                int rowIdx = dataFirstRow + i;
-                Row row = sheet.getRow(rowIdx);
-                if (row == null) {
-                    row = sheet.createRow(rowIdx);
-                }
-
-                Object rowData = data.get(i);
-                writeRowData(row, firstCol, rowData, config);
-            }
-
-            return null;
-
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+            return writeTableInternal(table, sheet, data, options);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error writing to table: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Write data to a POI XSSFTable directly, without going through a Ballerina
+     * Table handle. Used by {@code Native.writeTable} which has the XSSF objects
+     * from {@code WorkbookFactory.create} and never vends a Table BObject.
+     *
+     * <p>Shared dispatch with {@link #putRows(BObject, BArray, BMap)} — both call
+     * into {@link #writeTableInternal} below.</p>
+     */
+    public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data,
+                                           BMap<BString, Object> options) {
+        try {
+            return writeTableInternal(table, sheet, data, options);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error writing to table: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Shared write dispatch. Resizes the table if the incoming data exceeds the
+     * current data-row capacity, then writes each row via {@link #writeRowData}.
+     */
+    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data,
+                                              BMap<BString, Object> options) {
+        AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+        int firstRow = area.getFirstCell().getRow();
+        int lastRow = area.getLastCell().getRow();
+        int firstCol = area.getFirstCell().getCol();
+        int lastCol = area.getLastCell().getCol();
+
+        // Data starts after header row
+        int dataFirstRow = firstRow + 1;
+        int totalsRowCount = table.getTotalsRowCount();
+        boolean hasTotals = totalsRowCount > 0;
+
+        long dataSize = data.getLength();
+        int currentDataRows = lastRow - firstRow - totalsRowCount;
+
+        // Check if we need to expand the table
+        if (dataSize > currentDataRows) {
+            // Calculate new last row (keeping totals if present)
+            int newDataLastRow = dataFirstRow + (int) dataSize - 1;
+            int newLastRow = hasTotals ? newDataLastRow + 1 : newDataLastRow;
+
+            // Resize the table
+            CellReference topLeft = new CellReference(firstRow, firstCol);
+            CellReference bottomRight = new CellReference(newLastRow, lastCol);
+            AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+            CTTable ctTable = table.getCTTable();
+            ctTable.setRef(newArea.formatAsString());
+
+            // Update table references
+            table.updateHeaders();
+        }
+
+        // Write the data
+        XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+        StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+
+        // We write data directly without headers since table has its own headers
+        for (int i = 0; i < dataSize; i++) {
+            int rowIdx = dataFirstRow + i;
+            Row row = sheet.getRow(rowIdx);
+            if (row == null) {
+                row = sheet.createRow(rowIdx);
+            }
+
+            Object rowData = data.get(i);
+            writeRowData(row, firstCol, rowData, config, styleCache);
+        }
+
+        return null;
     }
 
     // === Totals Row Methods ===
@@ -425,14 +494,14 @@ public final class TableHandle {
      * @return Map of column names to totals values
      */
     public static Object getTotalsRow(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        XSSFSheet sheet = getSheet(tableObj);
-
-        if (table.getTotalsRowCount() == 0) {
-            return DiagnosticLog.error("Table '" + table.getName() + "' does not have a totals row");
-        }
-
         try {
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+
+            if (table.getTotalsRowCount() == 0) {
+                return DiagnosticLog.error("Table '" + table.getName() + "' does not have a totals row");
+            }
+
             AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
             int totalsRowIdx = area.getLastCell().getRow();
             int firstCol = area.getFirstCell().getCol();
@@ -458,6 +527,8 @@ public final class TableHandle {
 
             return totals;
 
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error getting totals row: " + e.getMessage(), e);
         }
@@ -473,13 +544,15 @@ public final class TableHandle {
      * @return null on success, error on failure
      */
     public static Object rename(BObject tableObj, BString newName) {
-        XSSFTable table = getTable(tableObj);
-
         try {
             String name = newName.getValue();
+            validateTableName(name);
+            XSSFTable table = getTable(tableObj);
             table.setName(name);
             table.setDisplayName(name);
             return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error renaming table: " + e.getMessage(), e);
         }
@@ -493,10 +566,10 @@ public final class TableHandle {
      * @return null on success, error on failure
      */
     public static Object resize(BObject tableObj, BMap<BString, Object> newRange) {
-        XSSFTable table = getTable(tableObj);
-        XSSFSheet sheet = getSheet(tableObj);
-
         try {
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+
             int firstRow = ((Long) newRange.get(StringUtils.fromString("firstRowIndex"))).intValue();
             int lastRow = ((Long) newRange.get(StringUtils.fromString("lastRowIndex"))).intValue();
             int firstCol = ((Long) newRange.get(StringUtils.fromString("firstColumnIndex"))).intValue();
@@ -917,7 +990,8 @@ public final class TableHandle {
     /**
      * Write row data to a POI Row.
      */
-    private static void writeRowData(Row row, int startCol, Object rowData, XlsxConfig config) {
+    private static void writeRowData(Row row, int startCol, Object rowData, XlsxConfig config,
+                                      StyleCache styleCache) {
         if (rowData instanceof BMap) {
             @SuppressWarnings("unchecked")
             BMap<BString, Object> record = (BMap<BString, Object>) rowData;
@@ -925,14 +999,14 @@ public final class TableHandle {
             for (int i = 0; i < keys.length; i++) {
                 Cell cell = row.createCell(startCol + i);
                 Object value = record.get(keys[i]);
-                CellConverter.setCellValue(cell, value);
+                CellConverter.setCellValue(cell, value, styleCache);
             }
         } else if (rowData instanceof BArray) {
             BArray array = (BArray) rowData;
             for (int i = 0; i < array.getLength(); i++) {
                 Cell cell = row.createCell(startCol + i);
                 Object value = array.get(i);
-                CellConverter.setCellValue(cell, value);
+                CellConverter.setCellValue(cell, value, styleCache);
             }
         }
     }
@@ -996,25 +1070,56 @@ public final class TableHandle {
     }
 
     /**
-     * Get the native XSSFTable from Ballerina object.
+     * Validate a table name against Excel's rules: 1-255 characters, starts with a
+     * letter or underscore, no spaces. Throws {@link BallerinaErrorException} with a
+     * typed Error if invalid.
+     */
+    static void validateTableName(String name) {
+        if (name == null || name.isEmpty()) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Table name cannot be empty"));
+        }
+        if (name.length() > 255) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Table name '" + name + "' exceeds Excel's 255-character limit"));
+        }
+        char first = name.charAt(0);
+        if (!Character.isLetter(first) && first != '_') {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Table name '" + name + "' must start with a letter or underscore"));
+        }
+        if (name.indexOf(' ') >= 0) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Table name '" + name + "' cannot contain spaces"));
+        }
+    }
+
+    /**
+     * Get the native XSSFTable from Ballerina object. Throws a {@link BallerinaErrorException}
+     * carrying a typed {@code xlsx:Error} if the handle has been invalidated (workbook closed
+     * or table deleted). Callers should wrap in the standard
+     * {@code catch (BallerinaErrorException e) { return e.getBError(); }} pattern.
      */
     private static XSSFTable getTable(BObject tableObj) {
         XSSFTable table = (XSSFTable) tableObj.getNativeData(TABLE_NATIVE_KEY);
         if (table == null) {
-            throw new IllegalStateException(
-                    "Table is not properly initialized. The workbook may have been closed.");
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Table handle is no longer valid. The workbook may have been closed "
+                            + "or the table deleted."));
         }
         return table;
     }
 
     /**
-     * Get the native XSSFSheet from Ballerina object.
+     * Get the native XSSFSheet from Ballerina object. Same invalidation contract as
+     * {@link #getTable(BObject)}.
      */
     private static XSSFSheet getSheet(BObject tableObj) {
         XSSFSheet sheet = (XSSFSheet) tableObj.getNativeData(SHEET_NATIVE_KEY);
         if (sheet == null) {
-            throw new IllegalStateException(
-                    "Table sheet is not properly initialized. The workbook may have been closed.");
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Table handle is no longer valid. The workbook may have been closed "
+                            + "or the table deleted."));
         }
         return sheet;
     }

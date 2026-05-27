@@ -29,22 +29,17 @@ import io.ballerina.runtime.api.utils.TypeUtils;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.WeakHashMap;
+import java.time.temporal.ChronoUnit;
 
 /**
  * Utility class for converting Excel cells to Ballerina values.
@@ -57,10 +52,6 @@ public final class CellConverter {
     private static final String EXCEL_DATE_FORMAT = "yyyy-mm-dd";
     private static final String EXCEL_DATETIME_FORMAT = "yyyy-mm-dd hh:mm:ss";
     private static final String EXCEL_TIME_FORMAT = "h:mm:ss";
-
-    // Style cache: WeakHashMap ties cache lifetime to workbook lifecycle
-    private static final Map<Workbook, Map<String, CellStyle>> STYLE_CACHE =
-            Collections.synchronizedMap(new WeakHashMap<>());
 
     // Time module constants for type detection
     private static final String TIME_MODULE = "time";
@@ -83,6 +74,18 @@ public final class CellConverter {
     private static final int SECONDS_PER_HOUR = SECONDS_PER_MINUTE * MINUTES_PER_HOUR;
     private static final int SECONDS_PER_DAY = SECONDS_PER_HOUR * HOURS_PER_DAY;
     private static final int MINUTES_PER_DAY = MINUTES_PER_HOUR * HOURS_PER_DAY;
+    private static final long NANOS_PER_DAY = 86_400_000_000_000L;
+    private static final long NANOS_PER_SECOND = 1_000_000_000L;
+
+    // Excel epoch reference dates for direct serial ↔ LocalDate math.
+    // We bypass POI's java.util.Date conversion (which uses LocalUtil.getLocaleCalendar
+    // and thus inherits the system timezone) by computing directly in UTC.
+    private static final LocalDate EPOCH_1900 = LocalDate.of(1900, 1, 1);
+    private static final LocalDate EPOCH_1904 = LocalDate.of(1904, 1, 1);
+    // Excel's 1900 epoch has the Lotus 1-2-3 leap-year bug: serial 60 represents
+    // the non-existent "1900-02-29". Serials > 60 are shifted by one relative to
+    // a normal day count. The threshold is hard-coded here for clarity.
+    private static final long LOTUS_LEAP_DAY_SERIAL_1900 = 60;
 
     private CellConverter() {
         // Private constructor to prevent instantiation
@@ -140,8 +143,12 @@ public final class CellConverter {
 
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    Date date = cell.getDateCellValue();
-                    return DATE_FORMAT.format(date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate());
+                    // Direct serial → LocalDate math (UTC, honours isDate1904). Bypasses
+                    // POI's cell.getDateCellValue() which routes through LocaleUtil.
+                    boolean is1904 = isWorkbookDate1904(cell);
+                    LocalDate localDate = convertSerialToLocalDate(
+                            cell.getNumericCellValue(), is1904);
+                    return DATE_FORMAT.format(localDate);
                 }
                 double numValue = cell.getNumericCellValue();
                 // Format as integer if it's a whole number
@@ -197,29 +204,30 @@ public final class CellConverter {
                 return convertStringToTarget(strValue, targetType);
 
             case NUMERIC:
-                // Check TimeOfDay FIRST - must bypass DateUtil.isCellDateFormatted() because
-                // POI considers time-only formats like "h:mm:ss" as date formats, which causes
-                // epoch/timezone issues when reading times stored with 1899 reference date
+                // Check TimeOfDay FIRST — POI considers time-only formats like "h:mm:ss"
+                // as date formats, which would route through the date-conversion path and
+                // pick up the 1900-epoch base date (causing epoch confusion for time values).
                 Type effectiveTargetType = getEffectiveType(targetType);
+                double numericValue = cell.getNumericCellValue();
                 if (isTimeOfDayType(effectiveTargetType)) {
-                    double numericValue = cell.getNumericCellValue();
+                    LocalTime tod = convertNumericToTime(numericValue);
+                    return createTimeOfDayRecord(tod, (RecordType) effectiveTargetType);
+                }
+
+                // Date / Civil path: trigger on either a date-formatted cell (Excel says
+                // "this is a date") or a date-typed target (caller says "give me a date").
+                // We bypass POI's java.util.Date conversion entirely — computing
+                // serial → LocalDate + LocalTime directly in UTC gives deterministic,
+                // cross-machine, timezone-independent round-trips.
+                if (DateUtil.isCellDateFormatted(cell)
+                        || isDateType(effectiveTargetType) || isCivilType(effectiveTargetType)) {
+                    boolean is1904 = isWorkbookDate1904(cell);
+                    LocalDate localDate = convertSerialToLocalDate(numericValue, is1904);
                     LocalTime localTime = convertNumericToTime(numericValue);
-                    return createTimeOfDayRecord(localTime, (RecordType) effectiveTargetType);
+                    return convertDate(localDate, localTime, targetType);
                 }
 
-                // Standard date formatting check (for Date and Civil types)
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    return convertDate(cell.getDateCellValue(), targetType);
-                }
-
-                // Check other time types when cell isn't date-formatted
-                // (handles dates written without explicit date formatting)
-                if (isDateType(effectiveTargetType) || isCivilType(effectiveTargetType)) {
-                    Date date = DateUtil.getJavaDate(cell.getNumericCellValue());
-                    return convertDate(date, targetType);
-                }
-
-                return convertNumeric(cell.getNumericCellValue(), targetType);
+                return convertNumeric(numericValue, targetType);
 
             case BOOLEAN:
                 return convertBoolean(cell.getBooleanCellValue(), targetType);
@@ -383,16 +391,15 @@ public final class CellConverter {
         }
     }
 
-    private static Object convertDate(Date date, Type targetType) {
-        // Handle null date (can happen for edge cases in DateUtil.getJavaDate)
-        if (date == null) {
+    /**
+     * Build a Ballerina time record (time:Date / time:TimeOfDay / time:Civil) from
+     * a naive {@link LocalDate} and {@link LocalTime}. Falls back to an ISO string
+     * for non-time target types.
+     */
+    private static Object convertDate(LocalDate localDate, LocalTime localTime, Type targetType) {
+        if (localDate == null) {
             return null;
         }
-
-        // Convert java.util.Date to java.time types
-        ZonedDateTime zdt = date.toInstant().atZone(ZoneId.systemDefault());
-        LocalDate localDate = zdt.toLocalDate();
-        LocalTime localTime = zdt.toLocalTime();
 
         // Get effective type (handle nullable types like time:Date?)
         Type effectiveType = getEffectiveType(targetType);
@@ -432,18 +439,108 @@ public final class CellConverter {
     }
 
     /**
+     * Read the workbook's date-system flag (1900 vs 1904 epoch). POI exposes
+     * {@code isDate1904()} on {@code XSSFWorkbook} but not on the generic
+     * {@code Workbook} interface; we default to false for non-XSSF formats
+     * (which use the 1900 epoch).
+     */
+    private static boolean isWorkbookDate1904(Cell cell) {
+        Workbook wb = cell.getSheet().getWorkbook();
+        if (wb instanceof XSSFWorkbook) {
+            return ((XSSFWorkbook) wb).isDate1904();
+        }
+        return false;
+    }
+
+    /**
+     * Convert an Excel serial number to a naive LocalDate, bypassing POI's
+     * {@code DateUtil.getJavaDate} which routes through {@code java.util.Date} and
+     * inherits the system timezone via {@code LocaleUtil.getLocaleCalendar}.
+     *
+     * <p>Excel dates are conceptually naive — the serial represents what the
+     * spreadsheet shows, not an absolute instant. Computing directly from the
+     * epoch gives deterministic, cross-machine round-trips and matches the
+     * behavior of openpyxl / xlsxwriter / SheetJS.</p>
+     *
+     * <p>Handles the Excel 1900-epoch Lotus 1-2-3 leap-year quirk: serial 60 in
+     * 1900-epoch files represents the non-existent "1900-02-29". We map it to
+     * 1900-02-28 (the closest real date) and shift larger serials down by one
+     * to align with Excel's display.</p>
+     */
+    private static LocalDate convertSerialToLocalDate(double serial, boolean isDate1904) {
+        long days = (long) Math.floor(serial);
+        if (isDate1904) {
+            return EPOCH_1904.plusDays(days);
+        }
+        if (days == LOTUS_LEAP_DAY_SERIAL_1900) {
+            // Phantom 1900-02-29 — coerce to the closest real date.
+            return LocalDate.of(1900, 2, 28);
+        }
+        if (days > LOTUS_LEAP_DAY_SERIAL_1900) {
+            days -= 1;
+        }
+        // 1900 epoch: serial 1 = 1900-01-01, so the base is one day before.
+        return EPOCH_1900.plusDays(days - 1);
+    }
+
+    /**
+     * Convert a naive {@link LocalDate} (with an optional {@link LocalTime}) to
+     * an Excel serial number, bypassing POI's Date-based conversion path.
+     *
+     * <p>Inverse of {@link #convertSerialToLocalDate}; reintroduces the Lotus
+     * leap-day quirk for 1900-epoch files so the resulting serial matches
+     * Excel's display.</p>
+     */
+    private static double convertLocalDateTimeToSerial(LocalDate date, LocalTime time, boolean isDate1904) {
+        long days;
+        if (isDate1904) {
+            days = ChronoUnit.DAYS.between(EPOCH_1904, date);
+        } else {
+            // 1900 epoch: serial 1 = 1900-01-01.
+            days = ChronoUnit.DAYS.between(EPOCH_1900, date) + 1;
+            // Reintroduce the phantom 1900-02-29 so serials > 59 land where Excel expects.
+            if (days >= LOTUS_LEAP_DAY_SERIAL_1900) {
+                days += 1;
+            }
+        }
+        if (time == null) {
+            return (double) days;
+        }
+        // Day fraction via BigDecimal to preserve sub-second precision before the final cast.
+        BigDecimal dayFraction = BigDecimal.valueOf(time.toNanoOfDay())
+                .divide(BigDecimal.valueOf(NANOS_PER_DAY), 18, RoundingMode.HALF_UP);
+        return BigDecimal.valueOf(days).add(dayFraction).doubleValue();
+    }
+
+    /**
      * Convert an Excel numeric value (fractional day) to LocalTime.
-     * In Excel, time is stored as a fraction of a day (e.g., 0.5 = 12:00 noon).
+     *
+     * <p>Excel stores serials as {@code double} (~17 significant decimal digits).
+     * When there's no date component (serial in {@code [0, 1)}, i.e. pure
+     * time-of-day), all 17 digits land in the fraction and full nanosecond
+     * precision survives the round-trip. When there's a date integer (Civil
+     * values), the integer consumes digits and only ~microsecond precision
+     * survives — the fraction picks up sub-microsecond noise that would
+     * otherwise cascade into spurious minute/second drift. We round at the
+     * appropriate scale so an exact "14:30:00" wall-clock value round-trips
+     * cleanly rather than emerging as "14:29:59.999_999_981".</p>
      */
     private static LocalTime convertNumericToTime(double numericValue) {
-        // Excel stores time as fraction of day (0.0 to ~0.9999...)
-        // Fractional part represents time, integer part represents days
         double timeFraction = numericValue - Math.floor(numericValue);
-        long totalSeconds = Math.round(timeFraction * SECONDS_PER_DAY);
-        int hours = (int) ((totalSeconds / SECONDS_PER_HOUR) % HOURS_PER_DAY);
-        int minutes = (int) ((totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
-        int seconds = (int) (totalSeconds % SECONDS_PER_MINUTE);
-        return LocalTime.of(hours, minutes, seconds);
+        // Scale 0 → round to nano; scale -3 → round to nearest 1000ns (microsecond).
+        int roundingScale = Math.floor(Math.abs(numericValue)) >= 1.0 ? -3 : 0;
+        BigDecimal nanos = BigDecimal.valueOf(timeFraction)
+                .multiply(BigDecimal.valueOf(NANOS_PER_DAY))
+                .setScale(roundingScale, RoundingMode.HALF_UP);
+        long nanoOfDay = nanos.longValueExact();
+        // Defensive clamp: rounding may land on NANOS_PER_DAY (one tick past end-of-day)
+        // for values extremely close to 1.0. LocalTime.ofNanoOfDay requires [0, NANOS_PER_DAY).
+        if (nanoOfDay < 0) {
+            nanoOfDay = 0;
+        } else if (nanoOfDay >= NANOS_PER_DAY) {
+            nanoOfDay = NANOS_PER_DAY - 1;
+        }
+        return LocalTime.ofNanoOfDay(nanoOfDay);
     }
 
     // =============================================================================
@@ -538,11 +635,13 @@ public final class CellConverter {
     /**
      * Set a cell value from a Ballerina value.
      *
-     * @param cell  The cell to set
-     * @param value The Ballerina value
+     * @param cell       The cell to set
+     * @param value      The Ballerina value
+     * @param styleCache Per-call style cache for date/time format styles. Must not be null
+     *                   when the value may resolve to a time record.
      */
     @SuppressWarnings("unchecked")
-    public static void setCellValue(Cell cell, Object value) {
+    public static void setCellValue(Cell cell, Object value, StyleCache styleCache) {
         if (value == null) {
             cell.setBlank();
             return;
@@ -565,17 +664,19 @@ public final class CellConverter {
             boolean hasYear = map.containsKey(YEAR_FIELD);
 
             if (hasHour && !hasYear) {
-                // TimeOfDay: use direct calculation to avoid POI's pre-1900 date rejection
-                // and timezone issues. Excel stores time as fraction of day.
+                // TimeOfDay: compute the day-fraction directly (no Date, no TZ).
                 double excelTime = calculateExcelTime(map);
                 cell.setCellValue(excelTime);
-                applyDateCellStyle(cell, map);  // Apply h:mm:ss format
+                applyDateCellStyle(cell, map, styleCache);  // Apply h:mm:ss format
             } else {
-                // Date or Civil: use existing Date-based approach
-                Date dateValue = extractDateFromMap(map);
-                if (dateValue != null) {
-                    cell.setCellValue(dateValue);
-                    applyDateCellStyle(cell, map);  // Apply date format so POI recognizes it on read
+                // Date or Civil: bypass POI's cell.setCellValue(Date) path (which would
+                // route through LocaleUtil.getLocaleCalendar and inherit the system TZ).
+                // Compute the Excel serial directly from naive LocalDate/LocalTime in UTC.
+                boolean is1904 = isWorkbookDate1904(cell);
+                Double serial = extractDateSerialFromMap(map, is1904);
+                if (serial != null) {
+                    cell.setCellValue(serial);
+                    applyDateCellStyle(cell, map, styleCache);  // Apply date format so readers recognise it
                 } else {
                     // Not a recognized time record, convert to string
                     cell.setCellValue(value.toString());
@@ -599,13 +700,15 @@ public final class CellConverter {
     // =============================================================================
 
     /**
-     * Extract a java.util.Date from a Ballerina time record (Date or Civil).
-     * Returns null if the map is not a recognized time record.
+     * Compute an Excel serial number from a Ballerina time record (time:Date or
+     * time:Civil). Returns {@code null} if the map's field shape doesn't match a
+     * recognized time record.
      *
-     * <p>Note: TimeOfDay is handled separately in setCellValue() using calculateExcelTime()
-     * to avoid POI's pre-1900 date rejection and timezone issues.</p>
+     * <p>Computed directly in UTC without going through {@link java.util.Date} so
+     * the round-trip is deterministic and timezone-independent. TimeOfDay is handled
+     * separately in {@code setCellValue} via {@link #calculateExcelTime(BMap)}.</p>
      */
-    private static Date extractDateFromMap(BMap<BString, Object> map) {
+    private static Double extractDateSerialFromMap(BMap<BString, Object> map, boolean isDate1904) {
         boolean hasYear = map.containsKey(YEAR_FIELD);
         boolean hasMonth = map.containsKey(MONTH_FIELD);
         boolean hasDay = map.containsKey(DAY_FIELD);
@@ -614,65 +717,72 @@ public final class CellConverter {
 
         // time:Civil has both date and time fields
         if (hasYear && hasMonth && hasDay && hasHour && hasMinute) {
-            return extractCivilDate(map);
+            return extractCivilSerial(map, isDate1904);
         }
 
         // time:Date has only date fields
         if (hasYear && hasMonth && hasDay && !hasHour) {
-            return extractDateOnlyDate(map);
+            return extractDateOnlySerial(map, isDate1904);
         }
 
         // Not a recognized time record (TimeOfDay is handled separately)
         return null;
     }
 
-    private static Date extractDateOnlyDate(BMap<BString, Object> map) {
+    private static double extractDateOnlySerial(BMap<BString, Object> map, boolean isDate1904) {
         int year = extractIntValue(map.get(YEAR_FIELD));
         int month = extractIntValue(map.get(MONTH_FIELD));
         int day = extractIntValue(map.get(DAY_FIELD));
-
         LocalDate localDate = LocalDate.of(year, month, day);
-        return Date.from(localDate.atStartOfDay(ZoneId.systemDefault()).toInstant());
+        return convertLocalDateTimeToSerial(localDate, null, isDate1904);
     }
 
-    private static Date extractCivilDate(BMap<BString, Object> map) {
+    private static double extractCivilSerial(BMap<BString, Object> map, boolean isDate1904) {
         int year = extractIntValue(map.get(YEAR_FIELD));
         int month = extractIntValue(map.get(MONTH_FIELD));
         int day = extractIntValue(map.get(DAY_FIELD));
         int hour = extractIntValue(map.get(HOUR_FIELD));
         int minute = extractIntValue(map.get(MINUTE_FIELD));
+
+        // time:Civil.second is `decimal` in the Ballerina time module; split into integer
+        // second + nano-fraction so the BigDecimal precision survives the write.
         int second = 0;
+        int nano = 0;
         if (map.containsKey(SECOND_FIELD)) {
-            second = extractIntValue(map.get(SECOND_FIELD));
+            Object secVal = map.get(SECOND_FIELD);
+            if (secVal instanceof io.ballerina.runtime.api.values.BDecimal) {
+                BigDecimal bd = ((io.ballerina.runtime.api.values.BDecimal) secVal).decimalValue();
+                second = bd.intValue();
+                BigDecimal frac = bd.subtract(BigDecimal.valueOf(second));
+                BigDecimal nanoBd = frac.multiply(BigDecimal.valueOf(NANOS_PER_SECOND))
+                        .setScale(0, RoundingMode.HALF_UP);
+                try {
+                    nano = nanoBd.intValueExact();
+                } catch (ArithmeticException ignored) {
+                    nano = 0;
+                }
+                // Defensive clamp to the valid LocalTime nano range.
+                if (nano < 0) {
+                    nano = 0;
+                } else if (nano >= NANOS_PER_SECOND) {
+                    nano = (int) (NANOS_PER_SECOND - 1);
+                }
+            } else {
+                second = extractIntValue(secVal);
+            }
         }
 
         LocalDate localDate = LocalDate.of(year, month, day);
-        LocalTime localTime = LocalTime.of(hour, minute, second);
-        return Date.from(localDate.atTime(localTime).atZone(ZoneId.systemDefault()).toInstant());
-    }
-
-    /**
-     * Get or create a cached CellStyle for the given workbook and format.
-     * Styles are cached per workbook per format to avoid hitting Excel's ~64K style limit.
-     * WeakHashMap ensures cache entries are cleaned up when workbook is garbage collected.
-     */
-    private static synchronized CellStyle getOrCreateStyle(Workbook workbook, String format) {
-        return STYLE_CACHE
-                .computeIfAbsent(workbook, k -> new HashMap<>())
-                .computeIfAbsent(format, f -> {
-                    CellStyle style = workbook.createCellStyle();
-                    style.setDataFormat(workbook.getCreationHelper().createDataFormat().getFormat(f));
-                    return style;
-                });
+        LocalTime localTime = LocalTime.of(hour, minute, second, nano);
+        return convertLocalDateTimeToSerial(localDate, localTime, isDate1904);
     }
 
     /**
      * Apply a date cell style so POI recognizes it as date-formatted on read.
      * Chooses format based on the type of time record (Date, TimeOfDay, or Civil).
+     * Uses the per-call StyleCache to dedupe style creation within a single write call.
      */
-    private static void applyDateCellStyle(Cell cell, BMap<BString, Object> map) {
-        Workbook workbook = cell.getSheet().getWorkbook();
-
+    private static void applyDateCellStyle(Cell cell, BMap<BString, Object> map, StyleCache styleCache) {
         // Detect the type of time record by checking which fields are present
         boolean hasDate = map.containsKey(YEAR_FIELD);  // Date and Civil have year
         boolean hasTime = map.containsKey(HOUR_FIELD);  // TimeOfDay and Civil have hour
@@ -686,7 +796,7 @@ public final class CellConverter {
             format = EXCEL_TIME_FORMAT;      // TimeOfDay: h:mm:ss
         }
 
-        cell.setCellStyle(getOrCreateStyle(workbook, format));
+        cell.setCellStyle(styleCache.getOrCreate(format));
     }
 
     /**
@@ -721,11 +831,26 @@ public final class CellConverter {
     private static double calculateExcelTime(BMap<BString, Object> map) {
         int hour = extractIntValue(map.get(HOUR_FIELD));
         int minute = extractIntValue(map.get(MINUTE_FIELD));
-        int second = 0;
+
+        // time:TimeOfDay.second is `decimal`; preserve sub-second precision by computing
+        // the day-fraction in BigDecimal before the final double cast.
+        BigDecimal secondBd = BigDecimal.ZERO;
         if (map.containsKey(SECOND_FIELD)) {
-            second = extractIntValue(map.get(SECOND_FIELD));
+            Object secVal = map.get(SECOND_FIELD);
+            if (secVal instanceof io.ballerina.runtime.api.values.BDecimal) {
+                secondBd = ((io.ballerina.runtime.api.values.BDecimal) secVal).decimalValue();
+            } else {
+                secondBd = BigDecimal.valueOf(extractIntValue(secVal));
+            }
         }
-        return hour / (double) HOURS_PER_DAY + minute / (double) MINUTES_PER_DAY + second / (double) SECONDS_PER_DAY;
+
+        BigDecimal totalSeconds = BigDecimal.valueOf(hour)
+                .multiply(BigDecimal.valueOf(SECONDS_PER_HOUR))
+                .add(BigDecimal.valueOf(minute).multiply(BigDecimal.valueOf(SECONDS_PER_MINUTE)))
+                .add(secondBd);
+        BigDecimal dayFraction = totalSeconds.divide(
+                BigDecimal.valueOf(SECONDS_PER_DAY), 18, RoundingMode.HALF_UP);
+        return dayFraction.doubleValue();
     }
 
     /**

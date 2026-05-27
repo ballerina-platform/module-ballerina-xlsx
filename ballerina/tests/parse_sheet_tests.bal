@@ -602,7 +602,7 @@ function testCaseInsensitiveHeadersDisabled() returns error? {
 }
 function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
     // Test case-insensitive headers via Workbook/Sheet API
-    Workbook wb = check openFile(TEST_DATA_DIR + "case_headers.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "case_headers.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet1");
     RowReadOptions opts = {
@@ -662,8 +662,8 @@ function testSheetGetRowsErrorTypePreservation() returns error? {
     ];
     check writeSheet(data, testFile);
 
-    Workbook wb = check openFile(testFile);
-    Sheet sheet = check wb.getSheetByIndex(0);
+    Workbook wb = check new(testFile);
+    Sheet sheet = check wb.getSheet(0);
 
     ErrorTypeTestRecord[]|Error result = sheet.getRows();
 
@@ -1026,4 +1026,106 @@ function testParseClosedRecordIgnoresExtraColumns() returns error? {
     test:assertEquals(employees[0].department, "Engineering", "First employee department");
 
     // Closed record should not have any extra fields - all fields are defined
+}
+
+// =============================================================================
+// Public Data union dispatch — explicit Data target on parse functions
+// =============================================================================
+
+@test:Config {groups: ["parseSheet"]}
+function testParseSheetWithDataTarget() returns error? {
+    // Explicit `Data` target — typedesc resolves to a type reference. Native must
+    // unwrap the reference and pick a sensible default for the union element type.
+    Data rows = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
+    test:assertTrue(rows is string[][], "Data target should fall back to string[][]");
+    if rows is string[][] {
+        test:assertEquals(rows.length(), 4, "Should have header + 3 data rows");
+        test:assertEquals(rows[0], ["name", "age", "department"]);
+    }
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testParseTableWithDataTarget() returns error? {
+    // parseTable with explicit Data target — same dispatch class.
+    Data rows = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
+    test:assertTrue(rows is string[][], "Data target on parseTable should fall back to string[][]");
+    if rows is string[][] {
+        test:assertEquals(rows.length(), 3, "EmployeeTable has 3 data rows");
+    }
+}
+
+// =============================================================================
+// Annotation hardening tests (FX-10)
+// =============================================================================
+// Annotation values and sheet headers are trimmed on lookup; duplicate
+// resolutions (two columns with the same header, or two fields with the same
+// @xlsx:Name) fail loud rather than silently collapsing to whichever wins
+// the map insertion race.
+
+type EmpWithPaddedAnnotation record {|
+    @Name {value: " Department "}
+    string department;
+    string name;
+|};
+
+@test:Config {groups: ["parseSheet", "annotation"]}
+function testWhitespaceInXlsxNameAnnotation() returns error? {
+    // Write a sheet whose header is exactly "Department" (no spaces).
+    string tempFile = getTempFilePath("padded_annot");
+    string[][] data = [
+        ["Department", "name"],
+        ["Engineering", "Alice"]
+    ];
+    check writeSheet(data, tempFile);
+
+    // Field annotation has " Department " (padded); trim should normalize it
+    // to "Department" and the lookup must succeed.
+    EmpWithPaddedAnnotation[] employees = check parseSheet(tempFile);
+    test:assertEquals(employees.length(), 1);
+    test:assertEquals(employees[0].department, "Engineering");
+    test:assertEquals(employees[0].name, "Alice");
+
+    check removeTempFile(tempFile);
+}
+
+type EmpWithDuplicateAnnotation record {|
+    @Name {value: "Label"}
+    string a;
+    @Name {value: "Label"}
+    string b;
+|};
+
+@test:Config {groups: ["parseSheet", "annotation"]}
+function testDuplicateXlsxNameAnnotationErrors() returns error? {
+    string tempFile = getTempFilePath("dup_annot");
+    string[][] data = [["Label"], ["value"]];
+    check writeSheet(data, tempFile);
+
+    EmpWithDuplicateAnnotation[]|Error result = parseSheet(tempFile);
+    test:assertTrue(result is Error,
+            "Two fields with the same @xlsx:Name must produce a clear error");
+
+    check removeTempFile(tempFile);
+}
+
+type DupHeaderEmp record {|
+    string Name;
+    string Age;
+|};
+
+@test:Config {groups: ["parseSheet", "annotation"]}
+function testDuplicateExcelHeaderErrors() returns error? {
+    // Build a sheet with two "Name" columns to verify duplicate-header detection.
+    string tempFile = getTempFilePath("dup_header");
+    string[][] data = [
+        ["Name", "Name"],
+        ["Alice", "Bob"]
+    ];
+    check writeSheet(data, tempFile);
+
+    DupHeaderEmp[]|Error result = parseSheet(tempFile);
+    test:assertTrue(result is Error,
+            "Two sheet columns with the same header must produce a clear error");
+
+    check removeTempFile(tempFile);
 }

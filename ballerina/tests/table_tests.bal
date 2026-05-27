@@ -53,7 +53,7 @@ function setupTableTestData() returns error? {
     // tables_test.xlsx - Excel file with tables
     // -------------------------------------------------------------------------
     // Note: We need to create tables programmatically using the Workbook API
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
 
     // Create a sheet and add some data
     Sheet sheet1 = check wb.createSheet("Employees");
@@ -170,7 +170,7 @@ function testWriteTableExpands() returns error? {
     string tempFile = TEST_DATA_DIR + "temp_table_write.xlsx";
 
     // Open original and save as temp
-    Workbook wbSrc = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wbSrc = check new(TEST_DATA_DIR + "tables_test.xlsx");
     check wbSrc.saveAs(tempFile);
     check wbSrc.close();
 
@@ -198,7 +198,7 @@ function testWriteTableExpands() returns error? {
     groups: ["table"]
 }
 function testWorkbookGetTable() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
 
     Table empTable = check wb.getTable("EmployeeTable");
     test:assertEquals(empTable.getName(), "EmployeeTable", "Table name should match");
@@ -210,7 +210,7 @@ function testWorkbookGetTable() returns error? {
     groups: ["table"]
 }
 function testWorkbookGetTableNotFound() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
 
     Table|TableNotFoundError result = wb.getTable("NonExistentTable");
     test:assertTrue(result is TableNotFoundError, "Should return TableNotFoundError");
@@ -222,9 +222,9 @@ function testWorkbookGetTableNotFound() returns error? {
     groups: ["table"]
 }
 function testWorkbookGetAllTables() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
 
-    Table[] tables = wb.getAllTables();
+    Table[] tables = check wb.getAllTables();
     test:assertEquals(tables.length(), 2, "Should have 2 tables");
 
     // Tables could be in any order
@@ -243,7 +243,7 @@ function testWorkbookGetAllTables() returns error? {
     groups: ["table"]
 }
 function testSheetGetTable() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Sheet sheet = check wb.getSheet("Employees");
 
     Table empTable = check sheet.getTable("EmployeeTable");
@@ -256,10 +256,10 @@ function testSheetGetTable() returns error? {
     groups: ["table"]
 }
 function testSheetGetTables() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Sheet sheet = check wb.getSheet("Employees");
 
-    Table[] tables = sheet.getTables();
+    Table[] tables = check sheet.getTables();
     test:assertEquals(tables.length(), 1, "Employees sheet should have 1 table");
     test:assertEquals(tables[0].getName(), "EmployeeTable", "Table name should be EmployeeTable");
 
@@ -270,7 +270,7 @@ function testSheetGetTables() returns error? {
     groups: ["table"]
 }
 function testSheetCreateTable() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // First write some data
@@ -299,7 +299,7 @@ function testSheetCreateTable() returns error? {
     groups: ["table"]
 }
 function testSheetCreateTableFromData() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     TableEmployee[] employees = [
@@ -320,7 +320,7 @@ function testSheetCreateTableFromData() returns error? {
     groups: ["table"]
 }
 function testSheetDeleteTable() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // Create data and table
@@ -334,14 +334,14 @@ function testSheetDeleteTable() returns error? {
     });
 
     // Verify table exists
-    Table[] tablesBefore = sheet.getTables();
+    Table[] tablesBefore = check sheet.getTables();
     test:assertEquals(tablesBefore.length(), 1, "Should have 1 table before delete");
 
     // Delete the table
     check sheet.deleteTable("TempTable");
 
     // Verify table is deleted
-    Table[] tablesAfter = sheet.getTables();
+    Table[] tablesAfter = check sheet.getTables();
     test:assertEquals(tablesAfter.length(), 0, "Should have 0 tables after delete");
 
     check wb.close();
@@ -355,7 +355,7 @@ function testSheetDeleteTable() returns error? {
     groups: ["table"]
 }
 function testTableIdentityMethods() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     test:assertEquals(empTable.getName(), "EmployeeTable", "getName() should return table name");
@@ -369,7 +369,7 @@ function testTableIdentityMethods() returns error? {
     groups: ["table"]
 }
 function testTableRangeMethods() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Full range (including header)
@@ -392,7 +392,7 @@ function testTableRangeMethods() returns error? {
     groups: ["table"]
 }
 function testTableGetHeaders() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     string[] headers = empTable.getHeaders();
@@ -408,7 +408,7 @@ function testTableGetHeaders() returns error? {
     groups: ["table"]
 }
 function testTableGetRows() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     TableEmployee[] employees = check empTable.getRows();
@@ -425,7 +425,7 @@ function testTableGetRows() returns error? {
     groups: ["table"]
 }
 function testTableGetRow() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     TableEmployee emp = check empTable.getRow(1);
@@ -439,7 +439,7 @@ function testTableGetRow() returns error? {
     groups: ["table"]
 }
 function testTablePutRows() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("Test");
 
     // Create initial data and table
@@ -478,7 +478,7 @@ function testTablePutRows() returns error? {
     groups: ["table"]
 }
 function testTableRename() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("Test");
 
     // Create a table
@@ -504,7 +504,7 @@ function testTableRename() returns error? {
     groups: ["table"]
 }
 function testTableResize() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("Test");
 
     // Create initial data (more than the table will initially cover)
@@ -548,7 +548,7 @@ function testTableResize() returns error? {
     groups: ["table"]
 }
 function testTableNotFoundErrorType() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
 
     Table|TableNotFoundError result = wb.getTable("NonExistent");
     test:assertTrue(result is TableNotFoundError, "Should be TableNotFoundError");
@@ -565,7 +565,7 @@ function testTableNotFoundErrorType() returns error? {
     groups: ["table"]
 }
 function testSheetTableNotFoundError() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Sheet sheet = check wb.getSheet("Employees");
 
     Table|TableNotFoundError result = sheet.getTable("NonExistent");
@@ -578,7 +578,7 @@ function testSheetTableNotFoundError() returns error? {
     groups: ["table"]
 }
 function testDeleteNonExistentTable() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("Test");
 
     TableNotFoundError? result = sheet.deleteTable("NonExistent");
@@ -596,7 +596,7 @@ function testDeleteNonExistentTable() returns error? {
 }
 function testTableHasTotalsRowFalse() returns error? {
     // Our programmatically created tables don't have totals rows
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     test:assertFalse(empTable.hasTotalsRow(), "Table should not have totals row");
@@ -609,7 +609,7 @@ function testTableHasTotalsRowFalse() returns error? {
 }
 function testTableGetTotalsRowError() returns error? {
     // Getting totals row from table without totals should return error
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     map<anydata>|Error result = empTable.getTotalsRow();
@@ -626,7 +626,7 @@ function testTableGetTotalsRowError() returns error? {
     groups: ["table"]
 }
 function testTableOverlapError() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // Create initial data
@@ -662,7 +662,7 @@ function testTableOverlapError() returns error? {
     groups: ["table"]
 }
 function testInvalidTableRangeError() returns error? {
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // Try to resize a table to invalid range (firstRow > lastRow would be caught by CellRange validation)
@@ -702,7 +702,7 @@ function testInvalidTableRangeError() returns error? {
     groups: ["table"]
 }
 function testGetRowOutOfRange() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Table has 3 data rows (indices 0, 1, 2)
@@ -724,7 +724,7 @@ function testWriteTableNotFound() returns error? {
     string tempFile = TEST_DATA_DIR + "temp_table_write_notfound.xlsx";
 
     // Create a file without the target table
-    Workbook wb = check createWorkbook();
+    Workbook wb = check new;
     Sheet sheet = check wb.createSheet("Sheet1");
     string[][] data = [["A", "B"], ["1", "2"]];
     check sheet.putRows(data);
@@ -765,7 +765,7 @@ function testParseTableWithRowCount() returns error? {
     groups: ["table"]
 }
 function testTableGetRowsWithRowCount() returns error? {
-    Workbook wb = check openFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Get rows with rowCount limit
@@ -777,5 +777,95 @@ function testTableGetRowsWithRowCount() returns error? {
     test:assertEquals(employees.length(), 1, "Should return only 1 row due to rowCount limit");
     test:assertEquals(employees[0].Name, "Alice", "First employee should be Alice");
 
+    check wb.close();
+}
+
+// =============================================================================
+// Public Data/Row union dispatch — Table API surface
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testWriteTableWithInlineLiteral() returns error? {
+    // Set up: copy tables_test.xlsx to a temp location so we don't mutate the shared fixture
+    string sourceFile = TEST_DATA_DIR + "tables_test.xlsx";
+    string tempFile = getTempFilePath("inline_writetable");
+    Workbook srcWb = check new(sourceFile);
+    byte[] bytes = check srcWb.toBytes();
+    check srcWb.close();
+    Workbook destWb = check new(bytes);
+    check destWb.saveAs(tempFile);
+    check destWb.close();
+
+    // Inline literal — contextually typed against `Data = Row[]`. Exercises the
+    // table writer's row-by-row dispatch (writeRowData inspects runtime types).
+    check writeTable([["Eve", "40", "Finance"], ["Frank", "33", "HR"]], tempFile,
+            "EmployeeTable");
+
+    Workbook check_wb = check new(tempFile);
+    Table empTable = check check_wb.getTable("EmployeeTable");
+    string[][] rows = check empTable.getRows();
+    test:assertEquals(rows[0][0], "Eve");
+    test:assertEquals(rows[1][0], "Frank");
+    check check_wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["table"]}
+function testTableGetRowsWithDataTarget() returns error? {
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
+    Table empTable = check wb.getTable("EmployeeTable");
+    // Explicit `Data` target — typedesc is a type reference, dispatch must unwrap
+    // and pick the union default.
+    Data rows = check empTable.getRows();
+    test:assertTrue(rows is string[][], "Data target on Table.getRows should fall back to string[][]");
+    if rows is string[][] {
+        test:assertEquals(rows.length(), 3, "EmployeeTable has 3 data rows");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableGetRowWithRowTarget() returns error? {
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
+    Table empTable = check wb.getTable("EmployeeTable");
+    Row r = check empTable.getRow(0);
+    test:assertTrue(r is string[], "Row target on Table.getRow should fall back to string[]");
+    if r is string[] {
+        test:assertEquals(r[0], "Alice");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testUseTableAfterCloseReturnsError() returns error? {
+    Workbook wb = check new(TEST_DATA_DIR + "tables_test.xlsx");
+    Table empTable = check wb.getTable("EmployeeTable");
+    check wb.close();
+    string[][]|Error result = empTable.getRows();
+    test:assertTrue(result is Error, "Table.getRows after Workbook.close should return Error");
+}
+
+// =============================================================================
+// Table name validation (FX-13)
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testCreateTableInvalidNameWithSpace() returns error? {
+    Workbook wb = check new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+    Table|Error result = sheet.createTable("Bad Table", "A1:B2");
+    test:assertTrue(result is Error, "Table name with space must be rejected");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableNameStartsWithDigit() returns error? {
+    Workbook wb = check new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+    Table|Error result = sheet.createTable("1Sales", "A1:B2");
+    test:assertTrue(result is Error,
+            "Table name starting with a digit must be rejected");
     check wb.close();
 }

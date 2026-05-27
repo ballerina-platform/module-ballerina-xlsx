@@ -37,7 +37,6 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -65,33 +64,19 @@ public final class XlsxWriter {
     public static Object writeToFile(String filePath, BArray data, BMap<BString, Object> options) {
         XlsxConfig config = XlsxConfig.fromWriteOptions(options);
 
-        try (Workbook workbook = new XSSFWorkbook();
-             FileOutputStream fos = new FileOutputStream(filePath)) {
-
+        try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet(config.getWriteSheetName());
 
-            Type elementType = ((ArrayType) data.getType()).getElementType();
-            // Resolve referenced types (important for module-defined types like `type X record {...}`)
-            Type resolvedElementType = TypeUtils.getReferredType(elementType);
-            int elementTag = resolvedElementType.getTag();
-
             int startRow = config.getStartRowIndex();
-
-            if (elementTag == TypeTags.ARRAY_TAG) {
-                // string[][] - write raw arrays
-                writeArrayData(sheet, data, startRow);
-            } else if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-                RecordType recordType = (RecordType) resolvedElementType;
-                writeRecordData(sheet, data, recordType, config, startRow);
-            } else if (elementTag == TypeTags.MAP_TAG) {
-                // map[] - write maps with headers
-                writeMapData(sheet, data, config, startRow);
-            } else {
-                return DiagnosticLog.error("Unsupported data type for XLSX export: " + resolvedElementType);
+            StyleCache styleCache = new StyleCache(workbook);
+            Object dispatchResult = dispatchWrite(sheet, data, config, startRow, styleCache, "XLSX export");
+            if (dispatchResult != null) {
+                return dispatchResult; // error from dispatch
             }
 
-            // Write directly to file - efficient!
-            workbook.write(fos);
+            // Atomic save: serialize → temp file → atomic rename. If any step fails,
+            // the destination file (if it existed) is untouched.
+            WorkbookHandle.writeAtomically(java.nio.file.Paths.get(filePath), workbook);
             return null; // Success
 
         } catch (BallerinaErrorException e) {
@@ -104,9 +89,66 @@ public final class XlsxWriter {
     }
 
     /**
-     * Write string[][] data to sheet.
+     * Dispatch a BArray write to the correct branch (array / record / map).
+     *
+     * <p>Returns {@code null} on success or a {@code BError} on failure (suitable for the
+     * caller to return directly to Ballerina).</p>
+     *
+     * <p>The declared element type drives dispatch when it's concrete (string[][], record[],
+     * map[]). When the declared element type is the public {@code xlsx:Row} union — which
+     * the {@code Data} alias resolves to — runtime inspection of {@code data.get(0)} picks
+     * the path: a {@link BArray} element triggers the array writer, a record-typed
+     * {@link BMap} triggers the record writer, and any other {@link BMap} triggers the
+     * map writer. An empty array is a no-op.</p>
      */
-    private static void writeArrayData(Sheet sheet, BArray data, int startRow) {
+    static Object dispatchWrite(Sheet sheet, BArray data, XlsxConfig config, int startRow,
+                                 StyleCache styleCache, String contextLabel) {
+        // Unwrap any type reference on the array itself (e.g., when contextually typed as `Data`,
+        // data.getType() returns a BTypeReferenceType, not the underlying ArrayType).
+        Type dataType = TypeUtils.getReferredType(data.getType());
+        Type elementType = ((ArrayType) dataType).getElementType();
+        Type resolvedElementType = TypeUtils.getReferredType(elementType);
+        int elementTag = resolvedElementType.getTag();
+
+        if (elementTag == TypeTags.ARRAY_TAG) {
+            writeArrayData(sheet, data, startRow, styleCache);
+            return null;
+        }
+        if (elementTag == TypeTags.RECORD_TYPE_TAG) {
+            writeRecordData(sheet, data, (RecordType) resolvedElementType, config, startRow, styleCache);
+            return null;
+        }
+        if (elementTag == TypeTags.MAP_TAG) {
+            writeMapData(sheet, data, config, startRow, styleCache);
+            return null;
+        }
+        if (elementTag == TypeTags.UNION_TAG) {
+            // Public `Row` union — pick a path from the first element's runtime type.
+            if (data.size() == 0) {
+                return null; // no-op for empty input
+            }
+            Object first = data.get(0);
+            if (first instanceof BArray) {
+                writeArrayData(sheet, data, startRow, styleCache);
+                return null;
+            }
+            if (first instanceof BMap) {
+                Type firstType = TypeUtils.getReferredType(TypeUtils.getType(first));
+                if (firstType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+                    writeRecordData(sheet, data, (RecordType) firstType, config, startRow, styleCache);
+                } else {
+                    writeMapData(sheet, data, config, startRow, styleCache);
+                }
+                return null;
+            }
+            return DiagnosticLog.error(
+                    "Unsupported row element runtime type for " + contextLabel + ": " + first);
+        }
+        return DiagnosticLog.error(
+                "Unsupported data type for " + contextLabel + ": " + resolvedElementType);
+    }
+
+    private static void writeArrayData(Sheet sheet, BArray data, int startRow, StyleCache styleCache) {
         for (int i = 0; i < data.size(); i++) {
             BArray rowData = (BArray) data.get(i);
             Row row = sheet.createRow(startRow + i);
@@ -114,7 +156,7 @@ public final class XlsxWriter {
             for (int j = 0; j < rowData.size(); j++) {
                 Cell cell = row.createCell(j);
                 Object value = rowData.get(j);
-                CellConverter.setCellValue(cell, value);
+                CellConverter.setCellValue(cell, value, styleCache);
             }
         }
     }
@@ -124,7 +166,7 @@ public final class XlsxWriter {
      * Returns {@code null} if the row is absent or has no string-valued cells — signal to caller
      * that the sheet has no headers and sequential positional write should be used.
      */
-    private static Map<String, Integer> existingHeaderMap(Sheet sheet, int headerRowIdx) {
+    static Map<String, Integer> existingHeaderMap(Sheet sheet, int headerRowIdx) {
         Row headerRow = sheet.getRow(headerRowIdx);
         if (headerRow == null) {
             return null;
@@ -157,7 +199,7 @@ public final class XlsxWriter {
      * </ul>
      */
     private static void writeRecordData(Sheet sheet, BArray data, RecordType recordType,
-                                         XlsxConfig config, int startRow) {
+                                         XlsxConfig config, int startRow, StyleCache styleCache) {
         if (data.size() == 0) {
             return;
         }
@@ -205,7 +247,7 @@ public final class XlsxWriter {
                     Cell cell = row.createCell(resolvedCols[j]);
                     String fieldName = fieldNames.get(j);
                     Object value = record.get(io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
-                    CellConverter.setCellValue(cell, value);
+                    CellConverter.setCellValue(cell, value, styleCache);
                 }
             }
         } else {
@@ -233,7 +275,7 @@ public final class XlsxWriter {
                     Cell cell = row.createCell(j);
                     String fieldName = fieldNames.get(j);
                     Object value = record.get(io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
-                    CellConverter.setCellValue(cell, value);
+                    CellConverter.setCellValue(cell, value, styleCache);
                 }
             }
         }
@@ -247,7 +289,8 @@ public final class XlsxWriter {
      * unmatched keys raise an error. Without existing headers, falls back to sequential positional
      * write using the union of all keys as headers.</p>
      */
-    private static void writeMapData(Sheet sheet, BArray data, XlsxConfig config, int startRow) {
+    private static void writeMapData(Sheet sheet, BArray data, XlsxConfig config, int startRow,
+                                      StyleCache styleCache) {
         if (data.size() == 0) {
             return;
         }
@@ -275,7 +318,7 @@ public final class XlsxWriter {
                     }
                     Cell cell = row.createCell(col);
                     Object value = map.get(key);
-                    CellConverter.setCellValue(cell, value);
+                    CellConverter.setCellValue(cell, value, styleCache);
                 }
             }
         } else {
@@ -309,7 +352,7 @@ public final class XlsxWriter {
                     Cell cell = row.createCell(j);
                     String header = headers.get(j);
                     Object value = map.get(io.ballerina.runtime.api.utils.StringUtils.fromString(header));
-                    CellConverter.setCellValue(cell, value);
+                    CellConverter.setCellValue(cell, value, styleCache);
                 }
             }
         }
@@ -327,26 +370,9 @@ public final class XlsxWriter {
         XlsxConfig config = XlsxConfig.fromWriteOptions(options);
 
         try {
-            Type elementType = ((ArrayType) data.getType()).getElementType();
-            // Resolve referenced types (important for module-defined types like `type X record {...}`)
-            Type resolvedElementType = TypeUtils.getReferredType(elementType);
-            int elementTag = resolvedElementType.getTag();
-
             int startRow = config.getStartRowIndex();
-
-            if (elementTag == TypeTags.ARRAY_TAG) {
-                writeArrayData(sheet, data, startRow);
-            } else if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-                RecordType recordType = (RecordType) resolvedElementType;
-                writeRecordData(sheet, data, recordType, config, startRow);
-            } else if (elementTag == TypeTags.MAP_TAG) {
-                writeMapData(sheet, data, config, startRow);
-            } else {
-                return DiagnosticLog.error("Unsupported data type for sheet write: " + resolvedElementType);
-            }
-
-            return null; // Success
-
+            StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+            return dispatchWrite(sheet, data, config, startRow, styleCache, "sheet write");
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {

@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.data.xlsx.xlsx;
 
+import io.ballerina.lib.data.xlsx.utils.AnnotationUtils;
 import io.ballerina.lib.data.xlsx.utils.Constants;
 import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.data.xlsx.utils.ModuleUtils;
@@ -30,6 +31,7 @@ import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.MapType;
+import io.ballerina.runtime.api.types.PredefinedTypes;
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.types.TypeTags;
@@ -63,7 +65,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class SheetHandle {
 
-    private static final String SHEET_NATIVE_KEY = "sheetNative";
+    // Package-private so WorkbookHandle can null this slot during close()/deleteSheet() invalidation.
+    static final String SHEET_NATIVE_KEY = "sheetNative";
+    static final String PARENT_WORKBOOK_KEY = "parentWorkbook";
 
     private SheetHandle() {
         // Private constructor to prevent instantiation
@@ -162,11 +166,12 @@ public final class SheetHandle {
      */
     public static Object getRows(Environment env, BObject sheetObj, BMap<BString, Object> options,
                                   BTypedesc targetType) {
-        Sheet sheet = getSheet(sheetObj);
-        XlsxConfig config = XlsxConfig.fromParseOptions(options);
-
         try {
-            Type describingType = targetType.getDescribingType();
+            Sheet sheet = getSheet(sheetObj);
+            XlsxConfig config = XlsxConfig.fromParseOptions(options);
+
+            // Unwrap any outer type reference (e.g., when the target is declared as `Data`).
+            Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
             int typeTag = describingType.getTag();
 
             if (typeTag == TypeTags.ARRAY_TAG) {
@@ -190,6 +195,11 @@ public final class SheetHandle {
                 // map<anydata>[]
                 if (elementTag == TypeTags.MAP_TAG) {
                     return getRowsAsMaps(env, sheet, config, (MapType) resolvedElementType);
+                }
+
+                // Row[] (the public union) — default to string[][].
+                if (elementTag == TypeTags.UNION_TAG) {
+                    return getRowsAsStringArray(sheet, config);
                 }
             }
 
@@ -215,10 +225,10 @@ public final class SheetHandle {
      */
     public static Object getRow(Environment env, BObject sheetObj, long index, BMap<BString, Object> options,
                                  BTypedesc targetType) {
-        Sheet sheet = getSheet(sheetObj);
-        XlsxConfig config = XlsxConfig.fromParseOptions(options);
-
         try {
+            Sheet sheet = getSheet(sheetObj);
+            XlsxConfig config = XlsxConfig.fromParseOptions(options);
+
             CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
 
             if (usedRange == null) {
@@ -253,6 +263,11 @@ public final class SheetHandle {
             // record{} - single row as record
             if (typeTag == TypeTags.RECORD_TYPE_TAG) {
                 return getRowAsRecord(sheet, row, usedRange, config, (RecordType) resolvedType);
+            }
+
+            // Row (the public union) — default to string[].
+            if (typeTag == TypeTags.UNION_TAG) {
+                return getRowAsStringArray(row, usedRange, config);
             }
 
             // Default: string[]
@@ -405,8 +420,12 @@ public final class SheetHandle {
      * @return null on success, error on failure
      */
     public static Object putRows(BObject sheetObj, BArray data, BMap<BString, Object> options) {
-        Sheet sheet = getSheet(sheetObj);
-        return XlsxWriter.writeToSheet(sheet, data, options);
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            return XlsxWriter.writeToSheet(sheet, data, options);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -487,13 +506,383 @@ public final class SheetHandle {
     }
 
     /**
-     * Get the native Sheet from Ballerina object.
+     * Resolve a column reference (string header name or 0-based int index) against the
+     * sheet's header row at the configured header-row index. Returns the column index.
+     * Throws BallerinaErrorException with a clear message if the reference cannot be resolved.
+     */
+    private static int resolveColumnRef(Sheet sheet, Object columnRef, XlsxConfig config) {
+        if (columnRef instanceof Long) {
+            return ((Long) columnRef).intValue();
+        }
+        if (columnRef instanceof BString) {
+            String headerName = ((BString) columnRef).getValue();
+            int headerRowIdx = config.hasHeaders() ? config.getHeaderRowIndex() : 0;
+            Map<String, Integer> headers = XlsxWriter.existingHeaderMap(sheet, headerRowIdx);
+            if (headers == null) {
+                throw new BallerinaErrorException(DiagnosticLog.error(
+                        "Cannot resolve column '" + headerName
+                        + "': sheet has no header row at index " + headerRowIdx));
+            }
+            Integer col = headers.get(headerName);
+            if (col == null) {
+                throw new BallerinaErrorException(DiagnosticLog.error(
+                        "Column header '" + headerName + "' not found in sheet"));
+            }
+            return col;
+        }
+        throw new BallerinaErrorException(DiagnosticLog.error(
+                "Column reference must be a header name (string) or 0-based index (int)"));
+    }
+
+    /**
+     * Resolve the effective data-start row. If the caller passed an explicit
+     * {@code dataStartRowIndex}, use it; otherwise default to the row after the header row
+     * (header defaults to row 0 when not specified).
+     */
+    private static int defaultDataStartRow(XlsxConfig config) {
+        if (config.hasExplicitDataStartRowIndex()) {
+            return config.getDataStartRowIndex();
+        }
+        int headerRowIdx = config.hasHeaders() ? config.getHeaderRowIndex() : 0;
+        return headerRowIdx + 1;
+    }
+
+    /**
+     * Get a column of values by header name or 0-based index.
+     */
+    public static Object getColumn(Environment env, BObject sheetObj, Object columnRef,
+                                    BMap<BString, Object> options, BTypedesc targetType) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            int colIdx = resolveColumnRef(sheet, columnRef, config);
+
+            CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
+            if (usedRange == null) {
+                Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
+                ArrayType arrType = (ArrayType) describingType;
+                return ValueCreator.createArrayValue(arrType);
+            }
+
+            int dataStartRow = defaultDataStartRow(config);
+            int endRow = usedRange.getLastRow();
+            Integer rowCountLimit = config.getRowCount();
+
+            Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
+            ArrayType arrType = (ArrayType) describingType;
+            Type elementType = TypeUtils.getReferredType(arrType.getElementType());
+
+            BArray result = ValueCreator.createArrayValue(arrType);
+            int parsedCount = 0;
+            for (int r = dataStartRow; r <= endRow; r++) {
+                if (rowCountLimit != null && parsedCount >= rowCountLimit) {
+                    break;
+                }
+                Row row = sheet.getRow(r);
+                Cell cell = row != null ? row.getCell(colIdx) : null;
+                Object value;
+                try {
+                    value = CellConverter.convert(cell, elementType, config);
+                } catch (TypeConversionException e) {
+                    String cellAddress = RecordParsingUtils.getCellAddress(colIdx, r);
+                    throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
+                            e.getMessage(), cellAddress, r, colIdx));
+                }
+                result.append(value);
+                parsedCount++;
+            }
+            return result;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error getting column: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Read a single cell value.
+     */
+    public static Object getCell(BObject sheetObj, long rowIdx, long colIdx) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            Row row = sheet.getRow((int) rowIdx);
+            if (row == null) {
+                return null;
+            }
+            Cell cell = row.getCell((int) colIdx);
+            if (cell == null) {
+                return null;
+            }
+            XlsxConfig config = XlsxConfig.fromParseOptions(ValueCreator.createMapValue());
+            try {
+                return CellConverter.convert(cell, PredefinedTypes.TYPE_ANYDATA, config);
+            } catch (TypeConversionException e) {
+                String cellAddress = RecordParsingUtils.getCellAddress((int) colIdx, (int) rowIdx);
+                return DiagnosticLog.typeConversionError(e.getMessage(), cellAddress,
+                        (int) rowIdx, (int) colIdx);
+            }
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error getting cell: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Write a single row at the specified row index.
+     *
+     * <p>For string[] data, values are written positionally starting at column 0.
+     * For record/map data, the sheet must have a header row at the configured
+     * header-row index; each value is placed in the column matching its key/field name.
+     * Records honor {@code @xlsx:Name} annotations for the header lookup.</p>
+     */
+    public static Object setRow(BObject sheetObj, long rowIdx, Object rowData,
+                                 BMap<BString, Object> options) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+            int targetRow = (int) rowIdx;
+            StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+            if (rowData instanceof BArray) {
+                BArray arr = (BArray) rowData;
+                Row row = sheet.getRow(targetRow);
+                if (row == null) {
+                    row = sheet.createRow(targetRow);
+                }
+                for (int j = 0; j < arr.size(); j++) {
+                    Cell cell = row.getCell(j);
+                    if (cell == null) {
+                        cell = row.createCell(j);
+                    }
+                    CellConverter.setCellValue(cell, arr.get(j), styleCache);
+                }
+                return null;
+            }
+            if (rowData instanceof BMap) {
+                int headerRowIdx = config.hasHeaders() ? config.getHeaderRowIndex() : 0;
+                Map<String, Integer> headers = XlsxWriter.existingHeaderMap(sheet, headerRowIdx);
+                if (headers == null) {
+                    return DiagnosticLog.error(
+                            "setRow with a record or map requires an existing header row at index "
+                            + headerRowIdx);
+                }
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> map = (BMap<BString, Object>) rowData;
+                // Pick a record type when available (so @xlsx:Name resolution applies). When the
+                // declared static type is the `Row` union, the runtime value's type is the concrete
+                // narrowed member — but if it ever surfaces as the union itself, fall back to the
+                // map-keys path.
+                Type valueType = TypeUtils.getReferredType(TypeUtils.getType(map));
+                RecordType recordType = null;
+                if (valueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+                    recordType = (RecordType) valueType;
+                }
+
+                Row row = sheet.getRow(targetRow);
+                if (row == null) {
+                    row = sheet.createRow(targetRow);
+                }
+
+                if (recordType != null) {
+                    for (String fieldName : recordType.getFields().keySet()) {
+                        String headerName = AnnotationUtils.getHeaderName(recordType, fieldName);
+                        Integer col = headers.get(headerName);
+                        if (col == null) {
+                            return DiagnosticLog.error(
+                                    "Field '" + fieldName + "' (header '" + headerName
+                                    + "') has no matching column in the sheet header row");
+                        }
+                        Object value = map.get(StringUtils.fromString(fieldName));
+                        Cell cell = row.getCell(col);
+                        if (cell == null) {
+                            cell = row.createCell(col);
+                        }
+                        CellConverter.setCellValue(cell, value, styleCache);
+                    }
+                } else {
+                    // Map<anydata> or unnarrowed Row union — write by map keys.
+                    for (BString key : map.getKeys()) {
+                        String headerName = key.getValue();
+                        Integer col = headers.get(headerName);
+                        if (col == null) {
+                            return DiagnosticLog.error(
+                                    "Key '" + headerName
+                                    + "' has no matching column in the sheet header row");
+                        }
+                        Cell cell = row.getCell(col);
+                        if (cell == null) {
+                            cell = row.createCell(col);
+                        }
+                        CellConverter.setCellValue(cell, map.get(key), styleCache);
+                    }
+                }
+                return null;
+            }
+            return DiagnosticLog.error(
+                    "setRow data must be string[], record, or map<anydata>");
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting row: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Write a column of values by header name or 0-based index.
+     */
+    public static Object setColumn(BObject sheetObj, Object columnRef, BArray data) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            XlsxConfig config = XlsxConfig.fromParseOptions(ValueCreator.createMapValue());
+            StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+            int colIdx = resolveColumnRef(sheet, columnRef, config);
+            int startRow = defaultDataStartRow(config);
+            for (int i = 0; i < data.size(); i++) {
+                int rowIdx = startRow + i;
+                Row row = sheet.getRow(rowIdx);
+                if (row == null) {
+                    row = sheet.createRow(rowIdx);
+                }
+                Cell cell = row.getCell(colIdx);
+                if (cell == null) {
+                    cell = row.createCell(colIdx);
+                }
+                CellConverter.setCellValue(cell, data.get(i), styleCache);
+            }
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting column: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Internal helper for setCell, called from setCellByAddress to skip re-fetching the sheet.
+     */
+    private static Object setCellInternal(Sheet sheet, long rowIdx, long colIdx, Object value) {
+        Row row = sheet.getRow((int) rowIdx);
+        if (row == null) {
+            row = sheet.createRow((int) rowIdx);
+        }
+        Cell cell = row.getCell((int) colIdx);
+        if (cell == null) {
+            cell = row.createCell((int) colIdx);
+        }
+        StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+        CellConverter.setCellValue(cell, value, styleCache);
+        return null;
+    }
+
+    /**
+     * Write a single cell value by 0-based row and column index.
+     */
+    public static Object setCell(BObject sheetObj, long rowIdx, long colIdx, Object value) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            return setCellInternal(sheet, rowIdx, colIdx, value);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting cell: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Write a single cell value by A1-notation address.
+     */
+    public static Object setCellByAddress(BObject sheetObj, BString cellAddress, Object value) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            CellReference ref;
+            try {
+                ref = new CellReference(cellAddress.getValue());
+            } catch (IllegalArgumentException e) {
+                return DiagnosticLog.error(
+                        "Invalid cell address '" + cellAddress.getValue() + "': " + e.getMessage());
+            }
+            int rowIdx = ref.getRow();
+            int colIdx = ref.getCol();
+            if (rowIdx < 0 || colIdx < 0) {
+                return DiagnosticLog.error(
+                        "Invalid cell address '" + cellAddress.getValue() + "'");
+            }
+            return setCellInternal(sheet, rowIdx, colIdx, value);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting cell by address: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Delete a row from the sheet. Subsequent rows shift up by one.
+     */
+    public static Object deleteRow(BObject sheetObj, long index) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            int idx = (int) index;
+            int lastRowNum = sheet.getLastRowNum();
+            if (lastRowNum < 0 || idx < 0 || idx > lastRowNum) {
+                return DiagnosticLog.error(
+                        "Row index " + idx + " is out of range for deletion");
+            }
+            Row row = sheet.getRow(idx);
+            if (row != null) {
+                sheet.removeRow(row);
+            }
+            if (idx < lastRowNum) {
+                sheet.shiftRows(idx + 1, lastRowNum, -1);
+            }
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error deleting row: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Rename the sheet.
+     */
+    public static Object rename(BObject sheetObj, BString newName) {
+        try {
+            String name = newName.getValue();
+            WorkbookHandle.validateSheetName(name);
+            Sheet sheet = getSheet(sheetObj);
+            org.apache.poi.ss.usermodel.Workbook workbook = sheet.getWorkbook();
+            int idx = workbook.getSheetIndex(sheet);
+            if (idx < 0) {
+                return DiagnosticLog.error("Sheet not found in its parent workbook");
+            }
+            // Refuse to rename to a name another sheet already uses (case-insensitive).
+            int existing = WorkbookHandle.findSheetIndexCaseInsensitive(workbook, name);
+            if (existing != -1 && existing != idx) {
+                return DiagnosticLog.error("Sheet '" + name + "' already exists");
+            }
+            workbook.setSheetName(idx, name);
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (IllegalArgumentException e) {
+            return DiagnosticLog.error(
+                    "Invalid sheet name '" + newName.getValue() + "': " + e.getMessage());
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error renaming sheet: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Get the native Sheet from Ballerina object. Throws a {@link BallerinaErrorException}
+     * carrying a typed {@code xlsx:Error} if the handle has been invalidated (workbook
+     * closed or sheet deleted). Callers that wrap in the standard
+     * {@code catch (BallerinaErrorException e) { return e.getBError(); }} pattern will
+     * surface it cleanly to Ballerina.
      */
     private static Sheet getSheet(BObject sheetObj) {
         Sheet sheet = (Sheet) sheetObj.getNativeData(SHEET_NATIVE_KEY);
         if (sheet == null) {
-            throw new IllegalStateException(
-                    "Sheet is not properly initialized. The workbook may have been closed.");
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Sheet handle is no longer valid. The workbook may have been closed "
+                            + "or the sheet deleted."));
         }
         return sheet;
     }
@@ -510,52 +899,62 @@ public final class SheetHandle {
      * @return Ballerina Table object or error
      */
     public static Object getTable(BObject sheetObj, BString name) {
-        Sheet sheet = getSheet(sheetObj);
+        try {
+            Sheet sheet = getSheet(sheetObj);
 
-        if (!(sheet instanceof XSSFSheet)) {
-            return DiagnosticLog.error("Tables are only supported in XLSX format");
-        }
-
-        XSSFSheet xssfSheet = (XSSFSheet) sheet;
-        String tableName = name.getValue();
-
-        for (XSSFTable table : xssfSheet.getTables()) {
-            if (tableName.equals(table.getName()) || tableName.equals(table.getDisplayName())) {
-                return createBallerinaTable(table, xssfSheet);
+            if (!(sheet instanceof XSSFSheet)) {
+                return DiagnosticLog.error("Tables are only supported in XLSX format");
             }
-        }
 
-        return DiagnosticLog.tableNotFoundError(tableName, xssfSheet.getSheetName());
+            XSSFSheet xssfSheet = (XSSFSheet) sheet;
+            String tableName = name.getValue();
+
+            for (XSSFTable table : xssfSheet.getTables()) {
+                if (tableName.equals(table.getName()) || tableName.equals(table.getDisplayName())) {
+                    return createBallerinaTable(sheetObj, table, xssfSheet);
+                }
+            }
+
+            return DiagnosticLog.tableNotFoundError(tableName, xssfSheet.getSheetName());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
      * Get all tables in this sheet.
      *
      * @param sheetObj Ballerina Sheet object
-     * @return Array of Ballerina Table objects
+     * @return Array of Ballerina Table objects on success, BError on failure
      */
-    public static BArray getTables(BObject sheetObj) {
-        Sheet sheet = getSheet(sheetObj);
+    public static Object getTables(BObject sheetObj) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
 
-        // Get proper Table type from module for array creation
-        Type tableType = ValueCreator.createObjectValue(
-                ModuleUtils.getModule(), Constants.TABLE_TYPE).getType();
-        ArrayType tableArrayType = TypeCreator.createArrayType(tableType);
+            // Get proper Table type from module for array creation
+            Type tableType = TypeUtils.getType(ValueCreator.createObjectValue(
+                    ModuleUtils.getModule(), Constants.TABLE_TYPE));
+            ArrayType tableArrayType = TypeCreator.createArrayType(tableType);
 
-        if (!(sheet instanceof XSSFSheet)) {
-            // Return empty array for non-XLSX sheets
-            return ValueCreator.createArrayValue(tableArrayType);
+            if (!(sheet instanceof XSSFSheet)) {
+                // Return empty array for non-XLSX sheets
+                return ValueCreator.createArrayValue(tableArrayType);
+            }
+
+            XSSFSheet xssfSheet = (XSSFSheet) sheet;
+            List<XSSFTable> tables = xssfSheet.getTables();
+
+            BArray result = ValueCreator.createArrayValue(tableArrayType);
+            for (XSSFTable table : tables) {
+                result.append(createBallerinaTable(sheetObj, table, xssfSheet));
+            }
+
+            return result;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error retrieving tables: " + e.getMessage(), e);
         }
-
-        XSSFSheet xssfSheet = (XSSFSheet) sheet;
-        List<XSSFTable> tables = xssfSheet.getTables();
-
-        BArray result = ValueCreator.createArrayValue(tableArrayType);
-        for (XSSFTable table : tables) {
-            result.append(createBallerinaTable(table, xssfSheet));
-        }
-
-        return result;
     }
 
     /**
@@ -568,16 +967,16 @@ public final class SheetHandle {
      * @return Ballerina Table object or error
      */
     public static Object createTable(BObject sheetObj, BString name, Object range, Object headers) {
-        Sheet sheet = getSheet(sheetObj);
-
-        if (!(sheet instanceof XSSFSheet)) {
-            return DiagnosticLog.error("Tables are only supported in XLSX format");
-        }
-
-        XSSFSheet xssfSheet = (XSSFSheet) sheet;
-        String tableName = name.getValue();
-
         try {
+            TableHandle.validateTableName(name.getValue());
+            Sheet sheet = getSheet(sheetObj);
+
+            if (!(sheet instanceof XSSFSheet)) {
+                return DiagnosticLog.error("Tables are only supported in XLSX format");
+            }
+
+            XSSFSheet xssfSheet = (XSSFSheet) sheet;
+            String tableName = name.getValue();
             // Check if table name already exists in workbook
             org.apache.poi.xssf.usermodel.XSSFWorkbook workbook =
                     (org.apache.poi.xssf.usermodel.XSSFWorkbook) xssfSheet.getWorkbook();
@@ -651,7 +1050,7 @@ public final class SheetHandle {
             }
 
             table.updateHeaders();
-            return createBallerinaTable(table, xssfSheet);
+            return createBallerinaTable(sheetObj, table, xssfSheet);
 
         } catch (BallerinaErrorException e) {
             return e.getBError();
@@ -672,15 +1071,14 @@ public final class SheetHandle {
      */
     public static Object createTableFromData(BObject sheetObj, BString name, BArray data,
                                               long startRowIndex, long startColumnIndex) {
-        Sheet sheet = getSheet(sheetObj);
-
-        if (!(sheet instanceof XSSFSheet)) {
-            return DiagnosticLog.error("Tables are only supported in XLSX format");
-        }
-
-        XSSFSheet xssfSheet = (XSSFSheet) sheet;
-
         try {
+            Sheet sheet = getSheet(sheetObj);
+
+            if (!(sheet instanceof XSSFSheet)) {
+                return DiagnosticLog.error("Tables are only supported in XLSX format");
+            }
+
+            XSSFSheet xssfSheet = (XSSFSheet) sheet;
             // Write data first
             BMap<BString, Object> writeOptions = ValueCreator.createMapValue();
             writeOptions.put(StringUtils.fromString("writeHeaders"), true);
@@ -737,7 +1135,12 @@ public final class SheetHandle {
      * @return null on success, error if not found
      */
     public static Object deleteTable(BObject sheetObj, BString name) {
-        Sheet sheet = getSheet(sheetObj);
+        Sheet sheet;
+        try {
+            sheet = getSheet(sheetObj);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
 
         if (!(sheet instanceof XSSFSheet)) {
             return DiagnosticLog.error("Tables are only supported in XLSX format");
@@ -748,6 +1151,10 @@ public final class SheetHandle {
 
         for (XSSFTable table : xssfSheet.getTables()) {
             if (tableName.equals(table.getName()) || tableName.equals(table.getDisplayName())) {
+                BObject parentWorkbook = (BObject) sheetObj.getNativeData(PARENT_WORKBOOK_KEY);
+                if (parentWorkbook != null) {
+                    WorkbookHandle.invalidateHandlesForTable(parentWorkbook, table);
+                }
                 xssfSheet.removeTable(table);
                 return null;
             }
@@ -757,12 +1164,16 @@ public final class SheetHandle {
     }
 
     /**
-     * Create a Ballerina Table object from POI XSSFTable.
+     * Create a Ballerina Table object from POI XSSFTable and register it as vended from
+     * the sheet's parent workbook (so close()/deleteSheet() can invalidate it).
      */
-    private static BObject createBallerinaTable(XSSFTable table,
-                                                 XSSFSheet sheet) {
+    private static BObject createBallerinaTable(BObject sheetObj, XSSFTable table, XSSFSheet sheet) {
         BObject tableObj = ValueCreator.createObjectValue(ModuleUtils.getModule(), Constants.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
+        BObject parentWorkbook = (BObject) sheetObj.getNativeData(PARENT_WORKBOOK_KEY);
+        if (parentWorkbook != null) {
+            WorkbookHandle.registerVendedHandle(parentWorkbook, tableObj);
+        }
         return tableObj;
     }
 

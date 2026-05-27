@@ -66,7 +66,10 @@ public final class AnnotationUtils {
                         BMap<BString, Object> annotMap = (BMap<BString, Object>) annotValue;
                         Object value = annotMap.get(StringUtils.fromString("value"));
                         if (value != null) {
-                            return value.toString();
+                            // Trim spurious whitespace so " Name " in the annotation
+                            // matches a sheet header of "Name". The sheet-side trim is
+                            // already done in RecordParsingUtils.buildHeaderMap.
+                            return value.toString().trim();
                         }
                     }
                 }

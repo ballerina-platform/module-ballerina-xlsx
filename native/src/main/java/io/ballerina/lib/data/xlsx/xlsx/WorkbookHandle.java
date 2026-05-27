@@ -29,14 +29,18 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
 import java.lang.ref.ReferenceQueue;
-import java.util.Collections;
-import java.util.HashMap;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.IdentityHashMap;
 import java.util.Map;
 
 /**
@@ -47,11 +51,31 @@ public final class WorkbookHandle {
 
     private static final String WORKBOOK_NATIVE_KEY = "workbookNative";
     private static final String SOURCE_PATH_KEY = "sourcePathNative";
+    private static final String PHANTOM_REF_KEY = "phantomRef";
 
-    // PhantomReference-based cleanup for leaked workbooks
+    // Excel's rules for sheet names: 1-31 characters, no \ / ? * [ ] :.
+    private static final int MAX_SHEET_NAME_LENGTH = 31;
+    private static final String INVALID_SHEET_CHARS = "\\/?*[]:";
+
+    // Set of Sheet/Table BObjects vended from this workbook. Used to null out their
+    // native data on close()/deleteSheet()/deleteTable() so that subsequent method
+    // calls return a typed Error rather than touching a closed POI workbook.
+    private static final String VENDED_HANDLES_KEY = "vendedHandles";
+
+    // PhantomReference-based cleanup for leaked workbooks.
+    //
+    // Map direction: Workbook → PhantomReference (IdentityHashMap because Workbook
+    // identity, not equals, is the comparison we want). Keyed by Workbook so
+    // unregisterFromCleanup() is O(1). The matching PhantomReference is also stashed
+    // on the BObject's native data so we can clear it on close without a lookup.
     private static final ReferenceQueue<BObject> REFERENCE_QUEUE = new ReferenceQueue<>();
-    private static final Map<PhantomReference<BObject>, Workbook> LEAK_CLEANUP_MAP =
-            Collections.synchronizedMap(new HashMap<>());
+    private static final Map<Workbook, PhantomReference<BObject>> LEAK_CLEANUP_MAP =
+            new IdentityHashMap<>();
+    // Reverse lookup for the cleanup thread (only path that arrives with a Reference
+    // and needs to find the matching Workbook). Same identity semantics.
+    private static final Map<Reference<?>, Workbook> REF_TO_WORKBOOK = new IdentityHashMap<>();
+    private static final Object CLEANUP_MAP_LOCK = new Object();
+
     // Thread-safety: volatile ensures visibility across threads.
     // Combined with synchronized block in ensureCleanupThread(), this implements
     // the correct double-checked locking pattern (safe in Java 5+).
@@ -74,7 +98,13 @@ public final class WorkbookHandle {
                         while (true) {
                             try {
                                 Reference<?> ref = REFERENCE_QUEUE.remove(); // Blocks until reference available
-                                Workbook wb = LEAK_CLEANUP_MAP.remove(ref);
+                                Workbook wb;
+                                synchronized (CLEANUP_MAP_LOCK) {
+                                    wb = REF_TO_WORKBOOK.remove(ref);
+                                    if (wb != null) {
+                                        LEAK_CLEANUP_MAP.remove(wb);
+                                    }
+                                }
                                 if (wb != null) {
                                     try {
                                         wb.close();
@@ -83,8 +113,12 @@ public final class WorkbookHandle {
                                     }
                                 }
                             } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                break;
+                                // Daemon thread; the only legitimate interrupt source would be
+                                // JVM shutdown, which uses daemon-thread termination, not interrupt.
+                                // Restoring the flag would cause REFERENCE_QUEUE.remove() to throw
+                                // again immediately (tight loop). Breaking would permanently disable
+                                // cleanup for the rest of the process. Swallow + continue keeps the
+                                // safety net alive.
                             }
                         }
                     }, "xlsx-workbook-cleanup");
@@ -102,15 +136,51 @@ public final class WorkbookHandle {
     private static void registerForCleanup(BObject workbookObj, Workbook workbook) {
         ensureCleanupThread();
         PhantomReference<BObject> ref = new PhantomReference<>(workbookObj, REFERENCE_QUEUE);
-        LEAK_CLEANUP_MAP.put(ref, workbook);
+        synchronized (CLEANUP_MAP_LOCK) {
+            LEAK_CLEANUP_MAP.put(workbook, ref);
+            REF_TO_WORKBOOK.put(ref, workbook);
+        }
+        workbookObj.addNativeData(PHANTOM_REF_KEY, ref);
     }
 
     /**
      * Unregisters a workbook from cleanup tracking (called when properly closed).
+     * O(1) — the matching PhantomReference is fetched from the BObject's native data.
      */
-    private static void unregisterFromCleanup(Workbook workbook) {
-        // Remove from leak cleanup tracking since it was closed properly
-        LEAK_CLEANUP_MAP.values().remove(workbook);
+    private static void unregisterFromCleanup(BObject workbookObj, Workbook workbook) {
+        PhantomReference<?> ref;
+        synchronized (CLEANUP_MAP_LOCK) {
+            ref = LEAK_CLEANUP_MAP.remove(workbook);
+            if (ref != null) {
+                REF_TO_WORKBOOK.remove(ref);
+            }
+        }
+        if (ref != null) {
+            ref.clear();
+        }
+        workbookObj.addNativeData(PHANTOM_REF_KEY, null);
+    }
+
+    /**
+     * Register a Sheet or Table BObject as vended from this workbook. The handle is
+     * tracked so that its native data can be nulled on close()/deleteSheet()/deleteTable().
+     * Also stashes a back-reference to the parent workbook on the handle so Table
+     * vending from a Sheet (Sheet.getTable/createTable/etc.) can register against the
+     * correct workbook.
+     */
+    @SuppressWarnings("unchecked")
+    static void registerVendedHandle(BObject workbookObj, BObject handleObj) {
+        java.util.Set<BObject> handles =
+                (java.util.Set<BObject>) workbookObj.getNativeData(VENDED_HANDLES_KEY);
+        if (handles == null) {
+            // Identity-based set so equals/hashCode on BObject doesn't matter.
+            handles = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+            workbookObj.addNativeData(VENDED_HANDLES_KEY, handles);
+        }
+        synchronized (handles) {
+            handles.add(handleObj);
+        }
+        handleObj.addNativeData(SheetHandle.PARENT_WORKBOOK_KEY, workbookObj);
     }
 
     /**
@@ -134,6 +204,30 @@ public final class WorkbookHandle {
             return DiagnosticLog.fileNotFoundError("Failed to open workbook: " + filePath.getValue(), e);
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Open a workbook from a byte array (no associated source path).
+     *
+     * @param workbookObj Ballerina Workbook object
+     * @param bytes       XLSX content as a byte array
+     * @return null on success, error on failure
+     */
+    public static Object openWorkbookFromBytes(BObject workbookObj, BArray bytes) {
+        byte[] raw = bytes.getBytes();
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(raw)) {
+            Workbook workbook = WorkbookFactory.create(bis);
+            if (workbook == null) {
+                return DiagnosticLog.error("Failed to create workbook from byte array");
+            }
+            workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
+            registerForCleanup(workbookObj, workbook);
+            return null;
+        } catch (IOException e) {
+            return DiagnosticLog.error("Failed to parse workbook bytes: " + e.getMessage(), e);
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error opening workbook from bytes: " + e.getMessage(), e);
         }
     }
 
@@ -184,6 +278,18 @@ public final class WorkbookHandle {
     }
 
     /**
+     * Check whether a sheet with the given name exists in the workbook.
+     *
+     * @param workbookObj Ballerina Workbook object
+     * @param name        Sheet name
+     * @return true if the sheet exists, false otherwise
+     */
+    public static boolean hasSheet(BObject workbookObj, BString name) {
+        Workbook workbook = getWorkbook(workbookObj);
+        return findSheetIndexCaseInsensitive(workbook, name.getValue()) != -1;
+    }
+
+    /**
      * Get a sheet by name.
      *
      * @param workbookObj Ballerina Workbook object
@@ -195,12 +301,14 @@ public final class WorkbookHandle {
         Workbook workbook = getWorkbook(workbookObj);
         String sheetName = name.getValue();
 
-        Sheet sheet = workbook.getSheet(sheetName);
-        if (sheet == null) {
+        int idx = findSheetIndexCaseInsensitive(workbook, sheetName);
+        if (idx == -1) {
             return DiagnosticLog.sheetNotFoundError(sheetName);
         }
+        Sheet sheet = workbook.getSheetAt(idx);
 
         SheetHandle.initSheet(sheetObj, sheet);
+        registerVendedHandle(workbookObj, sheetObj);
         return null;
     }
 
@@ -222,6 +330,7 @@ public final class WorkbookHandle {
 
         Sheet sheet = workbook.getSheetAt(idx);
         SheetHandle.initSheet(sheetObj, sheet);
+        registerVendedHandle(workbookObj, sheetObj);
         return null;
     }
 
@@ -238,15 +347,20 @@ public final class WorkbookHandle {
         String sheetName = name.getValue();
 
         try {
-            // Check if sheet already exists
-            if (workbook.getSheet(sheetName) != null) {
+            validateSheetName(sheetName);
+
+            // Check if sheet already exists (case-insensitive, matching Excel semantics)
+            if (findSheetIndexCaseInsensitive(workbook, sheetName) != -1) {
                 return DiagnosticLog.error("Sheet '" + sheetName + "' already exists");
             }
 
             Sheet sheet = workbook.createSheet(sheetName);
             SheetHandle.initSheet(sheetObj, sheet);
+            registerVendedHandle(workbookObj, sheetObj);
             return null;
 
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error creating sheet: " + e.getMessage(), e);
         }
@@ -277,12 +391,91 @@ public final class WorkbookHandle {
      */
     public static Object saveToPath(BObject workbookObj, BString filePath) {
         Workbook workbook = getWorkbook(workbookObj);
-
-        try (FileOutputStream fos = new FileOutputStream(filePath.getValue())) {
-            workbook.write(fos);
+        try {
+            writeAtomically(Paths.get(filePath.getValue()), workbook);
             return null;
         } catch (IOException e) {
             return DiagnosticLog.error("Failed to save workbook: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Serialize the workbook to a byte array.
+     *
+     * @param workbookObj Ballerina Workbook object
+     * @return byte array on success, error on failure
+     */
+    public static Object toBytes(BObject workbookObj) {
+        Workbook workbook = getWorkbook(workbookObj);
+        try {
+            byte[] raw = serializeWorkbook(workbook);
+            return ValueCreator.createArrayValue(raw);
+        } catch (IOException e) {
+            return DiagnosticLog.error("Failed to serialize workbook to bytes: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Serialize a workbook to an in-memory byte array.
+     * Shared helper used for byte-array output and for atomic file writes.
+     */
+    static byte[] serializeWorkbook(Workbook workbook) throws IOException {
+        try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+            workbook.write(baos);
+            return baos.toByteArray();
+        }
+    }
+
+    /**
+     * Write a workbook to a destination path atomically.
+     *
+     * <p>The XLSX bytes are serialized in-memory, written to a temp file in the
+     * destination's parent directory, then renamed via
+     * {@link Files#move(Path, Path, java.nio.file.CopyOption...)} with
+     * {@link StandardCopyOption#ATOMIC_MOVE}. If any failure occurs before the
+     * rename succeeds, the destination is untouched and the temp file is removed.
+     * Falls back to a non-atomic move on filesystems that reject
+     * {@code ATOMIC_MOVE} (extremely rare since the temp file lives in the same
+     * parent directory as the destination — same filesystem in practice).</p>
+     *
+     * <p>This pattern guarantees that the user's existing file is never
+     * truncated by a partial write — the file at {@code destination} either
+     * holds the complete previous contents or the complete new contents,
+     * never a half-written mix.</p>
+     *
+     * @param destination the final output path
+     * @param workbook    the workbook to write
+     * @throws IOException if serialization, temp-file write, or rename fails
+     */
+    public static void writeAtomically(Path destination, Workbook workbook) throws IOException {
+        Path parent = destination.getParent();
+        if (parent == null) {
+            parent = Paths.get(".");
+        }
+        Path tempFile = Files.createTempFile(parent,
+                destination.getFileName().toString() + ".", ".tmp");
+        boolean moved = false;
+        try {
+            byte[] bytes = serializeWorkbook(workbook);
+            Files.write(tempFile, bytes);
+            try {
+                Files.move(tempFile, destination,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                // Defensive fallback. Same-parent temp file means same-filesystem in
+                // practice, but exotic mounts (overlayfs, NFS) can still trip this.
+                Files.move(tempFile, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+            moved = true;
+        } finally {
+            if (!moved) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup; don't mask the original failure.
+                }
+            }
         }
     }
 
@@ -308,12 +501,18 @@ public final class WorkbookHandle {
     public static Object deleteSheet(BObject workbookObj, BString name) {
         Workbook workbook = getWorkbook(workbookObj);
         String sheetName = name.getValue();
-        int index = workbook.getSheetIndex(sheetName);
+        int index = findSheetIndexCaseInsensitive(workbook, sheetName);
 
         if (index == -1) {
             return DiagnosticLog.sheetNotFoundError(sheetName);
         }
+        if (workbook.getNumberOfSheets() == 1) {
+            return DiagnosticLog.error(
+                    "Cannot delete the last sheet — Excel requires at least one sheet");
+        }
 
+        Sheet doomed = workbook.getSheetAt(index);
+        invalidateHandlesForSheet(workbookObj, doomed);
         workbook.removeSheetAt(index);
         return null;
     }
@@ -332,9 +531,107 @@ public final class WorkbookHandle {
         if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
             return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
         }
+        if (workbook.getNumberOfSheets() == 1) {
+            return DiagnosticLog.error(
+                    "Cannot delete the last sheet — Excel requires at least one sheet");
+        }
 
+        Sheet doomed = workbook.getSheetAt(idx);
+        invalidateHandlesForSheet(workbookObj, doomed);
         workbook.removeSheetAt(idx);
         return null;
+    }
+
+    /**
+     * Null native data on the vended Table handle whose POI XSSFTable matches {@code doomed}.
+     * Called from {@link SheetHandle#deleteTable} so that any Table handle held by user
+     * code becomes invalid after the underlying table is removed from the sheet.
+     */
+    @SuppressWarnings("unchecked")
+    static void invalidateHandlesForTable(BObject workbookObj,
+            org.apache.poi.xssf.usermodel.XSSFTable doomed) {
+        java.util.Set<BObject> handles =
+                (java.util.Set<BObject>) workbookObj.getNativeData(VENDED_HANDLES_KEY);
+        if (handles == null) {
+            return;
+        }
+        synchronized (handles) {
+            handles.removeIf(handle -> {
+                Object tableNative = handle.getNativeData(TableHandle.TABLE_NATIVE_KEY);
+                if (tableNative == doomed) {
+                    handle.addNativeData(TableHandle.TABLE_NATIVE_KEY, null);
+                    handle.addNativeData(SheetHandle.SHEET_NATIVE_KEY, null);
+                    handle.addNativeData(SheetHandle.PARENT_WORKBOOK_KEY, null);
+                    return true;
+                }
+                return false;
+            });
+        }
+    }
+
+    /**
+     * Null native data on every vended handle whose POI sheet matches {@code doomed}.
+     * For Sheet handles, the POI Sheet is compared by identity. For Table handles, the
+     * sheet containing the table is compared (cascade — deleting a sheet invalidates
+     * any tables vended from it).
+     */
+    @SuppressWarnings("unchecked")
+    private static void invalidateHandlesForSheet(BObject workbookObj, Sheet doomed) {
+        java.util.Set<BObject> handles =
+                (java.util.Set<BObject>) workbookObj.getNativeData(VENDED_HANDLES_KEY);
+        if (handles == null) {
+            return;
+        }
+        synchronized (handles) {
+            handles.removeIf(handle -> {
+                Sheet sheetNative = (Sheet) handle.getNativeData(SheetHandle.SHEET_NATIVE_KEY);
+                Object tableNative = handle.getNativeData(TableHandle.TABLE_NATIVE_KEY);
+                if (sheetNative == doomed) {
+                    // Either a Sheet handle for `doomed`, or a Table handle on `doomed`.
+                    handle.addNativeData(SheetHandle.SHEET_NATIVE_KEY, null);
+                    if (tableNative != null) {
+                        handle.addNativeData(TableHandle.TABLE_NATIVE_KEY, null);
+                    }
+                    handle.addNativeData(SheetHandle.PARENT_WORKBOOK_KEY, null);
+                    return true;
+                }
+                return false;
+            });
+        }
+    }
+
+    /**
+     * Flip the workbook's date-system flag (1900 vs 1904 epoch).
+     *
+     * <p>Package-private — reachable only from test code via a private
+     * {@code @java:Method} external in {@code test_utils.bal}. The public
+     * Ballerina API does not expose this; production code never reaches it
+     * through any documented function.</p>
+     *
+     * @param workbookObj Ballerina Workbook object
+     * @param flag        true for 1904 epoch, false for 1900 epoch
+     * @return null on success, error on failure
+     */
+    public static Object setDate1904Native(BObject workbookObj, boolean flag) {
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            if (!(workbook instanceof XSSFWorkbook)) {
+                return DiagnosticLog.error("setDate1904 requires XSSFWorkbook");
+            }
+            // POI 5.x doesn't expose XSSFWorkbook.setDate1904(boolean); set the flag
+            // directly on the underlying CTWorkbookPr OOXML schema object.
+            org.openxmlformats.schemas.spreadsheetml.x2006.main.CTWorkbook ctWorkbook =
+                    ((XSSFWorkbook) workbook).getCTWorkbook();
+            org.openxmlformats.schemas.spreadsheetml.x2006.main.CTWorkbookPr workbookPr =
+                    ctWorkbook.getWorkbookPr();
+            if (workbookPr == null) {
+                workbookPr = ctWorkbook.addNewWorkbookPr();
+            }
+            workbookPr.setDate1904(flag);
+            return null;
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting date1904 flag: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -346,8 +643,13 @@ public final class WorkbookHandle {
     public static Object close(BObject workbookObj) {
         Workbook workbook = (Workbook) workbookObj.getNativeData(WORKBOOK_NATIVE_KEY);
         if (workbook != null) {
+            // Null native data on every vended Sheet/Table handle BEFORE closing the POI
+            // workbook. Any subsequent method call on a stale handle will hit the typed-error
+            // path in SheetHandle.getSheet / TableHandle.getTable rather than touching a
+            // closed POI workbook.
+            invalidateAllVendedHandles(workbookObj);
             try {
-                unregisterFromCleanup(workbook);
+                unregisterFromCleanup(workbookObj, workbook);
                 workbook.close();
                 workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, null);
             } catch (IOException e) {
@@ -355,6 +657,27 @@ public final class WorkbookHandle {
             }
         }
         return null;
+    }
+
+    /**
+     * Null out native data on every vended Sheet/Table BObject and clear the registry.
+     * Called from {@link #close(BObject)} to ensure no handle outlives the POI workbook.
+     */
+    @SuppressWarnings("unchecked")
+    private static void invalidateAllVendedHandles(BObject workbookObj) {
+        java.util.Set<BObject> handles =
+                (java.util.Set<BObject>) workbookObj.getNativeData(VENDED_HANDLES_KEY);
+        if (handles == null) {
+            return;
+        }
+        synchronized (handles) {
+            for (BObject handle : handles) {
+                handle.addNativeData(SheetHandle.SHEET_NATIVE_KEY, null);
+                handle.addNativeData(TableHandle.TABLE_NATIVE_KEY, null);
+                handle.addNativeData(SheetHandle.PARENT_WORKBOOK_KEY, null);
+            }
+            handles.clear();
+        }
     }
 
     // =============================================================================
@@ -386,7 +709,7 @@ public final class WorkbookHandle {
                     (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
             for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
                 if (tableName.equals(table.getName()) || tableName.equals(table.getDisplayName())) {
-                    return createBallerinaTable(table, sheet);
+                    return createBallerinaTable(workbookObj, table, sheet);
                 }
             }
         }
@@ -398,49 +721,58 @@ public final class WorkbookHandle {
      * Get all tables from all sheets in the workbook.
      *
      * @param workbookObj Ballerina Workbook object
-     * @return Array of Ballerina Table objects
+     * @return Array of Ballerina Table objects on success, BError on failure
      */
-    public static BArray getAllTables(BObject workbookObj) {
-        Workbook workbook = getWorkbook(workbookObj);
+    public static Object getAllTables(BObject workbookObj) {
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
 
-        // Create array with proper Table type instead of anydata
-        io.ballerina.runtime.api.types.Type tableType = ValueCreator.createObjectValue(
-                io.ballerina.lib.data.xlsx.utils.ModuleUtils.getModule(),
-                io.ballerina.lib.data.xlsx.utils.Constants.TABLE_TYPE).getType();
-        io.ballerina.runtime.api.types.ArrayType tableArrayType =
-                io.ballerina.runtime.api.creators.TypeCreator.createArrayType(tableType);
+            // Create array with proper Table type instead of anydata
+            io.ballerina.runtime.api.types.Type tableType =
+                    io.ballerina.runtime.api.utils.TypeUtils.getType(
+                            ValueCreator.createObjectValue(
+                                    io.ballerina.lib.data.xlsx.utils.ModuleUtils.getModule(),
+                                    io.ballerina.lib.data.xlsx.utils.Constants.TABLE_TYPE));
+            io.ballerina.runtime.api.types.ArrayType tableArrayType =
+                    io.ballerina.runtime.api.creators.TypeCreator.createArrayType(tableType);
 
-        if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
-            // Return empty array for non-XLSX workbooks
-            return ValueCreator.createArrayValue(tableArrayType);
-        }
-
-        org.apache.poi.xssf.usermodel.XSSFWorkbook xssfWorkbook =
-                (org.apache.poi.xssf.usermodel.XSSFWorkbook) workbook;
-
-        BArray result = ValueCreator.createArrayValue(tableArrayType);
-
-        // Iterate all sheets and collect all tables
-        for (int i = 0; i < xssfWorkbook.getNumberOfSheets(); i++) {
-            org.apache.poi.xssf.usermodel.XSSFSheet sheet =
-                    (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
-            for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
-                result.append(createBallerinaTable(table, sheet));
+            if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
+                // Return empty array for non-XLSX workbooks
+                return ValueCreator.createArrayValue(tableArrayType);
             }
-        }
 
-        return result;
+            org.apache.poi.xssf.usermodel.XSSFWorkbook xssfWorkbook =
+                    (org.apache.poi.xssf.usermodel.XSSFWorkbook) workbook;
+
+            BArray result = ValueCreator.createArrayValue(tableArrayType);
+
+            // Iterate all sheets and collect all tables
+            for (int i = 0; i < xssfWorkbook.getNumberOfSheets(); i++) {
+                org.apache.poi.xssf.usermodel.XSSFSheet sheet =
+                        (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
+                for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
+                    result.append(createBallerinaTable(workbookObj, table, sheet));
+                }
+            }
+
+            return result;
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error retrieving tables: " + e.getMessage(), e);
+        }
     }
 
     /**
-     * Create a Ballerina Table object from POI XSSFTable.
+     * Create a Ballerina Table object from POI XSSFTable and register it as vended
+     * from {@code workbookObj} so it can be invalidated on close()/deleteSheet()/deleteTable().
      */
-    private static BObject createBallerinaTable(org.apache.poi.xssf.usermodel.XSSFTable table,
+    private static BObject createBallerinaTable(BObject workbookObj,
+                                                 org.apache.poi.xssf.usermodel.XSSFTable table,
                                                  org.apache.poi.xssf.usermodel.XSSFSheet sheet) {
         BObject tableObj = ValueCreator.createObjectValue(
                 io.ballerina.lib.data.xlsx.utils.ModuleUtils.getModule(),
                 io.ballerina.lib.data.xlsx.utils.Constants.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
+        registerVendedHandle(workbookObj, tableObj);
         return tableObj;
     }
 
@@ -459,5 +791,46 @@ public final class WorkbookHandle {
      */
     private static String getSourcePath(BObject workbookObj) {
         return (String) workbookObj.getNativeData(SOURCE_PATH_KEY);
+    }
+
+    /**
+     * Validate a sheet name against Excel's rules: 1-31 characters, no
+     * {@code \ / ? * [ ] :} characters. Throws {@link BallerinaErrorException}
+     * with a typed Error if invalid.
+     */
+    static void validateSheetName(String name) {
+        if (name == null || name.isEmpty()) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Sheet name cannot be empty"));
+        }
+        if (name.length() > MAX_SHEET_NAME_LENGTH) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Sheet name '" + name + "' exceeds Excel's "
+                            + MAX_SHEET_NAME_LENGTH + "-character limit"));
+        }
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (INVALID_SHEET_CHARS.indexOf(c) >= 0) {
+                throw new BallerinaErrorException(DiagnosticLog.error(
+                        "Sheet name '" + name + "' contains invalid character '"
+                                + c + "'. Forbidden: \\ / ? * [ ] :"));
+            }
+        }
+    }
+
+    /**
+     * Find a sheet index by case-insensitive name match. Excel sheet names are
+     * case-insensitive on lookup (you can have either "Sales" or "sales" but
+     * not both, and either lookup matches the existing sheet). Returns -1 if
+     * no match.
+     */
+    static int findSheetIndexCaseInsensitive(Workbook workbook, String name) {
+        int n = workbook.getNumberOfSheets();
+        for (int i = 0; i < n; i++) {
+            if (workbook.getSheetName(i).equalsIgnoreCase(name)) {
+                return i;
+            }
+        }
+        return -1;
     }
 }
