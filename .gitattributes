@@ -1,6 +1,9 @@
 #
 # https://help.github.com/articles/dealing-with-line-endings/
 #
+# Ensure all Java files use LF.
+*.java          eol=lf
+
 # Linux start script should use lf
 /gradlew        text eol=lf
 
