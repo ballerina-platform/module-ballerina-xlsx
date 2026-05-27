@@ -1,0 +1,11 @@
+[package]
+distribution = "2201.13.1"
+org = "xlsx_examples"
+name = "monthly_sales_report"
+version = "0.1.0"
+
+[[dependency]]
+org = "ballerinax"
+name = "xlsx"
+version = "1.0.0"
+repository = "local"
