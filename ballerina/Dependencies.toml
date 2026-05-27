@@ -156,9 +156,9 @@ modules = [
 ]
 
 [[package]]
-org = "ballerinax"
+org = "ballerina"
 name = "xlsx"
-version = "1.0.0"
+version = "0.1.0"
 dependencies = [
 	{org = "ballerina", name = "constraint"},
 	{org = "ballerina", name = "file"},
@@ -169,6 +169,6 @@ dependencies = [
 	{org = "ballerina", name = "time"}
 ]
 modules = [
-	{org = "ballerinax", packageName = "xlsx", moduleName = "xlsx"}
+	{org = "ballerina", packageName = "xlsx", moduleName = "xlsx"}
 ]
 
