@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.xlsx;
+package io.ballerina.stdlib.xlsx.xlsx;
 
 import io.ballerina.runtime.api.values.BError;
 

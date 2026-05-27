@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.utils;
+package io.ballerina.stdlib.xlsx.utils;
 
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.utils.StringUtils;
@@ -47,7 +47,7 @@ public final class AnnotationUtils {
 
         // Annotation structure (nested):
         // - Outer key: "$field$.{fieldName}"
-        // - Inner key: "{org}/{module}:{version}:{annotationName}" e.g., "ballerinax/xlsx:0:Name"
+        // - Inner key: "{org}/{module}:{version}:{annotationName}" e.g., "ballerina/xlsx:0:Name"
         // - Inner value: Map with "value" key
         String fieldKey = "$field$." + fieldName;
         Object fieldAnnotations = annotations.get(StringUtils.fromString(fieldKey));

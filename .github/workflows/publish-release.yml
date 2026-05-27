@@ -13,4 +13,4 @@ jobs:
     secrets: inherit
     with:
       package-name: xlsx
-      package-org: ballerinax
+      package-org: ballerina

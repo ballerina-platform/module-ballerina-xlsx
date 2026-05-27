@@ -9,7 +9,7 @@
 import ballerina/file;
 import ballerina/io;
 import ballerina/time;
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Order record {|
     @xlsx:Name {value: "Order ID"}

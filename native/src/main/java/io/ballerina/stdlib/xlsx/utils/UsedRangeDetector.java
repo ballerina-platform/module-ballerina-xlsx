@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.utils;
+package io.ballerina.stdlib.xlsx.utils;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;

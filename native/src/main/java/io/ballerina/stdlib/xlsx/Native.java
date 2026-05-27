@@ -16,16 +16,16 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx;
+package io.ballerina.stdlib.xlsx;
 
-import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
-import io.ballerina.lib.data.xlsx.xlsx.XlsxParser;
-import io.ballerina.lib.data.xlsx.xlsx.XlsxWriter;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
+import io.ballerina.stdlib.xlsx.utils.DiagnosticLog;
+import io.ballerina.stdlib.xlsx.xlsx.XlsxParser;
+import io.ballerina.stdlib.xlsx.xlsx.XlsxWriter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -120,7 +120,7 @@ public final class Native {
                         (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
                 for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
                     if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
-                        return io.ballerina.lib.data.xlsx.xlsx.TableHandle.parseFromXSSFTable(
+                        return io.ballerina.stdlib.xlsx.xlsx.TableHandle.parseFromXSSFTable(
                                 env, table, sheet, options, typedesc);
                     }
                 }
@@ -175,7 +175,7 @@ public final class Native {
                         (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
                 for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
                     if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
-                        Object result = io.ballerina.lib.data.xlsx.xlsx.TableHandle.writeToXSSFTable(
+                        Object result = io.ballerina.stdlib.xlsx.xlsx.TableHandle.writeToXSSFTable(
                                 table, sheet, data, options);
                         if (result != null) {
                             return result;  // Error
@@ -183,7 +183,7 @@ public final class Native {
 
                         // Atomic save: temp file + atomic rename. If any failure occurs
                         // before the rename succeeds, the original file is untouched.
-                        io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle.writeAtomically(
+                        io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle.writeAtomically(
                                 path, workbook);
                         return null;  // Success
                     }

@@ -1,5 +1,5 @@
 import ballerina/io;
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 // Map Excel column headers to record fields
 type Employee record {|

@@ -67,7 +67,7 @@ public class Workbook {
     # + return - Error if file not found or parsing fails
     function initFromPath(string path) returns Error? = @java:Method {
         name: "openWorkbookFromPath",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Initialize workbook from a byte array.
@@ -75,7 +75,7 @@ public class Workbook {
     # + return - Error if the byte array is not a valid XLSX workbook
     function initFromBytes(byte[] sourceBytes) returns Error? = @java:Method {
         name: "openWorkbookFromBytes",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Initialize a new empty workbook.
@@ -83,7 +83,7 @@ public class Workbook {
     # + return - Error if creation fails
     function initNew() returns Error? = @java:Method {
         name: "createNewWorkbook",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Set the source path for the workbook.
@@ -91,21 +91,21 @@ public class Workbook {
     # + return - Error if setting path fails
     function setSourcePathNative(string path) returns Error? = @java:Method {
         name: "setSourcePath",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Get all sheet names in the workbook.
     #
     # + return - Array of sheet names
     public function getSheetNames() returns string[] = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Get the number of sheets in the workbook.
     #
     # + return - Sheet count
     public function getSheetCount() returns int = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Check whether a sheet with the given name exists in the workbook.
@@ -119,7 +119,7 @@ public class Workbook {
     # + name - Sheet name
     # + return - `true` if the sheet exists, `false` otherwise
     public function hasSheet(string name) returns boolean = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Get a sheet by name or index.
@@ -143,12 +143,12 @@ public class Workbook {
 
     function getSheetByNameNative(Sheet sheet, string name) returns SheetNotFoundError? = @java:Method {
         name: "getSheet",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     function getSheetByIndexNative(Sheet sheet, int index) returns SheetNotFoundError? = @java:Method {
         name: "getSheetByIndex",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Create a new sheet in the workbook.
@@ -168,7 +168,7 @@ public class Workbook {
 
     function createSheetNative(Sheet sheet, string name) returns Error? = @java:Method {
         name: "createSheet",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Delete a sheet by name or index.
@@ -190,12 +190,12 @@ public class Workbook {
 
     function deleteSheetByNameNative(string name) returns Error? = @java:Method {
         name: "deleteSheet",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     function deleteSheetByIndexNative(int index) returns Error? = @java:Method {
         name: "deleteSheetByIndex",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Save the workbook to its source file.
@@ -213,7 +213,7 @@ public class Workbook {
     # + return - Error if no source path or save fails
     public function save() returns Error? = @java:Method {
         name: "saveToSource",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Save the workbook to a new location.
@@ -238,7 +238,7 @@ public class Workbook {
 
     function saveToPathNative(string path) returns Error? = @java:Method {
         name: "saveToPath",
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Serialize the workbook to a byte array.
@@ -254,7 +254,7 @@ public class Workbook {
     #
     # + return - XLSX bytes or Error if serialization fails
     public function toBytes() returns byte[]|Error = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Close the workbook and release resources.
@@ -263,7 +263,7 @@ public class Workbook {
     #
     # + return - Error if close fails
     public function close() returns Error? = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     // =============================================================================
@@ -283,7 +283,7 @@ public class Workbook {
     # + name - Table name
     # + return - Table or error if not found
     public function getTable(string name) returns Table|TableNotFoundError = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Get all tables across all sheets in the workbook.
@@ -297,6 +297,6 @@ public class Workbook {
     #
     # + return - Array of all tables (may be empty), or Error on retrieval failure
     public function getAllTables() returns Table[]|Error = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 }

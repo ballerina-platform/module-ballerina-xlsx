@@ -16,9 +16,8 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.xlsx;
+package io.ballerina.stdlib.xlsx.xlsx;
 
-import io.ballerina.lib.data.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.Type;
@@ -28,6 +27,7 @@ import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.utils.TypeUtils;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.stdlib.xlsx.utils.XlsxConfig;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;

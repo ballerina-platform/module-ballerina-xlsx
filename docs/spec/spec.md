@@ -595,7 +595,7 @@ Semantics:
 ### 10.1 Parse to records
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Employee record {|
     string name;
@@ -614,7 +614,7 @@ public function main() returns error? {
 ### 10.2 Write from records
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Employee record {|
     string name;
@@ -634,7 +634,7 @@ public function main() returns error? {
 ### 10.3 Header mapping with @xlsx:Name
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Employee record {|
     @xlsx:Name {value: "First Name"}
@@ -655,7 +655,7 @@ public function main() returns error? {
 ### 10.4 Multi-sheet Workbook operations
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Sale record {| string product; int quantity; decimal price; |};
 
@@ -683,7 +683,7 @@ Two paths, depending on whether you need the broader workbook context.
 **Tier 1 — one-shot table read/write:**
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Employee record {| string name; int age; |};
 
@@ -700,7 +700,7 @@ public function main() returns error? {
 **Workbook API — when you need totals row, rename/resize, or coordination with other operations:**
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Employee record {| string name; int age; |};
 
@@ -727,7 +727,7 @@ public function main() returns error? {
 
 ```ballerina
 import ballerina/ftp;
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Order record {| int id; string customer; decimal amount; |};
 
@@ -756,7 +756,7 @@ public function main() returns error? {
 ### 10.7 Fail-safe error handling
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Employee record {|
     string name;
@@ -785,7 +785,7 @@ public function main() returns error? {
 The binder uses the target field type to decide what shape to produce. Declare the field as `time:Civil` / `time:Date` / `time:TimeOfDay` for typed values, or as `string` for ISO 8601.
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 import ballerina/time;
 
 type Transaction record {|
@@ -828,7 +828,7 @@ RawTxn[] raw = check xlsx:parseSheet("transactions.xlsx");
 Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles. v0.1 writes them as text cells with the exact digit string preserved.
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Order record {|
     int orderId;              // e.g., 4929187654321098765 — 19 digits

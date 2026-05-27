@@ -1,9 +1,9 @@
 [
   {
-    "name": "ballerinax.xlsx.1.values.$Sheet"
+    "name": "ballerina.xlsx.1.values.$Sheet"
   },
   {
-    "name": "ballerinax.xlsx.1.values.$Workbook"
+    "name": "ballerina.xlsx.1.values.$Workbook"
   },
   {
     "name": "com.github.benmanes.caffeine.cache.BBHeader$ReadAndWriteCounterRef",
@@ -117,23 +117,23 @@
     ]
   },
   {
-    "name": "io.ballerina.lib.data.xlsx.Native",
+    "name": "io.ballerina.stdlib.xlsx.Native",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.lib.data.xlsx.utils.ModuleUtils",
+    "name": "io.ballerina.stdlib.xlsx.utils.ModuleUtils",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.lib.data.xlsx.xlsx.SheetHandle",
+    "name": "io.ballerina.stdlib.xlsx.xlsx.SheetHandle",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.lib.data.xlsx.xlsx.TableHandle",
+    "name": "io.ballerina.stdlib.xlsx.xlsx.TableHandle",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.lib.data.xlsx.xlsx.WorkbookHandle",
+    "name": "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle",
     "queryAllPublicMethods": true
   },
   {

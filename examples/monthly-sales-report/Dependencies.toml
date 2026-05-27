@@ -86,16 +86,16 @@ modules = [
 ]
 
 [[package]]
-org = "ballerinax"
+org = "ballerina"
 name = "xlsx"
-version = "1.0.0"
+version = "0.1.0"
 dependencies = [
 	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "log"}
 ]
 modules = [
-	{org = "ballerinax", packageName = "xlsx", moduleName = "xlsx"}
+	{org = "ballerina", packageName = "xlsx", moduleName = "xlsx"}
 ]
 
 [[package]]
@@ -106,7 +106,7 @@ dependencies = [
 	{org = "ballerina", name = "file"},
 	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "time"},
-	{org = "ballerinax", name = "xlsx"}
+	{org = "ballerina", name = "xlsx"}
 ]
 modules = [
 	{org = "xlsx_examples", packageName = "monthly_sales_report", moduleName = "monthly_sales_report"}

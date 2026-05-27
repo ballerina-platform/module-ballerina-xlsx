@@ -7,7 +7,7 @@
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/ballerina-platform/module-ballerina-xlsx.svg)](https://github.com/ballerina-platform/module-ballerina-xlsx/commits/main)
 [![GitHub Issues](https://img.shields.io/github/issues/ballerina-platform/ballerina-library/module/xlsx.svg?label=Open%20Issues)](https://github.com/ballerina-platform/ballerina-library/labels/module%2Fxlsx)
 
-The `ballerinax/xlsx` library provides functionality to read and write Microsoft Excel files in the XLSX format with type-safe data binding to Ballerina records. It exposes a simple file-based API (`parseSheet` / `writeSheet`) for single-sheet ETL and an object-based Workbook API for multi-sheet operations, byte-array I/O, and Excel Tables.
+The `ballerina/xlsx` library provides functionality to read and write Microsoft Excel files in the XLSX format with type-safe data binding to Ballerina records. It exposes a simple file-based API (`parseSheet` / `writeSheet`) for single-sheet ETL and an object-based Workbook API for multi-sheet operations, byte-array I/O, and Excel Tables.
 
 All processing is done locally with no external service dependencies.
 
@@ -20,7 +20,7 @@ To use the `xlsx` library in your Ballerina application, modify the `.bal` file 
 Import the `xlsx` module.
 
 ```ballerina
-import ballerinax/xlsx;
+import ballerina/xlsx;
 ```
 
 ### Step 2: Invoke module functions
@@ -241,7 +241,7 @@ All the contributors are encouraged to read the [Ballerina Code of Conduct](http
 
 ## Useful links
 
-* For more information go to the [`xlsx` package](https://central.ballerina.io/ballerinax/xlsx/latest).
+* For more information go to the [`xlsx` package](https://central.ballerina.io/ballerina/xlsx/latest).
 * For example demonstrations of the usage, go to [Ballerina By Examples](https://ballerina.io/learn/by-example/).
 * Chat live with us via our [Discord server](https://discord.gg/ballerinalang).
 * Post all technical questions on Stack Overflow with the [#ballerina](https://stackoverflow.com/questions/tagged/ballerina) tag.

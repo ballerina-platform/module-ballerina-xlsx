@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.utils;
+package io.ballerina.stdlib.xlsx.utils;
 
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.concurrent.StrandMetadata;
@@ -34,23 +34,23 @@ import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static io.ballerina.lib.data.xlsx.utils.Constants.CONTENT_TYPE;
-import static io.ballerina.lib.data.xlsx.utils.Constants.CONTENT_TYPE_METADATA;
-import static io.ballerina.lib.data.xlsx.utils.Constants.CONTENT_TYPE_RAW;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_IO_ERROR;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_OUTPUT_MODE;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_OVERWRITE_ERROR;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_PATH;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_WRITE_ERROR;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_WRITE_OPTION;
-import static io.ballerina.lib.data.xlsx.utils.Constants.FILE_WRITE_OVERWRITE;
-import static io.ballerina.lib.data.xlsx.utils.Constants.OFFENDING_ROW;
-import static io.ballerina.lib.data.xlsx.utils.Constants.PRINT_ERROR;
-import static io.ballerina.lib.data.xlsx.utils.Constants.XLSX_PARSE_ERROR;
-import static io.ballerina.lib.data.xlsx.utils.DiagnosticErrorCode.FAILED_FILE_IO_OPERATION;
-import static io.ballerina.lib.data.xlsx.utils.DiagnosticErrorCode.HEADER_CANNOT_BE_EMPTY;
-import static io.ballerina.lib.data.xlsx.utils.DiagnosticErrorCode.INVALID_XLSX_DATA_FORMAT;
-import static io.ballerina.lib.data.xlsx.utils.DiagnosticErrorCode.NO_FIELD_FOR_HEADER;
+import static io.ballerina.stdlib.xlsx.utils.Constants.CONTENT_TYPE;
+import static io.ballerina.stdlib.xlsx.utils.Constants.CONTENT_TYPE_METADATA;
+import static io.ballerina.stdlib.xlsx.utils.Constants.CONTENT_TYPE_RAW;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_IO_ERROR;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_OUTPUT_MODE;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_OVERWRITE_ERROR;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_PATH;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_WRITE_ERROR;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_WRITE_OPTION;
+import static io.ballerina.stdlib.xlsx.utils.Constants.FILE_WRITE_OVERWRITE;
+import static io.ballerina.stdlib.xlsx.utils.Constants.OFFENDING_ROW;
+import static io.ballerina.stdlib.xlsx.utils.Constants.PRINT_ERROR;
+import static io.ballerina.stdlib.xlsx.utils.Constants.XLSX_PARSE_ERROR;
+import static io.ballerina.stdlib.xlsx.utils.DiagnosticErrorCode.FAILED_FILE_IO_OPERATION;
+import static io.ballerina.stdlib.xlsx.utils.DiagnosticErrorCode.HEADER_CANNOT_BE_EMPTY;
+import static io.ballerina.stdlib.xlsx.utils.DiagnosticErrorCode.INVALID_XLSX_DATA_FORMAT;
+import static io.ballerina.stdlib.xlsx.utils.DiagnosticErrorCode.NO_FIELD_FOR_HEADER;
 
 /**
  * Utility class for fail-safe error handling and logging in XLSX operations.

@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.xlsx;
+package io.ballerina.stdlib.xlsx.xlsx;
 
 /**
  * Exception thrown when a cell value cannot be converted to the target type.

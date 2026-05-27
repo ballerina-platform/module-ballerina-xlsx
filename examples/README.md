@@ -1,6 +1,6 @@
 # Examples
 
-The `ballerinax/xlsx` library provides practical examples illustrating usage in various scenarios. The set below progresses from the simplest Tier 1 read/write loop to in-memory byte pipelines suitable for an HTTP handler — reading them in order forms a complete picture of the module's surface.
+The `ballerina/xlsx` library provides practical examples illustrating usage in various scenarios. The set below progresses from the simplest Tier 1 read/write loop to in-memory byte pipelines suitable for an HTTP handler — reading them in order forms a complete picture of the module's surface.
 
 1. [Process Employee Data](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/process-employee-data) - Tier 1 quickstart. Write employee records, read them back into typed records, filter, write the filtered subset to a new file. Demonstrates `parseSheet`, `writeSheet`, and `@xlsx:Name` column mapping.
 2. [Monthly Sales Report](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/monthly-sales-report) - Build a multi-sheet workbook from scratch with an embedded Excel Table and `time:Date` columns; reopen the file and query it back through the Workbook + Table APIs.

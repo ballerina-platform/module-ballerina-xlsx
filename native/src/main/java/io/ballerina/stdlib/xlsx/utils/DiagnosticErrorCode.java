@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.utils;
+package io.ballerina.stdlib.xlsx.utils;
 
 /**
  * Diagnostic error codes for XLSX module.

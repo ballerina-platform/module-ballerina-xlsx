@@ -11,7 +11,7 @@
 // without modification.
 
 import ballerina/io;
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Invoice record {|
     string itemCode;

@@ -48,7 +48,7 @@ import ballerina/jballerina.java;
 # + return - Parsed data or error
 public isolated function parseSheet(string path, string|int sheet = 0, ParseOptions options = {},
         typedesc<Data> t = <>) returns t|Error = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.Native"
+    'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
 # Write Ballerina data to an XLSX file.
@@ -76,7 +76,7 @@ public isolated function parseSheet(string path, string|int sheet = 0, ParseOpti
 # + options - Write options
 # + return - Error if write fails
 public isolated function writeSheet(Data data, string path, *WriteOptions options) returns Error? = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.Native"
+    'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
 // ============================================================================
@@ -110,7 +110,7 @@ public isolated function writeSheet(Data data, string path, *WriteOptions option
 # + return - Parsed data or TableNotFoundError
 public isolated function parseTable(string path, string tableName, ParseOptions options = {},
         typedesc<Data> t = <>) returns t|Error = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.Native"
+    'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
 # Write data to an existing Excel table.
@@ -130,6 +130,6 @@ public isolated function parseTable(string path, string tableName, ParseOptions 
 # + return - TableNotFoundError if table doesn't exist, or other Error
 public isolated function writeTable(Data data, string path, string tableName,
         *WriteOptions options) returns Error? = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.Native"
+    'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 

@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.utils;
+package io.ballerina.stdlib.xlsx.utils;
 
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BString;
@@ -32,7 +32,7 @@ public final class Constants {
 
     // Module information
     public static final String MODULE_NAME = "xlsx";
-    public static final String ORG_NAME = "ballerinax";
+    public static final String ORG_NAME = "ballerina";
 
     // Parse options field names
     public static final BString HEADER_ROW_INDEX = StringUtils.fromString("headerRowIndex");

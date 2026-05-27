@@ -21,5 +21,5 @@ function init() returns error? {
 }
 
 isolated function setModule() = @java:Method {
-    'class: "io.ballerina.lib.data.xlsx.utils.ModuleUtils"
+    'class: "io.ballerina.stdlib.xlsx.utils.ModuleUtils"
 } external;

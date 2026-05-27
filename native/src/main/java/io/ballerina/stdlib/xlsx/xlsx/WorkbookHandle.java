@@ -16,14 +16,14 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.xlsx;
+package io.ballerina.stdlib.xlsx.xlsx;
 
-import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.stdlib.xlsx.utils.DiagnosticLog;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
@@ -771,8 +771,8 @@ public final class WorkbookHandle {
             io.ballerina.runtime.api.types.Type tableType =
                     io.ballerina.runtime.api.utils.TypeUtils.getType(
                             ValueCreator.createObjectValue(
-                                    io.ballerina.lib.data.xlsx.utils.ModuleUtils.getModule(),
-                                    io.ballerina.lib.data.xlsx.utils.Constants.TABLE_TYPE));
+                                    io.ballerina.stdlib.xlsx.utils.ModuleUtils.getModule(),
+                                    io.ballerina.stdlib.xlsx.utils.Constants.TABLE_TYPE));
             io.ballerina.runtime.api.types.ArrayType tableArrayType =
                     io.ballerina.runtime.api.creators.TypeCreator.createArrayType(tableType);
 
@@ -809,8 +809,8 @@ public final class WorkbookHandle {
                                                  org.apache.poi.xssf.usermodel.XSSFTable table,
                                                  org.apache.poi.xssf.usermodel.XSSFSheet sheet) {
         BObject tableObj = ValueCreator.createObjectValue(
-                io.ballerina.lib.data.xlsx.utils.ModuleUtils.getModule(),
-                io.ballerina.lib.data.xlsx.utils.Constants.TABLE_TYPE);
+                io.ballerina.stdlib.xlsx.utils.ModuleUtils.getModule(),
+                io.ballerina.stdlib.xlsx.utils.Constants.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
         registerVendedHandle(workbookObj, tableObj);
         return tableObj;

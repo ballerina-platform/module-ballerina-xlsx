@@ -16,16 +16,8 @@
  * under the License.
  */
 
-package io.ballerina.lib.data.xlsx.xlsx;
+package io.ballerina.stdlib.xlsx.xlsx;
 
-import io.ballerina.lib.data.xlsx.utils.AnnotationUtils;
-import io.ballerina.lib.data.xlsx.utils.Constants;
-import io.ballerina.lib.data.xlsx.utils.DiagnosticLog;
-import io.ballerina.lib.data.xlsx.utils.ModuleUtils;
-import io.ballerina.lib.data.xlsx.utils.RecordParsingUtils;
-import io.ballerina.lib.data.xlsx.utils.RecordParsingUtils.FieldMapping;
-import io.ballerina.lib.data.xlsx.utils.UsedRangeDetector;
-import io.ballerina.lib.data.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
@@ -42,6 +34,14 @@ import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
+import io.ballerina.stdlib.xlsx.utils.AnnotationUtils;
+import io.ballerina.stdlib.xlsx.utils.Constants;
+import io.ballerina.stdlib.xlsx.utils.DiagnosticLog;
+import io.ballerina.stdlib.xlsx.utils.ModuleUtils;
+import io.ballerina.stdlib.xlsx.utils.RecordParsingUtils;
+import io.ballerina.stdlib.xlsx.utils.RecordParsingUtils.FieldMapping;
+import io.ballerina.stdlib.xlsx.utils.UsedRangeDetector;
+import io.ballerina.stdlib.xlsx.utils.XlsxConfig;
 import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;

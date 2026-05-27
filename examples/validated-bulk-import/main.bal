@@ -14,7 +14,7 @@
 import ballerina/constraint;
 import ballerina/file;
 import ballerina/io;
-import ballerinax/xlsx;
+import ballerina/xlsx;
 
 type Customer record {|
     @xlsx:Name {value: "Full Name"}

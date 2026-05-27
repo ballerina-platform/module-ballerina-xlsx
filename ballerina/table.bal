@@ -190,64 +190,64 @@ class TableImpl {
     *Table;
 
     public function getName() returns string = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getDisplayName() returns string = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getSheetName() returns string = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getRange() returns CellRange = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getDataRange() returns CellRange = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getRowCount() returns int = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getColumnCount() returns int = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getHeaders() returns string[] = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getRows(RowReadOptions options = {}, typedesc<Data> t = <>)
             returns t|Error = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function putRows(Data data, *RowWriteOptions options) returns Error? = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function hasTotalsRow() returns boolean = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function getTotalsRow() returns map<anydata>|Error = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function rename(string newName) returns Error? = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
     public function resize(CellRange newRange) returns Error? = @java:Method {
-        'class: "io.ballerina.lib.data.xlsx.xlsx.TableHandle"
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 }
