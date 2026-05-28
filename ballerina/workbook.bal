@@ -52,7 +52,7 @@ public class Workbook {
     #
     # + input - File path, byte array, or `()` for an empty workbook
     # + return - Error if the input cannot be opened
-    public function init((string|byte[])? input = ()) returns Error? {
+    public function init(string|byte[]? input = ()) returns Error? {
         if input is string {
             check self.initFromPath(input);
         } else if input is byte[] {

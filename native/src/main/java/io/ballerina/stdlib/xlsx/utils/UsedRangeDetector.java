@@ -99,26 +99,18 @@ public final class UsedRangeDetector {
         CellType cellType = cell.getCellType();
 
         switch (cellType) {
-            case BLANK:
-                return false;
-
             case STRING:
                 String strValue = cell.getStringCellValue();
                 return strValue != null && !strValue.trim().isEmpty();
 
             case NUMERIC:
             case BOOLEAN:
-                return true;
-
             case FORMULA:
-                // Formulas count as data
+                // Numeric, boolean, and formula cells all count as data.
                 return true;
-
-            case ERROR:
-                // Errors don't count as useful data
-                return false;
 
             default:
+                // BLANK, ERROR, _NONE — no usable data.
                 return false;
         }
     }

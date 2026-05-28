@@ -37,6 +37,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -47,6 +48,8 @@ import java.time.temporal.ChronoUnit;
 public final class CellConverter {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter DATETIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     // Excel date format patterns for cell styling
     private static final String EXCEL_DATE_FORMAT = "yyyy-mm-dd";
@@ -143,12 +146,30 @@ public final class CellConverter {
 
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    // Direct serial → LocalDate math (UTC, honours isDate1904). Bypasses
-                    // POI's cell.getDateCellValue() which routes through LocaleUtil.
+                    // Direct serial → LocalDate / LocalTime math (UTC, honours isDate1904).
+                    // We deliberately bypass POI's DataFormatter / cell.getDateCellValue()
+                    // which both route through LocaleUtil and would inherit the system
+                    // timezone. Branch on the serial's integer + fractional parts so
+                    // datetime and time-only cells keep their time component instead of
+                    // collapsing to a plain "yyyy-MM-dd".
+                    double serial = cell.getNumericCellValue();
                     boolean is1904 = isWorkbookDate1904(cell);
-                    LocalDate localDate = convertSerialToLocalDate(
-                            cell.getNumericCellValue(), is1904);
-                    return DATE_FORMAT.format(localDate);
+                    boolean hasTimeFraction = serial != Math.floor(serial);
+                    // 1900 epoch: serials < 1 are time-only by convention.
+                    // 1904 epoch: serial 0 = 1904-01-01, so all serials >= 0 have a date part.
+                    boolean hasDatePart = is1904 ? serial >= 0.0 : serial >= 1.0;
+
+                    if (hasDatePart && hasTimeFraction) {
+                        LocalDate date = convertSerialToLocalDate(serial, is1904);
+                        LocalTime time = convertNumericToTime(serial);
+                        return DATETIME_FORMAT.format(LocalDateTime.of(date, time));
+                    }
+                    if (hasDatePart) {
+                        LocalDate date = convertSerialToLocalDate(serial, is1904);
+                        return DATE_FORMAT.format(date);
+                    }
+                    LocalTime time = convertNumericToTime(serial);
+                    return TIME_FORMAT.format(time);
                 }
                 double numValue = cell.getNumericCellValue();
                 // Format as integer if it's a whole number
@@ -270,9 +291,17 @@ public final class CellConverter {
                 try {
                     return Long.parseLong(value.trim());
                 } catch (NumberFormatException e) {
-                    // Try parsing as double first
+                    // Fall back to double parsing — accept whole-number-shaped strings
+                    // like "42.0" but reject fractional values rather than silently
+                    // truncating them to int.
                     try {
-                        return (long) Double.parseDouble(value.trim());
+                        double d = Double.parseDouble(value.trim());
+                        if (Double.isInfinite(d) || d != Math.floor(d)) {
+                            throw new TypeConversionException(
+                                    "Cannot convert '" + value + "' to int (non-integer value)",
+                                    value, "int", "string");
+                        }
+                        return (long) d;
                     } catch (NumberFormatException e2) {
                         throw new TypeConversionException(
                                 "Cannot convert '" + value + "' to int",
@@ -333,6 +362,11 @@ public final class CellConverter {
 
         switch (typeTag) {
             case TypeTags.INT_TAG:
+                if (Double.isInfinite(value) || value != Math.floor(value)) {
+                    throw new TypeConversionException(
+                            "Cannot convert " + value + " to int (non-integer value)",
+                            String.valueOf(value), "int", "double");
+                }
                 return (long) value;
 
             case TypeTags.FLOAT_TAG:

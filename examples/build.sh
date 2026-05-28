@@ -9,8 +9,8 @@ BAL_CENTRAL_DIR="$HOME/.ballerina/repositories/central.ballerina.io"
 BAL_HOME_DIR="$BAL_EXAMPLES_DIR/../ballerina"
 
 # Validate input command
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <build|run>"
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: $0 <build|run> [extra-bal-flag]"
   exit 1
 fi
 
@@ -26,6 +26,9 @@ case "$1" in
     exit 1
     ;;
 esac
+
+# Optional second arg (e.g. --graalvm) forwarded to each bal invocation.
+BAL_EXTRA_FLAG="${2:-}"
 
 # Read Ballerina package name from Ballerina.toml
 if [[ ! -f "$BAL_HOME_DIR/Ballerina.toml" ]]; then
@@ -53,8 +56,8 @@ echo "Successfully cleaned the cache directories."
 
 # Create the package directory in the central repository
 echo "Updating the central repository..."
-BAL_DESTINATION_DIR="$BAL_CENTRAL_DIR/bala/ballerinax/$BAL_PACKAGE_NAME"
-BAL_SOURCE_DIR="$HOME/.ballerina/repositories/local/bala/ballerinax/$BAL_PACKAGE_NAME"
+BAL_DESTINATION_DIR="$BAL_CENTRAL_DIR/bala/ballerina/$BAL_PACKAGE_NAME"
+BAL_SOURCE_DIR="$HOME/.ballerina/repositories/local/bala/ballerina/$BAL_PACKAGE_NAME"
 mkdir -p "$BAL_DESTINATION_DIR"
 if [[ -d "$BAL_DESTINATION_DIR" ]]; then
   rm -r "$BAL_DESTINATION_DIR"
@@ -78,7 +81,9 @@ for dir in $(find "$BAL_EXAMPLES_DIR" -type d -maxdepth 1 -mindepth 1); do
     continue
   fi
   echo "Processing example: $dir"
-  (cd "$dir" && bal "$BAL_CMD")
+  # $BAL_EXTRA_FLAG intentionally unquoted so an empty value disappears rather
+  # than passing a literal empty argument to bal.
+  (cd "$dir" && bal "$BAL_CMD" $BAL_EXTRA_FLAG)
 done
 
 # Remove generated JAR files in the Ballerina home directory

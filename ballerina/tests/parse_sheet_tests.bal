@@ -1177,3 +1177,80 @@ function testExplicitFalseStringsAccepted() returns error? {
 
     check removeTempFile(tempFile);
 }
+
+// =============================================================================
+// Header cells with non-string types should not crash the parser
+// =============================================================================
+// RecordParsingUtils.buildHeaderMap used to call cell.getStringCellValue()
+// directly, which throws IllegalStateException for NUMERIC/BOOLEAN/FORMULA
+// cells. The fix routes through CellConverter.convertToStringRaw, which handles
+// every cell type uniformly.
+
+type NumericHeaderRow record {|
+    @Name {value: "2025"}
+    int y1;
+    @Name {value: "2026"}
+    int y2;
+|};
+
+@test:Config {groups: ["parseSheet"]}
+function testNumericHeaderCellsAccepted() returns error? {
+    // Build a sheet with NUMERIC header cells (years written as integers).
+    string tempFile = getTempFilePath("numeric_headers");
+    Workbook wb = check new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, 2025);
+    check sheet.setCell(0, 1, 2026);
+    check sheet.setCell(1, 0, 100);
+    check sheet.setCell(1, 1, 200);
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    NumericHeaderRow[] rows = check parseSheet(tempFile);
+    test:assertEquals(rows.length(), 1);
+    test:assertEquals(rows[0].y1, 100);
+    test:assertEquals(rows[0].y2, 200);
+
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// Fractional values must not silently truncate when bound to int
+// =============================================================================
+// CellConverter used to fall back to (long) Double.parseDouble / (long) value
+// for int targets, masking precision loss. Both paths now reject fractional
+// input via TypeConversionException.
+
+type IntRow record {|
+    int n;
+|};
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testFractionalStringToIntErrors() returns error? {
+    string tempFile = getTempFilePath("fractional_int_string");
+    string[][] data = [["n"], ["3.7"]];
+    check writeSheet(data, tempFile);
+
+    IntRow[]|Error result = parseSheet(tempFile);
+    test:assertTrue(result is TypeConversionError,
+            "Fractional string '3.7' must surface as TypeConversionError for int target");
+
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testFractionalNumericToIntErrors() returns error? {
+    string tempFile = getTempFilePath("fractional_int_numeric");
+    Workbook wb = check new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "n");
+    check sheet.setCell(1, 0, 3.7d);
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    IntRow[]|Error result = parseSheet(tempFile);
+    test:assertTrue(result is TypeConversionError,
+            "Fractional numeric 3.7 must surface as TypeConversionError for int target");
+
+    check removeTempFile(tempFile);
+}

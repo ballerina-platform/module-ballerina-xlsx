@@ -29,7 +29,10 @@ import java.util.Map;
  */
 public final class ModuleUtils {
 
-    private static Module module;
+    // volatile so the value published by setModule() during Ballerina module init
+    // is safely visible to any subsequent getModule() reader without relying on
+    // implicit happens-before edges from the runtime's strand dispatch.
+    private static volatile Module module;
 
     private ModuleUtils() {
         // Private constructor to prevent instantiation
@@ -49,9 +52,16 @@ public final class ModuleUtils {
      * Get the current module.
      *
      * @return Module instance
+     * @throws IllegalStateException if {@code setModule} has not yet been called
      */
     public static Module getModule() {
-        return module;
+        Module m = module;
+        if (m == null) {
+            throw new IllegalStateException(
+                    "ModuleUtils.getModule() called before init — "
+                            + "setModule(Environment) must run during Ballerina module initialization");
+        }
+        return m;
     }
 
     /**

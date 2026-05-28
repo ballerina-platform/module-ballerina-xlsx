@@ -23,17 +23,24 @@ if "%~1"=="build" (
     exit /b 1
 )
 
-:: Read Ballerina package name
+:: Optional second argument (e.g. --graalvm) forwarded to each bal invocation.
+set BAL_EXTRA_FLAG=
+if not "%~2"=="" set BAL_EXTRA_FLAG=%~2
+
+:: Read Ballerina package name. The tilde modifier on %%~A already strips the
+:: surrounding quotes from the captured token, so no further substring trimming
+:: is needed.
 for /f "tokens=2 delims== " %%A in ('findstr /r "^name" "%BAL_HOME_DIR%\Ballerina.toml"') do (
     set BAL_PACKAGE_NAME=%%~A
-    set BAL_PACKAGE_NAME=!BAL_PACKAGE_NAME:"=!"
-    set BAL_PACKAGE_NAME=!BAL_PACKAGE_NAME:~0,-1!
 )
 
-:: Push the package to the local repository
+:: Push the package to the local repository — fail fast on either step so
+:: subsequent cache-clobbering can't run against stale state.
 cd /d "%BAL_HOME_DIR%"
 call bal pack
+if errorlevel 1 exit /b !errorlevel!
 call bal push --repository=local
+if errorlevel 1 exit /b !errorlevel!
 
 :: Remove the cache directories in the repositories
 for /d %%D in ("%BAL_CENTRAL_DIR%\cache-*") do (
@@ -44,13 +51,13 @@ for /d %%D in ("%BAL_CENTRAL_DIR%\cache-*") do (
 echo Successfully cleaned the cache directories
 
 :: Create the package directory in the central repository
-if not exist "%BAL_CENTRAL_DIR%\bala\ballerinax\%BAL_PACKAGE_NAME%" (
-    mkdir "%BAL_CENTRAL_DIR%\bala\ballerinax\%BAL_PACKAGE_NAME%"
+if not exist "%BAL_CENTRAL_DIR%\bala\ballerina\%BAL_PACKAGE_NAME%" (
+    mkdir "%BAL_CENTRAL_DIR%\bala\ballerina\%BAL_PACKAGE_NAME%"
 )
 
 :: Update the central repository
-set BAL_DESTINATION_DIR=%BAL_CENTRAL_DIR%\bala\ballerinax\%BAL_PACKAGE_NAME%
-set BAL_SOURCE_DIR=%USERPROFILE%\.ballerina\repositories\local\bala\ballerinax\%BAL_PACKAGE_NAME%
+set BAL_DESTINATION_DIR=%BAL_CENTRAL_DIR%\bala\ballerina\%BAL_PACKAGE_NAME%
+set BAL_SOURCE_DIR=%USERPROFILE%\.ballerina\repositories\local\bala\ballerina\%BAL_PACKAGE_NAME%
 if exist "%BAL_DESTINATION_DIR%" (
     rmdir /s /q "%BAL_DESTINATION_DIR%"
 )
@@ -68,7 +75,7 @@ set ERROR_OCCURRED=0
 for /d %%D in ("%BAL_EXAMPLES_DIR%\*") do (
     if not "%%~nD"=="build" (
         cd /d "%%D"
-        call bal %BAL_CMD%
+        call bal %BAL_CMD% %BAL_EXTRA_FLAG%
         if errorlevel 1 (
             set ERROR_OCCURRED=1
         )

@@ -366,3 +366,41 @@ function testTimezoneIndependentDateRoundTrip() returns error? {
 
     check removeTempFile(tempFile);
 }
+
+// =============================================================================
+// Datetime cells preserve their time component when read as string
+// =============================================================================
+// convertToString used to drop the time portion of any date-formatted cell —
+// every datetime collapsed to "yyyy-MM-dd". The fix branches on the serial's
+// integer + fractional parts so datetime cells keep "yyyy-MM-dd HH:mm:ss" and
+// time-only cells become "HH:mm:ss", while still bypassing POI's
+// timezone-dependent DataFormatter to preserve cross-machine determinism.
+
+type CivilEvent record {|
+    string name;
+    time:Civil ts;
+|};
+
+@test:Config {groups: ["datetime"]}
+function testDatetimeCellReadAsStringPreservesTime() returns error? {
+    string tempFile = getTempFilePath("datetime_as_string");
+    CivilEvent[] data = [{
+        name: "Event",
+        ts: {
+            year: 2026, month: 5, day: 28,
+            hour: 14, minute: 30, second: 45d,
+            utcOffset: {hours: 0, minutes: 0}
+        }
+    }];
+    check writeSheet(data, tempFile);
+
+    string[][] rows = check parseSheet(tempFile);
+    test:assertEquals(rows.length(), 2, "Expected header row + 1 data row");
+    string tsCell = rows[1][1];
+    test:assertTrue(tsCell.includes("2026-05-28"),
+            "Datetime string must include the date component (got: " + tsCell + ")");
+    test:assertTrue(tsCell.includes("14:30:45"),
+            "Datetime string must include the time component (got: " + tsCell + ")");
+
+    check removeTempFile(tempFile);
+}

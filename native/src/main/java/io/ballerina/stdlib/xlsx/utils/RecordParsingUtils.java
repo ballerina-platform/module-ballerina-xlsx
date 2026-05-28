@@ -119,7 +119,10 @@ public final class RecordParsingUtils {
         for (int colIdx = startCol; colIdx <= endCol; colIdx++) {
             Cell cell = headerRow.getCell(colIdx);
             if (cell != null) {
-                String headerValue = cell.getStringCellValue();
+                // Route via CellConverter so numeric/boolean/formula header cells
+                // become their displayed-text equivalent rather than throwing
+                // IllegalStateException from POI's strict getStringCellValue().
+                String headerValue = CellConverter.convertToStringRaw(cell);
                 if (headerValue != null && !headerValue.trim().isEmpty()) {
                     String trimmed = headerValue.trim();
                     Integer prior = headerMap.put(trimmed, colIdx);
