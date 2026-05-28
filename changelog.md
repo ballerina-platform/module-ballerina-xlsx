@@ -14,14 +14,14 @@ Tracking issue: [ballerina-library#8115](https://github.com/ballerina-platform/b
 - File-based XLSX parsing via `parseSheet()` to `record{}[]`, `map<anydata>[]`, or `string[][]`
 - File-based XLSX writing via `writeSheet()` from records, maps, or 2D arrays
 - Tier 1 table conveniences: `parseTable(path, tableName, ...)` and `writeTable(data, path, tableName, ...)` for one-shot table-by-name flows (tables are unique by name across the workbook, so no sheet specifier is needed). `writeTable` auto-expands the target table.
-- `Data = Row[]` and `Row = record{} | map<anydata> | string[]` as the public-API row shape. Inline literals (`writeSheet([["A","B"],["1","2"]], path)`) and explicit `Data`/`Row` typing both work end-to-end on read and write paths.
+- `Row = record{} | map<anydata> | string[]` as the public-API row shape. `parseSheet` / `parseTable` / `Sheet.getRows` / `Table.getRows` take `typedesc<Row> t = <>` and return `t[]`; the write API takes `Row[]` directly. Inline literals (`writeSheet([["A","B"],["1","2"]], path)`) and explicit `Row[]` typing both work end-to-end. `writeSheet` takes `sheetName` as a positional parameter (default `"Sheet1"`); other row-level options are spread via `RowWriteOptions` (`writeHeaders`, `startRowIndex`).
 - Target-type-driven date / time / date-time binding to `time:Civil`, `time:Date`, and `time:TimeOfDay` from the standard `ballerina/time` module. ISO 8601 `string` is the fallback when the field type is `string` or `anydata`.
 - Cross-machine deterministic datetime round-trips. Serial ↔ LocalDate math is done directly in UTC, bypassing POI's `java.util.Date` conversion (which inherits the system timezone via `LocaleUtil.getLocaleCalendar`). Honours `Workbook.isDate1904()` so legacy Excel-for-Mac files parse correctly. Handles the 1900-epoch Lotus 1-2-3 phantom Feb 29 quirk so date serials match Excel's display.
 - Sub-second precision preserved across both read and write paths via `BigDecimal` nano arithmetic. `time:TimeOfDay` round-trips at nanosecond precision; `time:Civil` at microsecond precision (the practical limit of double-precision Excel serials with a date integer component).
-- `Workbook` class with consolidated `init(string|byte[]? input = ())`:
+- `Workbook` class with empty no-arg `init()` plus module-level factory functions for loading existing workbooks:
   - `new` — empty in-memory workbook
-  - `new(path)` — open an existing file (errors if missing)
-  - `new(bytes)` — open from a byte array
+  - `xlsx:fromFile(string path)` — open an existing file (errors if missing)
+  - `xlsx:fromBytes(byte[] sourceBytes)` — open from a byte array
 - `Workbook` methods: `getSheetNames`, `getSheetCount`, `hasSheet`, `getSheet(string|int)`, `createSheet`, `deleteSheet(string|int)`, `getTable`, `getAllTables`, `save`, `saveAs`, `toBytes`, `close`
 - `Sheet` as a public `object` type (interface) backed by an internal `SheetImpl` class. Compile-time prevention of direct `new Sheet()` — instances are vended only through `Workbook` methods. Same idiom for `Table`.
 - `Sheet` methods: `getName`, `getUsedRange`, `getUsedCellRange`, `getRowCount`, `getColumnCount`, `getRows`, `getRow`, `getColumn`, `getCell`, `putRows`, `setRow`, `setColumn`, `setCell(int, int, anydata)`, `setCellByAddress(string, anydata)` (A1 notation), `deleteRow`, `rename`

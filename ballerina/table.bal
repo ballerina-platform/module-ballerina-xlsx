@@ -145,7 +145,7 @@ public type Table isolated object {
     # + data - Data to write (records or arrays)
     # + options - Write options
     # + return - Error if write fails
-    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
 
     # Check if the table has a totals row.
     #
@@ -231,7 +231,7 @@ isolated class TableImpl {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function putRows(Data data, *RowWriteOptions options) returns Error? = @java:Method {
+    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 

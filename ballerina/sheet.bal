@@ -131,7 +131,7 @@ public type Sheet isolated object {
     # + data - Data to write
     # + options - Write options
     # + return - Error if write fails
-    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
 
     # Get a column of values by header name or 0-based index.
     #
@@ -306,7 +306,7 @@ public type Sheet isolated object {
     # + startRowIndex - Starting row for the table (default: 0)
     # + startColumnIndex - Starting column for the table (default: 0)
     # + return - Created table or error
-    public isolated function createTableFromData(string name, Data data,
+    public isolated function createTableFromData(string name, Row[] data,
             int startRowIndex = 0, int startColumnIndex = 0)
             returns Table|Error;
 
@@ -358,7 +358,7 @@ isolated class SheetImpl {
         'class: "io.ballerina.stdlib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function putRows(Data data, *RowWriteOptions options) returns Error? = @java:Method {
+    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.SheetHandle"
     } external;
 
@@ -412,7 +412,7 @@ isolated class SheetImpl {
         'class: "io.ballerina.stdlib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function createTableFromData(string name, Data data,
+    public isolated function createTableFromData(string name, Row[] data,
             int startRowIndex = 0, int startColumnIndex = 0)
             returns Table|Error = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.SheetHandle"

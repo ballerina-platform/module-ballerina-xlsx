@@ -60,14 +60,6 @@ public isolated class Workbook {
         'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Set the source path for the workbook.
-    # + path - Path to associate with this workbook
-    # + return - Error if setting path fails
-    isolated function setSourcePathNative(string path) returns Error? = @java:Method {
-        name: "setSourcePath",
-        'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
-    } external;
-
     # Get all sheet names in the workbook.
     #
     # + return - Array of sheet names
@@ -106,22 +98,15 @@ public isolated class Workbook {
     # + target - Sheet name (string) or 0-based index (int)
     # + return - Sheet instance or SheetNotFoundError if not found
     public isolated function getSheet(string|int target) returns Sheet|SheetNotFoundError {
-        SheetImpl sheet = new;
-        if target is string {
-            check self.getSheetByNameNative(sheet, target);
-        } else {
-            check self.getSheetByIndexNative(sheet, target);
-        }
-        return sheet;
+        return target is string ? self.getSheetByName(target) : self.getSheetByIndex(target);
     }
 
-    isolated function getSheetByNameNative(Sheet sheet, string name) returns SheetNotFoundError? = @java:Method {
+    isolated function getSheetByName(string name) returns Sheet|SheetNotFoundError = @java:Method {
         name: "getSheet",
         'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    isolated function getSheetByIndexNative(Sheet sheet, int index) returns SheetNotFoundError? = @java:Method {
-        name: "getSheetByIndex",
+    isolated function getSheetByIndex(int index) returns Sheet|SheetNotFoundError = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -134,14 +119,7 @@ public isolated class Workbook {
     #
     # + name - Name for the new sheet
     # + return - New sheet instance or Error if name already exists
-    public isolated function createSheet(string name) returns Sheet|Error {
-        SheetImpl sheet = new;
-        check self.createSheetNative(sheet, name);
-        return sheet;
-    }
-
-    isolated function createSheetNative(Sheet sheet, string name) returns Error? = @java:Method {
-        name: "createSheet",
+    public isolated function createSheet(string name) returns Sheet|Error = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -207,7 +185,6 @@ public isolated class Workbook {
     # + return - Error if save fails
     public isolated function saveAs(string path) returns Error? {
         check self.saveToPathNative(path);
-        check self.setSourcePathNative(path);
     }
 
     isolated function saveToPathNative(string path) returns Error? = @java:Method {

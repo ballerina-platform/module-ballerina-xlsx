@@ -814,10 +814,10 @@ function testWriteTableWithInlineLiteral() returns error? {
 function testTableGetRowsWithDataTarget() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
-    // Explicit `Data` target — typedesc is a type reference, dispatch must unwrap
-    // and pick the union default.
-    Data rows = check empTable.getRows();
-    test:assertTrue(rows is string[][], "Data target on Table.getRows should fall back to string[][]");
+    // Explicit `Row[]` target — the inferred element is the `Row` union itself;
+    // dispatch must handle the UNION element tag and fall back to string[][].
+    Row[] rows = check empTable.getRows();
+    test:assertTrue(rows is string[][], "Row[] target on Table.getRows should fall back to string[][]");
     if rows is string[][] {
         test:assertEquals(rows.length(), 3, "EmployeeTable has 3 data rows");
     }

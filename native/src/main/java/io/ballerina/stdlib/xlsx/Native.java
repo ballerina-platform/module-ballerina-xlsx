@@ -24,6 +24,7 @@ import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
 import io.ballerina.stdlib.xlsx.utils.DiagnosticLog;
+import io.ballerina.stdlib.xlsx.utils.XlsxConstants;
 import io.ballerina.stdlib.xlsx.xlsx.XlsxParser;
 import io.ballerina.stdlib.xlsx.xlsx.XlsxWriter;
 
@@ -69,12 +70,17 @@ public final class Native {
      * Write Ballerina data directly to an XLSX file.
      * This is the PRIMARY API for writing XLSX files.
      *
-     * @param data     Data to write (record[] or string[][])
-     * @param filePath Path to the output file
-     * @param options  Write options
+     * @param data      Data to write (record[] or string[][])
+     * @param filePath  Path to the output file
+     * @param sheetName Name of the sheet to create
+     * @param options   Row-level write options (writeHeaders, startRowIndex)
      * @return null on success, error on failure
      */
-    public static Object writeSheet(BArray data, BString filePath, BMap<BString, Object> options) {
+    public static Object writeSheet(BArray data, BString filePath, BString sheetName,
+                                    BMap<BString, Object> options) {
+        // Inject the sheet name into the options BMap so the existing
+        // XlsxConfig.fromWriteOptions extraction path picks it up unchanged.
+        options.put(XlsxConstants.WRITE_SHEET_NAME, sheetName);
         return XlsxWriter.writeToFile(filePath.getValue(), data, options);
     }
 

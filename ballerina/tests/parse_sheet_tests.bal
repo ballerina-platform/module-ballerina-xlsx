@@ -1033,11 +1033,11 @@ function testParseClosedRecordIgnoresExtraColumns() returns error? {
 // =============================================================================
 
 @test:Config {groups: ["parseSheet"]}
-function testParseSheetWithDataTarget() returns error? {
-    // Explicit `Data` target — typedesc resolves to a type reference. Native must
-    // unwrap the reference and pick a sensible default for the union element type.
-    Data rows = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
-    test:assertTrue(rows is string[][], "Data target should fall back to string[][]");
+function testParseSheetWithRowUnionTarget() returns error? {
+    // Explicit `Row[]` target — the inferred element is the `Row` union itself.
+    // Native dispatch must handle the UNION element tag and fall back to string[][].
+    Row[] rows = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
+    test:assertTrue(rows is string[][], "Row[] target should fall back to string[][]");
     if rows is string[][] {
         test:assertEquals(rows.length(), 4, "Should have header + 3 data rows");
         test:assertEquals(rows[0], ["name", "age", "department"]);
@@ -1045,10 +1045,10 @@ function testParseSheetWithDataTarget() returns error? {
 }
 
 @test:Config {groups: ["parseSheet"]}
-function testParseTableWithDataTarget() returns error? {
-    // parseTable with explicit Data target — same dispatch class.
-    Data rows = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
-    test:assertTrue(rows is string[][], "Data target on parseTable should fall back to string[][]");
+function testParseTableWithRowUnionTarget() returns error? {
+    // parseTable with explicit Row[] target — same UNION-element dispatch.
+    Row[] rows = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
+    test:assertTrue(rows is string[][], "Row[] target on parseTable should fall back to string[][]");
     if rows is string[][] {
         test:assertEquals(rows.length(), 3, "EmployeeTable has 3 data rows");
     }

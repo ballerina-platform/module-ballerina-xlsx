@@ -48,14 +48,14 @@ public function main() returns error? {
 
     // Verify: load the outgoing bytes back into a workbook and read the
     // transformed amounts.
-    xlsx:Workbook verify = check xlsx:fromBytes(outgoingBytes);
-    xlsx:Sheet sheet = check verify.getSheet(0);
+    xlsx:Workbook reopened = check xlsx:fromBytes(outgoingBytes);
+    xlsx:Sheet sheet = check reopened.getSheet(0);
     Invoice[] result = check sheet.getRows();
     io:println("Transformed invoices (10% surcharge applied):");
     foreach Invoice inv in result {
         io:println(string `  ${inv.itemCode}  ${inv.description}: $${formatUsd(inv.amount)}`);
     }
-    check verify.close();
+    check reopened.close();
 }
 
 // Round a positive decimal to cents (2 decimal places) using Ballerina's

@@ -106,7 +106,7 @@ function testWriteWithCustomSheetName() returns error? {
     string[][] data = [["Data", "Value"], ["A", "1"]];
 
     string tempFile = getTempFilePath("write_sheet_name");
-    check writeSheet(data, tempFile, sheetName = "MyCustomSheet");
+    check writeSheet(data, tempFile, "MyCustomSheet");
 
     // Verify by opening as workbook and checking sheet name
     Workbook wb = check fromFile(tempFile);

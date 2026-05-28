@@ -298,11 +298,10 @@ public final class WorkbookHandle {
      * Get a sheet by name.
      *
      * @param workbookObj Ballerina Workbook object
-     * @param sheetObj    Ballerina Sheet object to initialize
      * @param name        Sheet name
-     * @return null on success, error if not found
+     * @return Sheet BObject on success, error if not found
      */
-    public static Object getSheet(BObject workbookObj, BObject sheetObj, BString name) {
+    public static Object getSheet(BObject workbookObj, BString name) {
         Workbook workbook = getWorkbook(workbookObj);
         String sheetName = name.getValue();
 
@@ -310,44 +309,34 @@ public final class WorkbookHandle {
         if (idx == -1) {
             return DiagnosticLog.sheetNotFoundError(sheetName);
         }
-        Sheet sheet = workbook.getSheetAt(idx);
-
-        SheetHandle.initSheet(sheetObj, sheet);
-        registerVendedHandle(workbookObj, sheetObj);
-        return null;
+        return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
     }
 
     /**
      * Get a sheet by index.
      *
      * @param workbookObj Ballerina Workbook object
-     * @param sheetObj    Ballerina Sheet object to initialize
      * @param index       Sheet index (0-based)
-     * @return null on success, error if index out of range
+     * @return Sheet BObject on success, error if index out of range
      */
-    public static Object getSheetByIndex(BObject workbookObj, BObject sheetObj, long index) {
+    public static Object getSheetByIndex(BObject workbookObj, long index) {
         Workbook workbook = getWorkbook(workbookObj);
         int idx = (int) index;
 
         if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
             return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
         }
-
-        Sheet sheet = workbook.getSheetAt(idx);
-        SheetHandle.initSheet(sheetObj, sheet);
-        registerVendedHandle(workbookObj, sheetObj);
-        return null;
+        return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
     }
 
     /**
      * Create a new sheet in the workbook.
      *
      * @param workbookObj Ballerina Workbook object
-     * @param sheetObj    Ballerina Sheet object to initialize
      * @param name        Name for the new sheet
-     * @return null on success, error on failure
+     * @return Sheet BObject on success, error on failure
      */
-    public static Object createSheet(BObject workbookObj, BObject sheetObj, BString name) {
+    public static Object createSheet(BObject workbookObj, BString name) {
         Workbook workbook = getWorkbook(workbookObj);
         String sheetName = name.getValue();
 
@@ -359,10 +348,7 @@ public final class WorkbookHandle {
                 return DiagnosticLog.error("Sheet '" + sheetName + "' already exists");
             }
 
-            Sheet sheet = workbook.createSheet(sheetName);
-            SheetHandle.initSheet(sheetObj, sheet);
-            registerVendedHandle(workbookObj, sheetObj);
-            return null;
+            return createBallerinaSheet(workbookObj, workbook.createSheet(sheetName));
 
         } catch (BallerinaErrorException e) {
             return e.getBError();
@@ -398,6 +384,10 @@ public final class WorkbookHandle {
         Workbook workbook = getWorkbook(workbookObj);
         try {
             writeAtomically(Paths.get(filePath.getValue()), workbook);
+            // Rebind the workbook's source path so subsequent save() calls
+            // write to this location. Mirrors openWorkbookFromPath which
+            // registers the same key after a successful open.
+            workbookObj.addNativeData(SOURCE_PATH_KEY, filePath.getValue());
             return null;
         } catch (IOException e) {
             return DiagnosticLog.error("Failed to save workbook: " + e.getMessage(), e);
@@ -482,18 +472,6 @@ public final class WorkbookHandle {
                 }
             }
         }
-    }
-
-    /**
-     * Set the source path for the workbook.
-     *
-     * @param workbookObj Ballerina Workbook object
-     * @param filePath    Path to associate with the workbook
-     * @return null
-     */
-    public static Object setSourcePath(BObject workbookObj, BString filePath) {
-        workbookObj.addNativeData(SOURCE_PATH_KEY, filePath.getValue());
-        return null;
     }
 
     /**
@@ -819,6 +797,20 @@ public final class WorkbookHandle {
         TableHandle.initTable(tableObj, table, sheet);
         registerVendedHandle(workbookObj, tableObj);
         return tableObj;
+    }
+
+    /**
+     * Create a Ballerina Sheet object from a POI Sheet and register it as vended
+     * from {@code workbookObj} so it can be invalidated on close()/deleteSheet().
+     * Mirrors {@link #createBallerinaTable}.
+     */
+    private static BObject createBallerinaSheet(BObject workbookObj, Sheet sheet) {
+        BObject sheetObj = ValueCreator.createObjectValue(
+                io.ballerina.stdlib.xlsx.utils.ModuleUtils.getModule(),
+                io.ballerina.stdlib.xlsx.utils.XlsxConstants.SHEET_TYPE);
+        SheetHandle.initSheet(sheetObj, sheet);
+        registerVendedHandle(workbookObj, sheetObj);
+        return sheetObj;
     }
 
     /**

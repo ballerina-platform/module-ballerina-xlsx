@@ -339,10 +339,10 @@ function testSetRowMapInlineLiteral() returns error? {
 function testSheetGetRowsWithDataTarget() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
-    // Explicit `Data` target — the typedesc resolves to a type reference wrapping Row[].
-    // Native dispatch must unwrap the reference and handle the UNION element tag.
-    Data rows = check sheet.getRows();
-    test:assertTrue(rows is string[][], "Data target should fall back to string[][]");
+    // Explicit `Row[]` target — the inferred element is the `Row` union itself;
+    // native dispatch must handle the UNION element tag and fall back to string[][].
+    Row[] rows = check sheet.getRows();
+    test:assertTrue(rows is string[][], "Row[] target should fall back to string[][]");
     if rows is string[][] {
         test:assertEquals(rows.length(), 4, "Should have header + 3 data rows");
         test:assertEquals(rows[0], ["name", "age", "department"]);

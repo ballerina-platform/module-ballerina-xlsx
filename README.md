@@ -45,7 +45,7 @@ Employee[] employees = [
     {name: "Jane", age: 28, department: "HR"}
 ];
 
-check xlsx:writeSheet(employees, "output.xlsx", sheetName = "Employees");
+check xlsx:writeSheet(employees, "output.xlsx", "Employees");
 ```
 
 #### Map non-matching headers with `@xlsx:Name`

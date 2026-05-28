@@ -46,7 +46,7 @@ Employee[] employees = [
     {name: "Jane", age: 28, department: "HR"}
 ];
 
-check xlsx:writeSheet(employees, "output.xlsx", sheetName = "Employees");
+check xlsx:writeSheet(employees, "output.xlsx", "Employees");
 ```
 
 > **Note:** The write is atomic — on failure the original file is preserved, never partially overwritten.

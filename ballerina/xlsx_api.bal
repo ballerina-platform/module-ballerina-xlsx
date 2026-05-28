@@ -64,18 +64,23 @@ public isolated function parseSheet(string path, string|int sheet = 0, ParseOpti
 # ```ballerina
 # Employee[] employees = [{name: "John", age: 30}];
 #
-# // Write to file
+# // Write to file (default sheet name "Sheet1")
 # check xlsx:writeSheet(employees, "output.xlsx");
 #
-# // Write with options
-# check xlsx:writeSheet(employees, "report.xlsx", sheetName = "Employees");
+# // Write with an explicit sheet name
+# check xlsx:writeSheet(employees, "report.xlsx", "Employees");
+#
+# // Write with sheet name + additional row options
+# check xlsx:writeSheet(employees, "report.xlsx", "Employees", writeHeaders = false);
 # ```
 #
 # + data - Data to write
 # + path - Path to the output XLSX file
-# + options - Write options
+# + sheetName - Name of the sheet to create (default: "Sheet1")
+# + options - Row-level write options (writeHeaders, startRowIndex)
 # + return - Error if write fails
-public isolated function writeSheet(Data data, string path, *WriteOptions options) returns Error? = @java:Method {
+public isolated function writeSheet(Row[] data, string path, string sheetName = "Sheet1",
+        *RowWriteOptions options) returns Error? = @java:Method {
     'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
@@ -126,10 +131,10 @@ public isolated function parseTable(string path, string tableName, ParseOptions 
 # + data - Data to write
 # + path - Path to the XLSX file containing the table
 # + tableName - Name of the table to write to
-# + options - Write options
+# + options - Row-level write options (writeHeaders, startRowIndex)
 # + return - TableNotFoundError if table doesn't exist, or other Error
-public isolated function writeTable(Data data, string path, string tableName,
-        *WriteOptions options) returns Error? = @java:Method {
+public isolated function writeTable(Row[] data, string path, string tableName,
+        *RowWriteOptions options) returns Error? = @java:Method {
     'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 

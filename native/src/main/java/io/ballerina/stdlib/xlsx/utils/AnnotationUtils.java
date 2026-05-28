@@ -51,28 +51,31 @@ public final class AnnotationUtils {
         // - Inner value: Map with "value" key
         String fieldKey = "$field$." + fieldName;
         Object fieldAnnotations = annotations.get(StringUtils.fromString(fieldKey));
+        if (!(fieldAnnotations instanceof BMap)) {
+            return fieldName;
+        }
 
-        if (fieldAnnotations instanceof BMap) {
+        @SuppressWarnings("unchecked")
+        BMap<BString, Object> fieldAnnotMap = (BMap<BString, Object>) fieldAnnotations;
+
+        // Look for any annotation ending with ":Name" that references xlsx module
+        for (BString annotKey : fieldAnnotMap.getKeys()) {
+            String annotKeyStr = annotKey.getValue();
+            if (!annotKeyStr.endsWith(":Name") || !annotKeyStr.contains("xlsx")) {
+                continue;
+            }
+            Object annotValue = fieldAnnotMap.get(annotKey);
+            if (!(annotValue instanceof BMap)) {
+                continue;
+            }
             @SuppressWarnings("unchecked")
-            BMap<BString, Object> fieldAnnotMap = (BMap<BString, Object>) fieldAnnotations;
-
-            // Look for any annotation ending with ":Name" that references xlsx module
-            for (BString annotKey : fieldAnnotMap.getKeys()) {
-                String annotKeyStr = annotKey.getValue();
-                if (annotKeyStr.endsWith(":Name") && annotKeyStr.contains("xlsx")) {
-                    Object annotValue = fieldAnnotMap.get(annotKey);
-                    if (annotValue instanceof BMap) {
-                        @SuppressWarnings("unchecked")
-                        BMap<BString, Object> annotMap = (BMap<BString, Object>) annotValue;
-                        Object value = annotMap.get(StringUtils.fromString("value"));
-                        if (value != null) {
-                            // Trim spurious whitespace so " Name " in the annotation
-                            // matches a sheet header of "Name". The sheet-side trim is
-                            // already done in RecordParsingUtils.buildHeaderMap.
-                            return value.toString().trim();
-                        }
-                    }
-                }
+            BMap<BString, Object> annotMap = (BMap<BString, Object>) annotValue;
+            Object value = annotMap.get(StringUtils.fromString("value"));
+            if (value != null) {
+                // Trim spurious whitespace so " Name " in the annotation matches a
+                // sheet header of "Name". The sheet-side trim is already done in
+                // RecordParsingUtils.buildHeaderMap.
+                return value.toString().trim();
             }
         }
 

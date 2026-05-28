@@ -18,15 +18,14 @@ If you have any feedback or suggestions about the module, start a discussion via
 
 1. [Overview](#1-overview)
 2. [Data Types](#2-data-types)
-   - 2.1. [Row and Data](#21-row-and-data)
+   - 2.1. [Row and CellValue](#21-row-and-cellvalue)
    - 2.2. [CellRange](#22-cellrange)
 3. [Configurations](#3-configurations)
    - 3.1. [ParseOptions](#31-parseoptions)
    - 3.2. [RowReadOptions](#32-rowreadoptions)
-   - 3.3. [WriteOptions](#33-writeoptions)
-   - 3.4. [RowWriteOptions](#34-rowwriteoptions)
-   - 3.5. [FormulaMode](#35-formulamode)
-   - 3.6. [FailSafeOptions](#36-failsafeoptions)
+   - 3.3. [RowWriteOptions](#33-rowwriteoptions)
+   - 3.4. [FormulaMode](#34-formulamode)
+   - 3.5. [FailSafeOptions](#35-failsafeoptions)
 4. [Annotations](#4-annotations)
    - 4.1. [@xlsx:Name](#41-xlsxname)
 5. [Simple API](#5-simple-api)
@@ -86,14 +85,11 @@ What's *included* in v1.0 that you might expect to be deferred:
 
 ## 2. Data Types
 
-### 2.1 Row and Data
+### 2.1 Row and CellValue
 
 ```ballerina
 # A single row in a sheet — the atomic data unit.
 public type Row record {} | map<anydata> | string[];
-
-# Sheet-level data — an array of rows.
-public type Data Row[];
 
 # Value types supported as XLSX cell content (used by `Sheet.getColumn`).
 public type CellValue string|int|float|decimal|boolean
@@ -105,7 +101,7 @@ public type CellValue string|int|float|decimal|boolean
 - A **`map<anydata>`** — keys are column headers; values are cell contents.
 - A **`string[]`** — raw cell text in column order.
 
-`parseSheet` takes the row shape as its target `typedesc<Row> t = <>` and returns `t[]`. `Data = Row[]` is the input type for `writeSheet` / `writeTable`. Contextual typing at the call site infers the row shape:
+`parseSheet` takes the row shape as its target `typedesc<Row> t = <>` and returns `t[]`. `Row[]` is the input type for `writeSheet` / `writeTable`. Contextual typing at the call site infers the row shape:
 
 ```ballerina
 type Order record {| int id; decimal amount; |};
@@ -183,27 +179,9 @@ public type RowReadOptions record {|
 |};
 ```
 
-### 3.3 WriteOptions
+### 3.3 RowWriteOptions
 
-Used by `writeSheet` (via Ballerina spread syntax).
-
-```ballerina
-public type WriteOptions record {|
-    string sheetName = "Sheet1";
-    boolean writeHeaders = true;
-    int startRowIndex = 0;
-|};
-```
-
-| Field | Default | Meaning |
-|---|---|---|
-| `sheetName` | `"Sheet1"` | Name of the sheet to create. |
-| `writeHeaders` | `true` | When `true`, the first row contains headers derived from record field names (or `@xlsx:Name`) or map keys. For `string[][]` input, the first row is written as-is. |
-| `startRowIndex` | `0` | 0-based row index where writing begins. |
-
-### 3.4 RowWriteOptions
-
-Used by `Sheet.putRows`, `Sheet.setRow`, `Table.putRows`. Same fields as `WriteOptions` minus `sheetName` (the sheet is implicit in the receiver).
+Used by `writeSheet`, `writeTable`, `Sheet.putRows`, `Sheet.setRow`, `Table.putRows`. `sheetName` is a positional parameter on `writeSheet` (not part of `RowWriteOptions`); see `writeSheet` for the default.
 
 ```ballerina
 public type RowWriteOptions record {|
@@ -212,7 +190,7 @@ public type RowWriteOptions record {|
 |};
 ```
 
-### 3.5 FormulaMode
+### 3.4 FormulaMode
 
 ```ballerina
 public enum FormulaMode {
@@ -226,7 +204,7 @@ public enum FormulaMode {
 
 **Formula authoring on write is not supported in v1.0.** Strings starting with `=` are written as plain text.
 
-### 3.6 FailSafeOptions
+### 3.5 FailSafeOptions
 
 ```ballerina
 public type FailSafeOptions record {|
@@ -320,7 +298,7 @@ Reads the specified sheet from an XLSX file and binds rows to the target type in
 | `path` | (required) | Path to the XLSX file. |
 | `sheet` | `0` | Sheet selector — sheet name (`string`) or 0-based index (`int`). |
 | `options` | `{}` | `ParseOptions` (see [3.1](#31-parseoptions)). |
-| `t` | inferred | Target type — `Data` subtype (see [2.1](#21-row-and-data)). |
+| `t` | inferred | Target row type — a `Row` member (record, `map<anydata>`, or `string[]`). Function returns `t[]`. See [2.1](#21-row-and-cellvalue). |
 
 Examples:
 
@@ -339,9 +317,10 @@ Employee[] data = check xlsx:parseSheet("report.xlsx", 1,
 ### 5.2 writeSheet
 
 ```ballerina
-public isolated function writeSheet(Data data,
+public isolated function writeSheet(Row[] data,
         string path,
-        *WriteOptions options)
+        string sheetName = "Sheet1",
+        *RowWriteOptions options)
     returns Error?;
 ```
 
@@ -351,18 +330,22 @@ Writes data to an XLSX file, overwriting any existing file. The write is atomic 
 |---|---|---|
 | `data` | (required) | Rows to write — `Row[]`. |
 | `path` | (required) | Output file path. |
-| `*options` | (defaults) | `WriteOptions` spread as named arguments (see [3.3](#33-writeoptions)). |
+| `sheetName` | `"Sheet1"` | Name of the sheet to create. |
+| `*options` | (defaults) | `RowWriteOptions` spread as named arguments (see [3.3](#33-rowwriteoptions)). |
 
 Examples:
 
 ```ballerina
 Employee[] employees = [{name: "John", age: 30}, {name: "Jane", age: 25}];
 
-// Simplest form.
+// Simplest form (default sheet name "Sheet1").
 check xlsx:writeSheet(employees, "out.xlsx");
 
-// With options as named arguments (Ballerina spread syntax).
-check xlsx:writeSheet(employees, "out.xlsx", sheetName = "Staff", writeHeaders = true);
+// Explicit sheet name (positional).
+check xlsx:writeSheet(employees, "out.xlsx", "Staff");
+
+// Sheet name + row-level options as named arguments.
+check xlsx:writeSheet(employees, "out.xlsx", "Staff", writeHeaders = true);
 ```
 
 **Tier 1 is data-only.** A `parseSheet → writeSheet` cycle does not preserve formulas, formatting, comments, other sheets, charts, named ranges, or Excel Tables. Use the Workbook API for any of those.
@@ -384,7 +367,7 @@ Reads from an Excel Table (ListObject) by name. Tables are unique by name across
 | `path` | (required) | Path to the XLSX file. |
 | `tableName` | (required) | Name of the table. Raises `TableNotFoundError` if no matching table exists in any sheet. |
 | `options` | `{}` | `ParseOptions`. `headerRowIndex` and `dataStartRowIndex` are ignored — the table's own range defines these. All other fields (`formulaMode`, `enableConstraintValidation`, `caseInsensitiveHeaders`, `allowDataProjection`, `failSafe`) apply normally. |
-| `t` | inferred | Target type — `Data` subtype. |
+| `t` | inferred | Target row type — a `Row` member (record, `map<anydata>`, or `string[]`). Function returns `t[]`. |
 
 Example:
 
@@ -396,10 +379,10 @@ Sale[] sales = check xlsx:parseTable("sales.xlsx", "SalesTable");
 ### 5.4 writeTable
 
 ```ballerina
-public isolated function writeTable(Data data,
+public isolated function writeTable(Row[] data,
         string path,
         string tableName,
-        *WriteOptions options)
+        *RowWriteOptions options)
     returns Error?;
 ```
 
@@ -410,7 +393,7 @@ Writes data to an existing Excel Table, auto-expanding the table's range if the 
 | `data` | (required) | Rows to write — `Row[]`. |
 | `path` | (required) | Path to the XLSX file containing the table. |
 | `tableName` | (required) | Name of the table to write into. Raises `TableNotFoundError` if no matching table exists. |
-| `*options` | (defaults) | `WriteOptions` spread as named arguments. `sheetName`, `writeHeaders`, and `startRowIndex` are no-ops for `writeTable` — the table's location, headers, and data range are determined by the table itself. |
+| `*options` | (defaults) | `RowWriteOptions` spread as named arguments. `writeHeaders` and `startRowIndex` are no-ops for `writeTable` — the table's headers and data range are determined by the table itself. |
 
 Example:
 
@@ -498,7 +481,7 @@ public isolated class Sheet {
     public isolated function getCell(int rowIndex, int columnIndex) returns anydata|Error;
 
     # Row writes
-    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
     public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)
             returns Error?;
     public isolated function setColumn(string|int columnRef, anydata[] data) returns Error?;
@@ -516,7 +499,7 @@ public isolated class Sheet {
     public isolated function getTables() returns Table[]|Error;
     public isolated function createTable(string name, CellRange|string range,
             string[]? headers = ()) returns Table|Error;
-    public isolated function createTableFromData(string name, Data data,
+    public isolated function createTableFromData(string name, Row[] data,
             int startRowIndex = 0, int startColumnIndex = 0) returns Table|Error;
     public isolated function deleteTable(string name) returns TableNotFoundError?;
 }
@@ -550,7 +533,7 @@ public isolated class Table {
             returns t[]|Error;
     public isolated function getRow(int index, RowReadOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
-    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;   # auto-expands the table
+    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;   # auto-expands the table
 
     # Totals row
     public isolated function hasTotalsRow() returns boolean;

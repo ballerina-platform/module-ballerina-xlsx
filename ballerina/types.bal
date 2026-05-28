@@ -85,16 +85,6 @@ public type ParseOptions record {|
     FailSafeOptions failSafe?;
 |};
 
-# Options for writing XLSX data.
-public type WriteOptions record {|
-    # Name of the sheet to create (default: "Sheet1")
-    string sheetName = "Sheet1";
-    # Whether to write headers from record field names (default: true)
-    boolean writeHeaders = true;
-    # Row number to start writing (0-based, default: 0)
-    int startRowIndex = 0;
-|};
-
 # Options for reading rows from a sheet.
 public type RowReadOptions record {|
     # Row containing column headers/names (0-based index).
@@ -138,10 +128,6 @@ public type RowWriteOptions record {|
 # - `map<anydata>` - Dynamic map (keys are column headers)
 # - `string[]` - Raw cell text in column order
 public type Row record {} | map<anydata> | string[];
-
-# Sheet-level data — an array of rows. Used as the return type of `parseSheet` and
-# `parseTable`, and as the input type of `writeSheet` and `writeTable`.
-public type Data Row[];
 
 # Value types supported as XLSX cell content.
 #
