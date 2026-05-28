@@ -602,7 +602,7 @@ function testCaseInsensitiveHeadersDisabled() returns error? {
 }
 function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
     // Test case-insensitive headers via Workbook/Sheet API
-    Workbook wb = check new(TEST_DATA_DIR + "case_headers.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "case_headers.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet1");
     RowReadOptions opts = {
@@ -662,7 +662,7 @@ function testSheetGetRowsErrorTypePreservation() returns error? {
     ];
     check writeSheet(data, testFile);
 
-    Workbook wb = check new(testFile);
+    Workbook wb = check fromFile(testFile);
     Sheet sheet = check wb.getSheet(0);
 
     ErrorTypeTestRecord[]|Error result = sheet.getRows();

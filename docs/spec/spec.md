@@ -94,6 +94,10 @@ public type Row record {} | map<anydata> | string[];
 
 # Sheet-level data — an array of rows.
 public type Data Row[];
+
+# Value types supported as XLSX cell content (used by `Sheet.getColumn`).
+public type CellValue string|int|float|decimal|boolean
+                    | time:Date|time:Civil|time:TimeOfDay;
 ```
 
 `Row` is the atomic single-row type. A row can be:
@@ -101,13 +105,13 @@ public type Data Row[];
 - A **`map<anydata>`** — keys are column headers; values are cell contents.
 - A **`string[]`** — raw cell text in column order.
 
-`Data = Row[]` is what `parseSheet` returns and `writeSheet` accepts. The typedesc inference at the call site locks the row shape:
+`parseSheet` takes the row shape as its target `typedesc<Row> t = <>` and returns `t[]`. `Data = Row[]` is the input type for `writeSheet` / `writeTable`. Contextual typing at the call site infers the row shape:
 
 ```ballerina
 type Order record {| int id; decimal amount; |};
-Order[] orders   = check xlsx:parseSheet("orders.xlsx");      // Order[] <: record{}[] <: Row[]
-string[][] raw   = check xlsx:parseSheet("orders.xlsx");      // string[][] <: Row[]
-map<anydata>[] m = check xlsx:parseSheet("orders.xlsx");      // map<anydata>[] <: Row[]
+Order[] orders   = check xlsx:parseSheet("orders.xlsx");      // t = Order; returns Order[]
+string[][] raw   = check xlsx:parseSheet("orders.xlsx");      // t = string[]; returns string[][]
+map<anydata>[] m = check xlsx:parseSheet("orders.xlsx");      // t = map<anydata>; returns map<anydata>[]
 ```
 
 ### 2.2 CellRange
@@ -305,8 +309,8 @@ The simple API consists of two functions for one-shot file-based operations. Bot
 public isolated function parseSheet(string path,
         string|int sheet = 0,
         ParseOptions options = {},
-        typedesc<Data> t = <>)
-    returns t|Error;
+        typedesc<Row> t = <>)
+    returns t[]|Error;
 ```
 
 Reads the specified sheet from an XLSX file and binds rows to the target type inferred from the call site.
@@ -369,8 +373,8 @@ check xlsx:writeSheet(employees, "out.xlsx", sheetName = "Staff", writeHeaders =
 public isolated function parseTable(string path,
         string tableName,
         ParseOptions options = {},
-        typedesc<Data> t = <>)
-    returns t|Error;
+        typedesc<Row> t = <>)
+    returns t[]|Error;
 ```
 
 Reads from an Excel Table (ListObject) by name. Tables are unique by name across the entire workbook, so no sheet specifier is needed. Headers are taken from the table's own header row.
@@ -423,41 +427,43 @@ The Workbook API exposes a stateful workbook object with explicit lifecycle.
 
 ### 6.1 Construction
 
-Workbooks are constructed with `new`, optionally taking a path or byte array:
+Empty workbooks are constructed with `new`. To open an existing workbook from
+disk or memory, use the module-level factory functions `xlsx:fromFile(path)`
+and `xlsx:fromBytes(bytes)`:
 
 ```ballerina
-xlsx:Workbook wb = check new;                            # empty in-memory
-xlsx:Workbook wb = check new("report.xlsx");             # open existing file
-xlsx:Workbook wb = check new(sourceBytes);               # open from bytes
+xlsx:Workbook wb1 = check new;                              # empty in-memory
+xlsx:Workbook wb2 = check xlsx:fromFile("report.xlsx");     # open existing file
+xlsx:Workbook wb3 = check xlsx:fromBytes(sourceBytes);      # open from bytes
 ```
 
 | Form | Semantics |
 |---|---|
 | `new` | Empty in-memory workbook. No source path bound. `save()` errors; `saveAs(path)` is required to persist. |
-| `new(string path)` | Opens an existing file. Errors with `FileNotFoundError` if the path does not exist. To create a new file with a specific name, use `new` followed by `saveAs(path)`. |
-| `new(byte[] bytes)` | Opens the workbook represented by the byte array. No source path; `saveAs(path)` is required for file-based persistence. |
+| `xlsx:fromFile(string path)` | Opens an existing file. Errors with `FileNotFoundError` if the path does not exist. To create a new file with a specific name, use `new` followed by `saveAs(path)`. |
+| `xlsx:fromBytes(byte[] bytes)` | Opens the workbook represented by the byte array. No source path; `saveAs(path)` is required for file-based persistence. |
 
 ### 6.2 Workbook class
 
 ```ballerina
-public class Workbook {
+public isolated class Workbook {
     # Sheet access
-    public function getSheetNames() returns string[];
-    public function getSheetCount() returns int;
-    public function hasSheet(string name) returns boolean;
-    public function getSheet(string|int sheet) returns Sheet|SheetNotFoundError;
-    public function createSheet(string name) returns Sheet|Error;
-    public function deleteSheet(string|int sheet) returns Error?;
+    public isolated function getSheetNames() returns string[];
+    public isolated function getSheetCount() returns int;
+    public isolated function hasSheet(string name) returns boolean;
+    public isolated function getSheet(string|int sheet) returns Sheet|SheetNotFoundError;
+    public isolated function createSheet(string name) returns Sheet|Error;
+    public isolated function deleteSheet(string|int sheet) returns Error?;
 
     # Table access (tables are unique by name across the workbook)
-    public function getTable(string name) returns Table|TableNotFoundError;
-    public function getAllTables() returns Table[]|Error;
+    public isolated function getTable(string name) returns Table|TableNotFoundError;
+    public isolated function getAllTables() returns Table[]|Error;
 
     # Lifecycle
-    public function save() returns Error?;                   # overwrites source path; error if in-memory
-    public function saveAs(string path) returns Error?;      # writes to path; rebinds source path
-    public function toBytes() returns byte[]|Error;          # serialises workbook as XLSX bytes
-    public function close() returns Error?;                  # releases POI resources
+    public isolated function save() returns Error?;                   # overwrites source path; error if in-memory
+    public isolated function saveAs(string path) returns Error?;      # writes to path; rebinds source path
+    public isolated function toBytes() returns byte[]|Error;          # serialises workbook as XLSX bytes
+    public isolated function close() returns Error?;                  # releases POI resources
 }
 ```
 
@@ -474,45 +480,45 @@ Both writes are atomic — temp file in the same directory + atomic rename. A fa
 ## 7. Sheet API
 
 ```ballerina
-public class Sheet {
+public isolated class Sheet {
     # Identity and dimensions
-    public function getName() returns string;
-    public function getUsedRange() returns string;                                  # A1 notation, e.g., "A1:D50"
-    public function getUsedCellRange() returns CellRange?;                          # 0-based indices; nil if empty
-    public function getRowCount() returns int;
-    public function getColumnCount() returns int;
+    public isolated function getName() returns string;
+    public isolated function getUsedRange() returns string;                                  # A1 notation, e.g., "A1:D50"
+    public isolated function getUsedCellRange() returns CellRange?;                          # 0-based indices; nil if empty
+    public isolated function getRowCount() returns int;
+    public isolated function getColumnCount() returns int;
 
     # Row reads
-    public function getRows(RowReadOptions options = {}, typedesc<Data> t = <>)
-            returns t|Error;
-    public function getRow(int index, RowReadOptions options = {},
+    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+            returns t[]|Error;
+    public isolated function getRow(int index, RowReadOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
-    public function getColumn(string|int columnRef, RowReadOptions options = {},
-            typedesc<anydata[]> t = <>) returns t|Error;
-    public function getCell(int rowIndex, int columnIndex) returns anydata|Error;
+    public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
+            typedesc<CellValue> t = <>) returns t[]|Error;
+    public isolated function getCell(int rowIndex, int columnIndex) returns anydata|Error;
 
     # Row writes
-    public function putRows(Data data, *RowWriteOptions options) returns Error?;
-    public function setRow(int rowIndex, Row data, *RowWriteOptions options)
+    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;
+    public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)
             returns Error?;
-    public function setColumn(string|int columnRef, anydata[] data) returns Error?;
-    public function setCell(int rowIndex, int columnIndex, anydata value)
+    public isolated function setColumn(string|int columnRef, anydata[] data) returns Error?;
+    public isolated function setCell(int rowIndex, int columnIndex, anydata value)
             returns Error?;
-    public function setCellByAddress(string cellAddress, anydata value)
+    public isolated function setCellByAddress(string cellAddress, anydata value)
             returns Error?;                                                         # A1 notation
 
     # Sheet management
-    public function deleteRow(int index) returns Error?;                            # shifts subsequent rows up
-    public function rename(string newName) returns Error?;
+    public isolated function deleteRow(int index) returns Error?;                            # shifts subsequent rows up
+    public isolated function rename(string newName) returns Error?;
 
     # Table access
-    public function getTable(string name) returns Table|TableNotFoundError;
-    public function getTables() returns Table[]|Error;
-    public function createTable(string name, CellRange|string range,
+    public isolated function getTable(string name) returns Table|TableNotFoundError;
+    public isolated function getTables() returns Table[]|Error;
+    public isolated function createTable(string name, CellRange|string range,
             string[]? headers = ()) returns Table|Error;
-    public function createTableFromData(string name, Data data,
+    public isolated function createTableFromData(string name, Data data,
             int startRowIndex = 0, int startColumnIndex = 0) returns Table|Error;
-    public function deleteTable(string name) returns TableNotFoundError?;
+    public isolated function deleteTable(string name) returns TableNotFoundError?;
 }
 ```
 
@@ -526,33 +532,33 @@ Notes:
 ## 8. Table API
 
 ```ballerina
-public class Table {
+public isolated class Table {
     # Identity
-    public function getName() returns string;
-    public function getDisplayName() returns string;
-    public function getSheetName() returns string;
+    public isolated function getName() returns string;
+    public isolated function getDisplayName() returns string;
+    public isolated function getSheetName() returns string;
 
     # Range and dimensions (0-based indices)
-    public function getRange() returns CellRange;          # full table including headers/totals
-    public function getDataRange() returns CellRange;      # data rows only
-    public function getRowCount() returns int;             # data rows only
-    public function getColumnCount() returns int;
+    public isolated function getRange() returns CellRange;          # full table including headers/totals
+    public isolated function getDataRange() returns CellRange;      # data rows only
+    public isolated function getRowCount() returns int;             # data rows only
+    public isolated function getColumnCount() returns int;
 
     # Headers and data
-    public function getHeaders() returns string[];
-    public function getRows(RowReadOptions options = {}, typedesc<Data> t = <>)
-            returns t|Error;
-    public function getRow(int index, RowReadOptions options = {},
+    public isolated function getHeaders() returns string[];
+    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+            returns t[]|Error;
+    public isolated function getRow(int index, RowReadOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
-    public function putRows(Data data, *RowWriteOptions options) returns Error?;   # auto-expands the table
+    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;   # auto-expands the table
 
     # Totals row
-    public function hasTotalsRow() returns boolean;
-    public function getTotalsRow() returns map<anydata>|Error;
+    public isolated function hasTotalsRow() returns boolean;
+    public isolated function getTotalsRow() returns map<anydata>|Error;
 
     # Modification
-    public function rename(string newName) returns Error?;
-    public function resize(CellRange newRange) returns Error?;
+    public isolated function rename(string newName) returns Error?;
+    public isolated function resize(CellRange newRange) returns Error?;
 }
 ```
 
@@ -660,7 +666,7 @@ import ballerina/xlsx;
 type Sale record {| string product; int quantity; decimal price; |};
 
 public function main() returns error? {
-    xlsx:Workbook wb = check new("sales.xlsx");
+    xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 
     // Read from one sheet, modify, write to another.
     xlsx:Sheet rawSheet = check wb.getSheet("Raw");
@@ -705,7 +711,7 @@ import ballerina/xlsx;
 type Employee record {| string name; int age; |};
 
 public function main() returns error? {
-    xlsx:Workbook wb = check new("data.xlsx");
+    xlsx:Workbook wb = check xlsx:fromFile("data.xlsx");
 
     xlsx:Table empTable = check wb.getTable("EmployeeTable");
     Employee[] employees = check empTable.getRows();
@@ -736,7 +742,7 @@ public function main() returns error? {
 
     // Pull bytes from SFTP, open as a workbook.
     byte[] inputBytes = check sftp->get("/in/orders.xlsx");
-    xlsx:Workbook wb = check new(inputBytes);
+    xlsx:Workbook wb = check xlsx:fromBytes(inputBytes);
 
     xlsx:Sheet sheet = check wb.getSheet(0);
     Order[] orders = check sheet.getRows();

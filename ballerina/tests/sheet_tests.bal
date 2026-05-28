@@ -32,7 +32,7 @@ type SheetTestEmployee record {|
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetColumnByName() returns error? {
-    Workbook wb = check new(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     string[] names = check sheet.getColumn("name");
     test:assertEquals(names.length(), 3, "Should have 3 names");
@@ -43,7 +43,7 @@ function testSheetGetColumnByName() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetColumnByIndex() returns error? {
-    Workbook wb = check new(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     // Column 0 is "name"; pull as string[]
     string[] col0 = check sheet.getColumn(0);
@@ -54,7 +54,7 @@ function testSheetGetColumnByIndex() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetColumnMissingHeader() returns error? {
-    Workbook wb = check new(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     string[]|Error result = sheet.getColumn("NonExistentHeader");
     test:assertTrue(result is Error, "Missing header should return Error");
@@ -67,7 +67,7 @@ function testSheetGetColumnMissingHeader() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetCell() returns error? {
-    Workbook wb = check new(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     // Row 0 is the header row; cell (0,0) = "name"
     anydata header00 = check sheet.getCell(0, 0);
@@ -337,7 +337,7 @@ function testSetRowMapInlineLiteral() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetRowsWithDataTarget() returns error? {
-    Workbook wb = check new(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     // Explicit `Data` target — the typedesc resolves to a type reference wrapping Row[].
     // Native dispatch must unwrap the reference and handle the UNION element tag.
@@ -352,7 +352,7 @@ function testSheetGetRowsWithDataTarget() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetRowWithRowTarget() returns error? {
-    Workbook wb = check new(TEST_DATA_DIR + "employees.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     // Explicit `Row` target — declared type is the union itself.
     // Sheet.getRow uses data-row-relative indexing: getRow(0) is the first row of data.

@@ -373,7 +373,7 @@ function cleanupFailSafeLogFile() returns error? {
 }
 function testSheetGetRowsWithFailSafe() returns error? {
     // Test that Sheet.getRows() supports fail-safe error handling
-    Workbook wb = check new(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
     RowReadOptions opts = {
@@ -406,7 +406,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
         check file:remove(FAIL_SAFE_ERROR_LOG);
     }
 
-    Workbook wb = check new(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
     RowReadOptions opts = {
@@ -440,7 +440,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
 }
 function testSheetGetRowsWithoutFailSafeFails() returns error? {
     // Test that Sheet.getRows() without fail-safe fails on first error
-    Workbook wb = check new(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
+    Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
     // Without fail-safe, parsing should throw on first error
@@ -500,7 +500,7 @@ function testSheetBlankCellRequiredFieldWithFailSafe() returns error? {
     ];
     check writeSheet(data, testFile);
 
-    Workbook wb = check new(testFile);
+    Workbook wb = check fromFile(testFile);
     Sheet sheet = check wb.getSheet(0);
 
     RowReadOptions opts = {

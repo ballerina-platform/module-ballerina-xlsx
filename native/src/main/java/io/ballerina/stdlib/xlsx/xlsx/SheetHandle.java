@@ -170,37 +170,33 @@ public final class SheetHandle {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
 
-            // Unwrap any outer type reference (e.g., when the target is declared as `Data`).
+            // Under the typedesc<Row> signature, the describing type IS the row element type
+            // (the function returns `t[]`). Dispatch directly on the row shape.
             Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
             int typeTag = describingType.getTag();
 
+            // string[] row → string[][]
             if (typeTag == TypeTags.ARRAY_TAG) {
                 ArrayType arrayType = (ArrayType) describingType;
-                Type elementType = arrayType.getElementType();
-                // Resolve referenced types (important for module-defined types)
-                Type resolvedElementType = TypeUtils.getReferredType(elementType);
-                int elementTag = resolvedElementType.getTag();
-
-                // string[][]
-                if (elementTag == TypeTags.ARRAY_TAG) {
+                Type elementType = TypeUtils.getReferredType(arrayType.getElementType());
+                if (elementType.getTag() == TypeTags.STRING_TAG) {
                     return getRowsAsStringArray(sheet, config);
                 }
+            }
 
-                // record[]
-                if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-                    RecordType recordType = (RecordType) resolvedElementType;
-                    return getRowsAsRecords(env, sheet, config, recordType);
-                }
+            // record{} → record[]
+            if (typeTag == TypeTags.RECORD_TYPE_TAG) {
+                return getRowsAsRecords(env, sheet, config, (RecordType) describingType);
+            }
 
-                // map<anydata>[]
-                if (elementTag == TypeTags.MAP_TAG) {
-                    return getRowsAsMaps(env, sheet, config, (MapType) resolvedElementType);
-                }
+            // map<anydata> → map<anydata>[]
+            if (typeTag == TypeTags.MAP_TAG) {
+                return getRowsAsMaps(env, sheet, config, (MapType) describingType);
+            }
 
-                // Row[] (the public union) — default to string[][].
-                if (elementTag == TypeTags.UNION_TAG) {
-                    return getRowsAsStringArray(sheet, config);
-                }
+            // Row (the public union) — default to string[][].
+            if (typeTag == TypeTags.UNION_TAG) {
+                return getRowsAsStringArray(sheet, config);
             }
 
             // Default: string[][]
@@ -557,20 +553,19 @@ public final class SheetHandle {
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
             int colIdx = resolveColumnRef(sheet, columnRef, config);
 
+            // Under typedesc<anydata>, the describing type IS the cell element type
+            // (the function returns `t[]`). Synthesize the array type for the result.
+            Type elementType = TypeUtils.getReferredType(targetType.getDescribingType());
+            ArrayType arrType = TypeCreator.createArrayType(elementType);
+
             CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
             if (usedRange == null) {
-                Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
-                ArrayType arrType = (ArrayType) describingType;
                 return ValueCreator.createArrayValue(arrType);
             }
 
             int dataStartRow = defaultDataStartRow(config);
             int endRow = usedRange.getLastRow();
             Integer rowCountLimit = config.getRowCount();
-
-            Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
-            ArrayType arrType = (ArrayType) describingType;
-            Type elementType = TypeUtils.getReferredType(arrType.getElementType());
 
             BArray result = ValueCreator.createArrayValue(arrType);
             int parsedCount = 0;

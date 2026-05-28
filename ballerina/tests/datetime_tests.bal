@@ -205,7 +205,7 @@ function testWorkbookWriteAndParseDateField() returns error? {
     check wb.close();
 
     // Read back via Workbook API
-    Workbook wb2 = check new(tempFile);
+    Workbook wb2 = check fromFile(tempFile);
     Sheet sheet2 = check wb2.getSheet(0);
 
     EventWithDate[] parsed = check sheet2.getRows();
@@ -327,7 +327,7 @@ function testParseDate1904Workbook() returns error? {
     // Under the 1904 epoch, 1904-01-01 + 44708 days = 2026-05-28.
     // Under the 1900 epoch, the same serial would land in mid-2022 — wildly off.
     // The assertion below is correct ONLY if Workbook.isDate1904() is honoured.
-    Workbook wb = check new(TEST_DATA_DIR + "dates_1904.xlsx");
+    Workbook wb = check fromFile(TEST_DATA_DIR + "dates_1904.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
     // The cell isn't date-formatted in this fixture (a raw int was written), so

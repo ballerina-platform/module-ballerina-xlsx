@@ -49,7 +49,7 @@ Employee[] employees = [
 check xlsx:writeSheet(employees, "output.xlsx", sheetName = "Employees");
 ```
 
-The write is atomic — on failure the original file is preserved, never partially overwritten.
+> **Note:** The write is atomic — on failure the original file is preserved, never partially overwritten.
 
 #### Map non-matching headers with `@xlsx:Name`
 
@@ -70,7 +70,7 @@ Employee[] employees = check xlsx:parseSheet("employees.xlsx");
 #### Work with multiple sheets via the `Workbook` API
 
 ```ballerina
-xlsx:Workbook wb = check new("report.xlsx");
+xlsx:Workbook wb = check xlsx:fromFile("report.xlsx");
 
 string[] sheetNames = wb.getSheetNames();
 xlsx:Sheet sales = check wb.getSheet("Sales");
@@ -83,12 +83,12 @@ check wb.save();
 check wb.close();
 ```
 
-The same `Workbook` constructor accepts three forms:
+`Workbook` construction comes in three flavours:
 
 ```ballerina
-xlsx:Workbook wb1 = check new;                       // empty in-memory workbook (saveAs required to persist)
-xlsx:Workbook wb2 = check new("existing.xlsx");      // open an existing file (errors if missing)
-xlsx:Workbook wb3 = check new(sourceBytes);          // open from a byte array (e.g., SFTP / HTTP body)
+xlsx:Workbook wb1 = check new;                              // empty in-memory workbook (saveAs required to persist)
+xlsx:Workbook wb2 = check xlsx:fromFile("existing.xlsx");   // open an existing file (errors if missing)
+xlsx:Workbook wb3 = check xlsx:fromBytes(sourceBytes);      // open from a byte array (e.g., SFTP / HTTP body)
 ```
 
 To create a brand-new file with a specific name, use `new` (in-memory) followed by `wb.saveAs("path.xlsx")`.
@@ -97,7 +97,7 @@ To create a brand-new file with a specific name, use `new` (in-memory) followed 
 
 ```ballerina
 byte[] inputBytes = check sftp->get("/in/orders.xlsx");
-xlsx:Workbook wb = check new(inputBytes);
+xlsx:Workbook wb = check xlsx:fromBytes(inputBytes);
 
 xlsx:Sheet sheet = check wb.getSheet(0);
 Order[] orders = check sheet.getRows();
@@ -124,7 +124,7 @@ check xlsx:writeTable([...employees, ...newEmployees], "sales.xlsx", "EmployeeTa
 For richer operations (totals row, rename, resize, or coordination with other workbook changes), go through the Workbook API:
 
 ```ballerina
-xlsx:Workbook wb = check new("sales.xlsx");
+xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 xlsx:Table empTable = check wb.getTable("EmployeeTable");
 
 Employee[] employees = check empTable.getRows();

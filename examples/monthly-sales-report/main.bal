@@ -126,7 +126,7 @@ public function main() returns error? {
     io:println("");
 
     // Reopen the file and inspect it via the Workbook + Table APIs.
-    xlsx:Workbook reopened = check new (path);
+    xlsx:Workbook reopened = check xlsx:fromFile(path);
 
     string[] sheetNames = reopened.getSheetNames();
     string joined = "";

@@ -14,6 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/time;
+
 # Formula handling mode for cells containing formulas.
 public enum FormulaMode {
     # Use the last calculated/cached value (default).
@@ -46,91 +48,88 @@ public type NameConfig record {|
 public const annotation NameConfig Name on record field;
 
 # Options for parsing XLSX data.
-#
-# + headerRowIndex - Row containing column headers/names (0-based index).
-#                    Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
-#                    Example: If headers are in row 1 (second row), set this to 1.
-# + dataStartRowIndex - Row where actual data begins (0-based index).
-#                       If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
-# + rowCount - Maximum number of data rows to read. Set to `null` to read all rows (default).
-#              Example: `rowCount: 100` reads at most 100 rows starting from dataStartRowIndex.
-# + formulaMode - How to handle formula cells (default: CACHED)
-# + enableConstraintValidation - Whether to validate type constraints (default: true).
-#                                When enabled, parsed records are validated against any Ballerina
-#                                `@constraint` annotations defined on the record type.
-#                                Note: Disable for better performance when constraints aren't needed.
-# + caseInsensitiveHeaders - Whether to match headers case-insensitively (default: false).
-#                            When enabled, header "Name" will match record field "name" or "NAME".
-# + allowDataProjection - Data projection configuration (default: enabled/lenient mode).
-#                         - Default `{}`: Lenient mode - sheet columns don't need to match all record fields
-#                         - Set to `false`: Strict mode - all record fields must have matching columns
-#                         Sub-options when enabled:
-#                         - `nilAsOptionalField`: Treat nil cells as field absence for optional fields
-#                         - `absentAsNilableType`: Allow missing columns for nilable/optional fields
-# + failSafe - Fail-safe error handling configuration.
-#              When set, parsing continues on row-level errors (type conversion, validation).
-#              Errors are logged and problematic rows are skipped.
-#              Critical errors (file not found, corrupted file) still fail immediately.
 public type ParseOptions record {|
+    # Row containing column headers/names (0-based index).
+    # Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
+    # Example: If headers are in row 1 (second row), set this to 1.
     int? headerRowIndex = 0;
+    # Row where actual data begins (0-based index).
+    # If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
     int dataStartRowIndex?;
+    # Maximum number of data rows to read. Set to `null` to read all rows (default).
+    # Example: `rowCount: 100` reads at most 100 rows starting from dataStartRowIndex.
     int? rowCount = ();
+    # How to handle formula cells (default: CACHED)
     FormulaMode formulaMode = CACHED;
+    # Whether to validate type constraints (default: true).
+    # When enabled, parsed records are validated against any Ballerina
+    # `@constraint` annotations defined on the record type.
+    # Note: Disable for better performance when constraints aren't needed.
     boolean enableConstraintValidation = true;
+    # Whether to match headers case-insensitively (default: false).
+    # When enabled, header "Name" will match record field "name" or "NAME".
     boolean caseInsensitiveHeaders = false;
+    # Data projection configuration (default: enabled/lenient mode).
+    # - Default `{}`: Lenient mode - sheet columns don't need to match all record fields
+    # - Set to `false`: Strict mode - all record fields must have matching columns
     record {|
+        # Treat nil cells as field absence for optional fields
         boolean nilAsOptionalField = false;
+        # Allow missing columns for nilable/optional fields
         boolean absentAsNilableType = false;
     |}|false allowDataProjection = {};
+    # Fail-safe error handling configuration.
+    # When set, parsing continues on row-level errors (type conversion, validation).
+    # Errors are logged and problematic rows are skipped.
+    # Critical errors (file not found, corrupted file) still fail immediately.
     FailSafeOptions failSafe?;
 |};
 
 # Options for writing XLSX data.
-#
-# + sheetName - Name of the sheet to create (default: "Sheet1")
-# + writeHeaders - Whether to write headers from record field names (default: true)
-# + startRowIndex - Row number to start writing (0-based, default: 0)
 public type WriteOptions record {|
+    # Name of the sheet to create (default: "Sheet1")
     string sheetName = "Sheet1";
+    # Whether to write headers from record field names (default: true)
     boolean writeHeaders = true;
+    # Row number to start writing (0-based, default: 0)
     int startRowIndex = 0;
 |};
 
 # Options for reading rows from a sheet.
-#
-# + headerRowIndex - Row containing column headers/names (0-based index).
-#                    Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
-# + dataStartRowIndex - Row where actual data begins (0-based index).
-#                       If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
-# + rowCount - Maximum number of data rows to read. Set to `null` to read all rows (default).
-# + formulaMode - How to handle formula cells (default: CACHED)
-# + enableConstraintValidation - Whether to validate type constraints (default: true).
-#                                When enabled, parsed records are validated against any Ballerina
-#                                `@constraint` annotations defined on the record type.
-#                                Note: Disable for better performance when constraints aren't needed.
-# + caseInsensitiveHeaders - Whether to match headers case-insensitively (default: false).
-# + allowDataProjection - Data projection configuration (see ParseOptions for details).
-# + failSafe - Fail-safe error handling configuration (see ParseOptions).
 public type RowReadOptions record {|
+    # Row containing column headers/names (0-based index).
+    # Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
     int? headerRowIndex = 0;
+    # Row where actual data begins (0-based index).
+    # If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
     int dataStartRowIndex?;
+    # Maximum number of data rows to read. Set to `null` to read all rows (default).
     int? rowCount = ();
+    # How to handle formula cells (default: CACHED)
     FormulaMode formulaMode = CACHED;
+    # Whether to validate type constraints (default: true).
+    # When enabled, parsed records are validated against any Ballerina
+    # `@constraint` annotations defined on the record type.
+    # Note: Disable for better performance when constraints aren't needed.
     boolean enableConstraintValidation = true;
+    # Whether to match headers case-insensitively (default: false).
     boolean caseInsensitiveHeaders = false;
+    # Data projection configuration (see ParseOptions for details).
     record {|
+        # Treat nil cells as field absence for optional fields
         boolean nilAsOptionalField = false;
+        # Allow missing columns for nilable/optional fields
         boolean absentAsNilableType = false;
     |}|false allowDataProjection = {};
+    # Fail-safe error handling configuration (see ParseOptions).
     FailSafeOptions failSafe?;
 |};
 
 # Options for writing rows to a sheet.
-#
-# + writeHeaders - Whether to write headers (default: true)
-# + startRowIndex - Row number to start writing (0-based, default: 0)
 public type RowWriteOptions record {|
+    # Whether to write headers (default: true)
     boolean writeHeaders = true;
+    # Row number to start writing (0-based, default: 0)
     int startRowIndex = 0;
 |};
 
@@ -144,6 +143,18 @@ public type Row record {} | map<anydata> | string[];
 # `parseTable`, and as the input type of `writeSheet` and `writeTable`.
 public type Data Row[];
 
+# Value types supported as XLSX cell content.
+#
+# Used as the typedesc bound for column reads (`Sheet.getColumn`). A cell in
+# an XLSX file can hold a string, a number (int / float / decimal), a boolean,
+# or a date/time. This union encodes that contract honestly at the type level —
+# users can't ask for unsupported types like `xml` or `byte[]` from a cell and
+# get a runtime error; the type system rejects it at compile time.
+#
+# Nilable variants (`int?`, `string?`, etc.) are supported via Ballerina's
+# normal subtyping — `int?` is `int|()` and `()` is in `anydata`.
+public type CellValue string|int|float|decimal|boolean|time:Date|time:Civil|time:TimeOfDay;
+
 // =============================================================================
 // Cell Range Type
 // =============================================================================
@@ -152,15 +163,14 @@ public type Data Row[];
 #
 # All indices are 0-based (matching internal representation).
 # For example, row 0 is the first row (Excel row 1), column 0 is column A.
-#
-# + firstRowIndex - Index of the first row in the range (0-based)
-# + lastRowIndex - Index of the last row in the range (0-based)
-# + firstColumnIndex - Index of the first column in the range (0-based)
-# + lastColumnIndex - Index of the last column in the range (0-based)
 public type CellRange record {|
+    # Index of the first row in the range (0-based)
     int firstRowIndex;
+    # Index of the last row in the range (0-based)
     int lastRowIndex;
+    # Index of the first column in the range (0-based)
     int firstColumnIndex;
+    # Index of the last column in the range (0-based)
     int lastColumnIndex;
 |};
 
@@ -196,13 +206,12 @@ public enum FileWriteOption {
 # Configuration for file-based error logging.
 #
 # When provided in `FailSafeOptions`, parsing errors will be written to the specified file.
-#
-# + filePath - Path to the error log file (required)
-# + contentType - What content to include in logs (default: METADATA)
-# + fileWriteOption - How to handle existing log files (default: APPEND)
 public type FileOutputMode record {|
+    # Path to the error log file (required)
     string filePath;
+    # What content to include in logs (default: METADATA)
     ErrorLogContentType contentType = METADATA;
+    # How to handle existing log files (default: APPEND)
     FileWriteOption fileWriteOption = APPEND;
 |};
 
@@ -214,10 +223,6 @@ public type FileOutputMode record {|
 #
 # **Note**: Critical structural errors (corrupted file, missing sheet, header errors) will
 # always cause parsing to fail immediately, regardless of fail-safe configuration.
-#
-# + enableConsoleLogs - Enable logging errors to console (default: true)
-# + includeSourceDataInConsole - Include offending row data in console output (default: false)
-# + fileOutputMode - Optional file-based error logging configuration
 #
 # # Example: Console logging only
 # ```ballerina
@@ -243,31 +248,32 @@ public type FileOutputMode record {|
 # });
 # ```
 public type FailSafeOptions record {|
+    # Enable logging errors to console (default: true)
     boolean enableConsoleLogs = true;
+    # Include offending row data in console output (default: false)
     boolean includeSourceDataInConsole = false;
+    # Optional file-based error logging configuration
     FileOutputMode fileOutputMode?;
 |};
 
 # Location within an XLSX file where an error occurred.
-#
-# + row - Row number (1-based, as displayed in Excel)
-# + column - Column number (1-based)
 public type Location record {|
+    # Row number (1-based, as displayed in Excel)
     int row;
+    # Column number (1-based)
     int column;
 |};
 
 # Structured error log output.
 #
 # Represents the JSON structure written to error log files when using METADATA or RAW_AND_METADATA content types.
-#
-# + time - ISO 8601 timestamp when the error occurred
-# + location - Row and column where the error occurred
-# + message - Error message describing what went wrong
-# + offendingRow - The raw row data that caused the error (only with RAW_AND_METADATA)
 public type LogOutput record {|
+    # ISO 8601 timestamp when the error occurred
     string time?;
+    # Row and column where the error occurred
     Location location?;
+    # Error message describing what went wrong
     string message?;
+    # The raw row data that caused the error (only with RAW_AND_METADATA)
     string offendingRow?;
 |};

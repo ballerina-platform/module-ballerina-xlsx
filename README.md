@@ -65,7 +65,7 @@ Employee[] employees = check xlsx:parseSheet("employees.xlsx");
 #### Work with multiple sheets via the Workbook API
 
 ```ballerina
-xlsx:Workbook wb = check new("report.xlsx");
+xlsx:Workbook wb = check xlsx:fromFile("report.xlsx");
 
 xlsx:Sheet sales = check wb.getSheet("Sales");
 Employee[] salesRows = check sales.getRows();
@@ -92,7 +92,7 @@ check xlsx:writeTable([...employees, ...additions], "sales.xlsx", "EmployeeTable
 For totals rows, rename, resize, or coordination with other workbook operations, go through the Workbook API:
 
 ```ballerina
-xlsx:Workbook wb = check new("sales.xlsx");
+xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 xlsx:Table empTable = check wb.getTable("EmployeeTable");
 
 Employee[] employees = check empTable.getRows();
@@ -126,7 +126,7 @@ Transaction[] txns = check xlsx:parseSheet("transactions.xlsx");
 
 ```ballerina
 byte[] inputBytes = check sftp->get("/in/report.xlsx");
-xlsx:Workbook wb = check new(inputBytes);
+xlsx:Workbook wb = check xlsx:fromBytes(inputBytes);
 
 // ...read, modify...
 

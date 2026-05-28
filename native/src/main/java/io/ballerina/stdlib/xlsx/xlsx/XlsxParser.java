@@ -155,45 +155,35 @@ public final class XlsxParser {
      * Parse a sheet to the target type.
      */
     private static Object parseSheet(Environment env, Sheet sheet, XlsxConfig config, BTypedesc targetType) {
-        // Unwrap any outer type reference (e.g., when the target is declared as the `Data` alias,
-        // getDescribingType() returns a BTypeReferenceType, not the underlying ArrayType).
+        // Under the typedesc<Row> signature the describing type IS the row element type
+        // (the function returns `t[]`, so Ballerina infers t = element). Dispatch directly
+        // on the row shape — no need to unwrap an outer array first.
         Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
         int typeTag = describingType.getTag();
 
-        // Handle array types
+        // string[] - raw string row → string[][]
         if (typeTag == TypeTags.ARRAY_TAG) {
             ArrayType arrayType = (ArrayType) describingType;
-            Type elementType = arrayType.getElementType();
-
-            // Resolve referenced types (important for module-defined types like `type X record {...}`)
-            Type resolvedElementType = TypeUtils.getReferredType(elementType);
-            int elementTag = resolvedElementType.getTag();
-
-            // string[][] - raw string array
-            if (elementTag == TypeTags.ARRAY_TAG) {
-                ArrayType innerArrayType = (ArrayType) resolvedElementType;
-                Type innerElementType = TypeUtils.getReferredType(innerArrayType.getElementType());
-                if (innerElementType.getTag() == TypeTags.STRING_TAG) {
-                    return parseToStringArray(sheet, config);
-                }
-            }
-
-            // record{}[] - array of records
-            if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-                RecordType recordType = (RecordType) resolvedElementType;
-                return parseToRecordArray(env, sheet, config, recordType);
-            }
-
-            // map<anydata>[] - array of maps
-            if (elementTag == TypeTags.MAP_TAG) {
-                return parseToMapArray(env, sheet, config, (MapType) resolvedElementType);
-            }
-
-            // Row[] (the public union) — the caller asked for the abstract row shape without
-            // narrowing. Return the most general usable representation: string[][].
-            if (elementTag == TypeTags.UNION_TAG) {
+            Type innerElementType = TypeUtils.getReferredType(arrayType.getElementType());
+            if (innerElementType.getTag() == TypeTags.STRING_TAG) {
                 return parseToStringArray(sheet, config);
             }
+        }
+
+        // record{} - array of records
+        if (typeTag == TypeTags.RECORD_TYPE_TAG) {
+            return parseToRecordArray(env, sheet, config, (RecordType) describingType);
+        }
+
+        // map<anydata> - array of maps
+        if (typeTag == TypeTags.MAP_TAG) {
+            return parseToMapArray(env, sheet, config, (MapType) describingType);
+        }
+
+        // Row (the public union) — the caller asked for the abstract row shape without
+        // narrowing. Return the most general usable representation: string[][].
+        if (typeTag == TypeTags.UNION_TAG) {
+            return parseToStringArray(sheet, config);
         }
 
         // Default: parse as string array

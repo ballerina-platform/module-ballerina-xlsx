@@ -44,10 +44,10 @@ import ballerina/jballerina.java;
 # + path - Path to the XLSX file
 # + sheet - Sheet to read: name (string) or index (int, 0-based). Default: 0 (first sheet)
 # + options - Parse options
-# + t - Target type descriptor
+# + t - Target row type descriptor (record, map, or string[])
 # + return - Parsed data or error
 public isolated function parseSheet(string path, string|int sheet = 0, ParseOptions options = {},
-        typedesc<Data> t = <>) returns t|Error = @java:Method {
+        typedesc<Row> t = <>) returns t[]|Error = @java:Method {
     'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
@@ -106,10 +106,10 @@ public isolated function writeSheet(Data data, string path, *WriteOptions option
 # + path - Path to the XLSX file
 # + tableName - Name of the table to parse
 # + options - Parse options
-# + t - Target type descriptor
+# + t - Target row type descriptor (record, map, or string[])
 # + return - Parsed data or TableNotFoundError
 public isolated function parseTable(string path, string tableName, ParseOptions options = {},
-        typedesc<Data> t = <>) returns t|Error = @java:Method {
+        typedesc<Row> t = <>) returns t[]|Error = @java:Method {
     'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
@@ -133,3 +133,47 @@ public isolated function writeTable(Data data, string path, string tableName,
     'class: "io.ballerina.stdlib.xlsx.Native"
 } external;
 
+# Opens an XLSX workbook from a file path.
+#
+# Returns an error if the path does not exist or the file is not a valid XLSX.
+# To create a new file, use `new Workbook()` and then `saveAs(path)`.
+#
+# ```ballerina
+# xlsx:Workbook wb = check xlsx:fromFile("report.xlsx");
+# ```
+#
+# + path - Path to the XLSX file
+# + return - The opened workbook, or an Error if the path is missing or the file is invalid
+public isolated function fromFile(string path) returns Workbook|Error {
+    Workbook wb = check new;
+    check loadFromPath(wb, path);
+    return wb;
+}
+
+# Opens an XLSX workbook from an in-memory byte array.
+#
+# Returns an error if the bytes are not a valid XLSX workbook.
+# The resulting workbook has no associated file; use `saveAs(path)` to persist it.
+#
+# ```ballerina
+# byte[] payload = check io:fileReadBytes("report.xlsx");
+# xlsx:Workbook wb = check xlsx:fromBytes(payload);
+# ```
+#
+# + sourceBytes - XLSX content as a byte array
+# + return - The opened workbook, or an Error if the bytes are invalid
+public isolated function fromBytes(byte[] sourceBytes) returns Workbook|Error {
+    Workbook wb = check new;
+    check loadFromBytes(wb, sourceBytes);
+    return wb;
+}
+
+isolated function loadFromPath(Workbook wb, string path) returns Error? = @java:Method {
+    name: "openWorkbookFromPath",
+    'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
+} external;
+
+isolated function loadFromBytes(Workbook wb, byte[] sourceBytes) returns Error? = @java:Method {
+    name: "openWorkbookFromBytes",
+    'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
+} external;

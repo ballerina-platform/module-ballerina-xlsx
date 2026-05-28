@@ -273,35 +273,33 @@ public final class TableHandle {
                                               BMap<BString, Object> options, BTypedesc targetType) {
         XlsxConfig config = XlsxConfig.fromParseOptions(options);
 
-        // Unwrap any outer type reference (e.g., when the target is declared as `Data`).
+        // Under the typedesc<Row> signature, the describing type IS the row element type
+        // (the function returns `t[]`). Dispatch directly on the row shape.
         Type describingType = TypeUtils.getReferredType(targetType.getDescribingType());
         int typeTag = describingType.getTag();
 
+        // string[] row → string[][]
         if (typeTag == TypeTags.ARRAY_TAG) {
             ArrayType arrayType = (ArrayType) describingType;
-            Type elementType = arrayType.getElementType();
-            Type resolvedElementType = TypeUtils.getReferredType(elementType);
-            int elementTag = resolvedElementType.getTag();
-
-            // string[][]
-            if (elementTag == TypeTags.ARRAY_TAG) {
+            Type elementType = TypeUtils.getReferredType(arrayType.getElementType());
+            if (elementType.getTag() == TypeTags.STRING_TAG) {
                 return getTableRowsAsStringArray(table, sheet, config);
             }
+        }
 
-            // record[]
-            if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-                return getTableRowsAsRecords(table, sheet, config, (RecordType) resolvedElementType);
-            }
+        // record{} → record[]
+        if (typeTag == TypeTags.RECORD_TYPE_TAG) {
+            return getTableRowsAsRecords(table, sheet, config, (RecordType) describingType);
+        }
 
-            // map<anydata>[]
-            if (elementTag == TypeTags.MAP_TAG) {
-                return getTableRowsAsMaps(table, sheet, config, (MapType) resolvedElementType);
-            }
+        // map<anydata> → map<anydata>[]
+        if (typeTag == TypeTags.MAP_TAG) {
+            return getTableRowsAsMaps(table, sheet, config, (MapType) describingType);
+        }
 
-            // Row[] (the public union) — default to string[][].
-            if (elementTag == TypeTags.UNION_TAG) {
-                return getTableRowsAsStringArray(table, sheet, config);
-            }
+        // Row (the public union) — default to string[][].
+        if (typeTag == TypeTags.UNION_TAG) {
+            return getTableRowsAsStringArray(table, sheet, config);
         }
 
         // Default: string[][]

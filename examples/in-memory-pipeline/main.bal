@@ -48,7 +48,7 @@ public function main() returns error? {
 
     // Verify: load the outgoing bytes back into a workbook and read the
     // transformed amounts.
-    xlsx:Workbook verify = check new (outgoingBytes);
+    xlsx:Workbook verify = check xlsx:fromBytes(outgoingBytes);
     xlsx:Sheet sheet = check verify.getSheet(0);
     Invoice[] result = check sheet.getRows();
     io:println("Transformed invoices (10% surcharge applied):");
@@ -88,7 +88,7 @@ function formatUsd(decimal amount) returns string {
 // without ever touching disk. This is the function shape an HTTP service or
 // queue consumer would expose — `byte[] -> byte[]|error`.
 function applyTaxSurcharge(byte[] input, decimal rate) returns byte[]|error {
-    xlsx:Workbook wb = check new (input);
+    xlsx:Workbook wb = check xlsx:fromBytes(input);
     xlsx:Sheet sheet = check wb.getSheet(0);
 
     // Discover the data extent rather than assuming a fixed shape — real

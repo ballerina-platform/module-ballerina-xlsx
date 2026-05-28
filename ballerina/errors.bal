@@ -42,16 +42,15 @@ public type TableOverlapError distinct Error;
 public type InvalidTableRangeError distinct Error;
 
 # Details for XLSX errors.
-#
-# + sheetName - Name of the sheet where error occurred (if applicable)
-# + tableName - Name of the table where error occurred (if applicable)
-# + cellAddress - Cell address where error occurred (if applicable)
-# + rowNumber - Row number where error occurred (if applicable)
-# + columnNumber - Column number where error occurred (if applicable)
 public type ErrorDetails record {|
+    # Name of the sheet where error occurred (if applicable)
     string sheetName?;
+    # Name of the table where error occurred (if applicable)
     string tableName?;
+    # Cell address where error occurred (if applicable)
     string cellAddress?;
+    # Row number where error occurred (if applicable)
     int rowNumber?;
+    # Column number where error occurred (if applicable)
     int columnNumber?;
 |};

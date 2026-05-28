@@ -109,7 +109,7 @@ function testWriteWithCustomSheetName() returns error? {
     check writeSheet(data, tempFile, sheetName = "MyCustomSheet");
 
     // Verify by opening as workbook and checking sheet name
-    Workbook wb = check new(tempFile);
+    Workbook wb = check fromFile(tempFile);
     string[] sheetNames = wb.getSheetNames();
     test:assertEquals(sheetNames.length(), 1, "Should have 1 sheet");
     test:assertEquals(sheetNames[0], "MyCustomSheet", "Sheet name should match");
@@ -600,7 +600,7 @@ function testWriteSheetPreservesUnrelatedColumns() returns error? {
     check writeSheet(originalData, tempFile);
 
     // Open via Workbook, project to 2 fields, modify city, write back to the existing sheet.
-    Workbook wb = check new(tempFile);
+    Workbook wb = check fromFile(tempFile);
     Sheet sheet = check wb.getSheet(0);
 
     EmpProjection[] projection = check sheet.getRows();
@@ -641,7 +641,7 @@ function testWriteSheetErrorsOnUnmatchedField() returns error? {
     check writeSheet(originalData, tempFile);
 
     // Try to write a record whose field has no matching header
-    Workbook wb = check new(tempFile);
+    Workbook wb = check fromFile(tempFile);
     Sheet sheet = check wb.getSheet(0);
     EmpWithUnknownField[] bad = [{name: "Bob", unknownField: "value"}];
 

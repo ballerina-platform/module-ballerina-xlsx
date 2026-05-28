@@ -26,7 +26,7 @@ import ballerina/jballerina.java;
 # `getTable`, `createTable`, etc.; direct construction (`new Table()`) is not supported.
 #
 # ```ballerina
-# xlsx:Workbook wb = check new("sales.xlsx");
+# xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 # xlsx:Table empTable = check wb.getTable("EmployeeTable");
 #
 # // Read data (headers excluded automatically)
@@ -38,26 +38,26 @@ import ballerina/jballerina.java;
 # check wb.save();
 # check wb.close();
 # ```
-public type Table object {
+public type Table isolated object {
 
     # Get the name of the table.
     #
     # Table names are unique across the entire workbook.
     #
     # + return - Table name
-    public function getName() returns string;
+    public isolated function getName() returns string;
 
     # Get the display name of the table.
     #
     # The display name is what appears in Excel's UI. It may differ from the internal name.
     #
     # + return - Table display name
-    public function getDisplayName() returns string;
+    public isolated function getDisplayName() returns string;
 
     # Get the name of the sheet containing this table.
     #
     # + return - Sheet name
-    public function getSheetName() returns string;
+    public isolated function getSheetName() returns string;
 
     # Get the full range of the table.
     #
@@ -65,7 +65,7 @@ public type Table object {
     # All indices are 0-based.
     #
     # + return - CellRange representing the full table area
-    public function getRange() returns CellRange;
+    public isolated function getRange() returns CellRange;
 
     # Get the data range of the table.
     #
@@ -73,26 +73,26 @@ public type Table object {
     # All indices are 0-based.
     #
     # + return - CellRange representing only the data area
-    public function getDataRange() returns CellRange;
+    public isolated function getDataRange() returns CellRange;
 
     # Get the number of data rows in the table.
     #
     # Returns only data rows, excluding header and totals row.
     #
     # + return - Data row count
-    public function getRowCount() returns int;
+    public isolated function getRowCount() returns int;
 
     # Get the number of columns in the table.
     #
     # + return - Column count
-    public function getColumnCount() returns int;
+    public isolated function getColumnCount() returns int;
 
     # Get the column header names.
     #
     # Returns an array of header names in column order.
     #
     # + return - Array of header strings
-    public function getHeaders() returns string[];
+    public isolated function getHeaders() returns string[];
 
     # Get all data rows from the table.
     #
@@ -110,10 +110,10 @@ public type Table object {
     # ```
     #
     # + options - Read options
-    # + t - Target type descriptor
+    # + t - Target row type descriptor (record, map, or string[])
     # + return - Array of data rows or error
-    public function getRows(RowReadOptions options = {}, typedesc<Data> t = <>)
-            returns t|Error;
+    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+            returns t[]|Error;
 
     # Get a single data row from the table by index.
     #
@@ -129,7 +129,7 @@ public type Table object {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error
-    public function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
             returns t|Error;
 
     # Write rows to the table.
@@ -145,12 +145,12 @@ public type Table object {
     # + data - Data to write (records or arrays)
     # + options - Write options
     # + return - Error if write fails
-    public function putRows(Data data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Data data, *RowWriteOptions options) returns Error?;
 
     # Check if the table has a totals row.
     #
     # + return - true if totals row exists
-    public function hasTotalsRow() returns boolean;
+    public isolated function hasTotalsRow() returns boolean;
 
     # Get the totals row values.
     #
@@ -164,7 +164,7 @@ public type Table object {
     # ```
     #
     # + return - Map of column names to totals values, or error if no totals row
-    public function getTotalsRow() returns map<anydata>|Error;
+    public isolated function getTotalsRow() returns map<anydata>|Error;
 
     # Rename the table.
     #
@@ -172,7 +172,7 @@ public type Table object {
     #
     # + newName - New table name
     # + return - Error if rename fails (e.g., name already exists)
-    public function rename(string newName) returns Error?;
+    public isolated function rename(string newName) returns Error?;
 
     # Resize the table to a new range.
     #
@@ -181,73 +181,73 @@ public type Table object {
     #
     # + newRange - New table range
     # + return - Error if resize fails (e.g., invalid range, overlap)
-    public function resize(CellRange newRange) returns Error?;
+    public isolated function resize(CellRange newRange) returns Error?;
 };
 
 # Concrete implementation of `Table`. Not exported — instances are vended
 # from `Workbook` and `Sheet` methods (`getTable`, `createTable`, etc.).
-class TableImpl {
+isolated class TableImpl {
     *Table;
 
-    public function getName() returns string = @java:Method {
+    public isolated function getName() returns string = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getDisplayName() returns string = @java:Method {
+    public isolated function getDisplayName() returns string = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getSheetName() returns string = @java:Method {
+    public isolated function getSheetName() returns string = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getRange() returns CellRange = @java:Method {
+    public isolated function getRange() returns CellRange = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getDataRange() returns CellRange = @java:Method {
+    public isolated function getDataRange() returns CellRange = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getRowCount() returns int = @java:Method {
+    public isolated function getRowCount() returns int = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getColumnCount() returns int = @java:Method {
+    public isolated function getColumnCount() returns int = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getHeaders() returns string[] = @java:Method {
+    public isolated function getHeaders() returns string[] = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getRows(RowReadOptions options = {}, typedesc<Data> t = <>)
+    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+            returns t[]|Error = @java:Method {
+        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
+    } external;
+
+    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
-            returns t|Error = @java:Method {
+    public isolated function putRows(Data data, *RowWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function putRows(Data data, *RowWriteOptions options) returns Error? = @java:Method {
+    public isolated function hasTotalsRow() returns boolean = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function hasTotalsRow() returns boolean = @java:Method {
+    public isolated function getTotalsRow() returns map<anydata>|Error = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function getTotalsRow() returns map<anydata>|Error = @java:Method {
+    public isolated function rename(string newName) returns Error? = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 
-    public function rename(string newName) returns Error? = @java:Method {
-        'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
-    } external;
-
-    public function resize(CellRange newRange) returns Error? = @java:Method {
+    public isolated function resize(CellRange newRange) returns Error? = @java:Method {
         'class: "io.ballerina.stdlib.xlsx.xlsx.TableHandle"
     } external;
 }
