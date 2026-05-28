@@ -181,6 +181,9 @@ bal run
 
 ## Examples
 
-The `xlsx` module provides practical examples illustrating usage in various scenarios. Explore these [examples](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/).
+The `xlsx` module provides practical examples illustrating usage in various scenarios. Explore these [examples](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/), ordered from the simplest Tier 1 read/write loop to in-memory byte pipelines.
 
-1. [Process employee data](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/process-employee-data/) — Reads employee records from an XLSX file, processes them, and writes the results to a new file.
+1. [Process Employee Data](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/process-employee-data) — Tier 1 quickstart. Write employee records, read them back into typed records, filter, write the filtered subset. Demonstrates `parseSheet`, `writeSheet`, and `@xlsx:Name` column mapping.
+2. [Monthly Sales Report](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/monthly-sales-report) — Build a multi-sheet workbook with an embedded Excel Table and `time:Date` columns; reopen and query it through the Workbook + Table APIs.
+3. [Validated Bulk Import](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/validated-bulk-import) — Parse a partner file with `@constraint` validation and fail-safe error logging — clean rows flow downstream; rejected rows are logged with their raw values and reason.
+4. [In-Memory Pipeline](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/in-memory-pipeline) — Process XLSX bytes end-to-end without disk I/O. Demonstrates `xlsx:fromBytes` and `Workbook.toBytes()` — the shape an HTTP service or queue consumer would use.

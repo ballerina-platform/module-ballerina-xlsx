@@ -5,7 +5,7 @@ The `ballerina/xlsx` library provides practical examples illustrating usage in v
 1. [Process Employee Data](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/process-employee-data) - Tier 1 quickstart. Write employee records, read them back into typed records, filter, write the filtered subset to a new file. Demonstrates `parseSheet`, `writeSheet`, and `@xlsx:Name` column mapping.
 2. [Monthly Sales Report](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/monthly-sales-report) - Build a multi-sheet workbook from scratch with an embedded Excel Table and `time:Date` columns; reopen the file and query it back through the Workbook + Table APIs.
 3. [Validated Bulk Import](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/validated-bulk-import) - Parse a partner-supplied file with `@constraint` validation and fail-safe error logging — clean rows flow downstream; rejected rows are logged with their raw values and the reason for rejection.
-4. [In-Memory Pipeline](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/in-memory-pipeline) - Process XLSX bytes end-to-end without disk I/O. Demonstrates `new(byte[])` and `Workbook.toBytes()` — the shape an HTTP service or queue consumer would use.
+4. [In-Memory Pipeline](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/in-memory-pipeline) - Process XLSX bytes end-to-end without disk I/O. Demonstrates `xlsx:fromBytes` and `Workbook.toBytes()` — the shape an HTTP service or queue consumer would use.
 
 ## Prerequisites
 
