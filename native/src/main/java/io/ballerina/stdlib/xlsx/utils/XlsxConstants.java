@@ -24,15 +24,11 @@ import io.ballerina.runtime.api.values.BString;
 /**
  * Constants used throughout the XLSX module.
  */
-public final class Constants {
+public final class XlsxConstants {
 
-    private Constants() {
+    private XlsxConstants() {
         // Private constructor to prevent instantiation
     }
-
-    // Module information
-    public static final String MODULE_NAME = "xlsx";
-    public static final String ORG_NAME = "ballerina";
 
     // Parse options field names
     public static final BString HEADER_ROW_INDEX = StringUtils.fromString("headerRowIndex");
@@ -51,6 +47,9 @@ public final class Constants {
     public static final BString WRITE_SHEET_NAME = StringUtils.fromString("sheetName");
     public static final BString WRITE_HEADERS = StringUtils.fromString("writeHeaders");
     public static final BString START_ROW_INDEX = StringUtils.fromString("startRowIndex");
+    // Internal-only — not exposed on public WriteOptions. Used by SheetHandle.createTableFromData
+    // to plumb its startColumnIndex through to XlsxWriter without broadening the public API.
+    public static final BString START_COLUMN_INDEX = StringUtils.fromString("startColumnIndex");
 
     // Formula mode values
     public static final String FORMULA_MODE_CACHED = "CACHED";

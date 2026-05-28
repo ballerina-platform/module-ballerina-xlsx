@@ -231,7 +231,7 @@ function testParseWithCustomDataStartRow() returns error? {
     groups: ["parseSheet", "options"]
 }
 function testParsePreservesEmptyRows() returns error? {
-    // v0.1 behavior: every row in the used range produces an entry — empty
+    // v1.0 behavior: every row in the used range produces an entry — empty
     // rows are NOT filtered. Empty cells are bound by the standard cell-binding
     // path (string[][] → padded empty strings; record → nil for nilable fields).
     string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");
@@ -1126,6 +1126,54 @@ function testDuplicateExcelHeaderErrors() returns error? {
     DupHeaderEmp[]|Error result = parseSheet(tempFile);
     test:assertTrue(result is Error,
             "Two sheet columns with the same header must produce a clear error");
+
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// Boolean coercion safety
+// =============================================================================
+// CellConverter.parseBoolean used to silently coerce anything outside
+// "true"/"yes"/"1" to false. The current behaviour: an explicit false-set
+// ("false"/"no"/"0") resolves to false, anything outside either set throws
+// TypeConversionException.
+
+type BoolRow record {|
+    boolean active;
+|};
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testInvalidBooleanStringErrors() returns error? {
+    string tempFile = getTempFilePath("invalid_boolean");
+    string[][] data = [
+        ["active"],
+        ["maybe"]
+    ];
+    check writeSheet(data, tempFile);
+
+    BoolRow[]|Error result = parseSheet(tempFile);
+    test:assertTrue(result is TypeConversionError,
+            "Invalid boolean string 'maybe' must surface as TypeConversionError");
+
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testExplicitFalseStringsAccepted() returns error? {
+    string tempFile = getTempFilePath("explicit_false");
+    string[][] data = [
+        ["active"],
+        ["false"],
+        ["no"],
+        ["0"]
+    ];
+    check writeSheet(data, tempFile);
+
+    BoolRow[] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed.length(), 3);
+    test:assertEquals(parsed[0].active, false);
+    test:assertEquals(parsed[1].active, false);
+    test:assertEquals(parsed[2].active, false);
 
     check removeTempFile(tempFile);
 }

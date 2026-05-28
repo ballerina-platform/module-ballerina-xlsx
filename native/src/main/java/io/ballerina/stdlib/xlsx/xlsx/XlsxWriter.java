@@ -68,8 +68,10 @@ public final class XlsxWriter {
             Sheet sheet = workbook.createSheet(config.getWriteSheetName());
 
             int startRow = config.getStartRowIndex();
+            int startCol = config.getStartColumnIndex();
             StyleCache styleCache = new StyleCache(workbook);
-            Object dispatchResult = dispatchWrite(sheet, data, config, startRow, styleCache, "XLSX export");
+            Object dispatchResult = dispatchWrite(sheet, data, config, startRow, startCol, styleCache,
+                    "XLSX export");
             if (dispatchResult != null) {
                 return dispatchResult; // error from dispatch
             }
@@ -102,7 +104,7 @@ public final class XlsxWriter {
      * map writer. An empty array is a no-op.</p>
      */
     static Object dispatchWrite(Sheet sheet, BArray data, XlsxConfig config, int startRow,
-                                 StyleCache styleCache, String contextLabel) {
+                                 int startCol, StyleCache styleCache, String contextLabel) {
         // Unwrap any type reference on the array itself (e.g., when contextually typed as `Data`,
         // data.getType() returns a BTypeReferenceType, not the underlying ArrayType).
         Type dataType = TypeUtils.getReferredType(data.getType());
@@ -111,15 +113,15 @@ public final class XlsxWriter {
         int elementTag = resolvedElementType.getTag();
 
         if (elementTag == TypeTags.ARRAY_TAG) {
-            writeArrayData(sheet, data, startRow, styleCache);
+            writeArrayData(sheet, data, startRow, startCol, styleCache);
             return null;
         }
         if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-            writeRecordData(sheet, data, (RecordType) resolvedElementType, config, startRow, styleCache);
+            writeRecordData(sheet, data, (RecordType) resolvedElementType, config, startRow, startCol, styleCache);
             return null;
         }
         if (elementTag == TypeTags.MAP_TAG) {
-            writeMapData(sheet, data, config, startRow, styleCache);
+            writeMapData(sheet, data, config, startRow, startCol, styleCache);
             return null;
         }
         if (elementTag == TypeTags.UNION_TAG) {
@@ -129,15 +131,15 @@ public final class XlsxWriter {
             }
             Object first = data.get(0);
             if (first instanceof BArray) {
-                writeArrayData(sheet, data, startRow, styleCache);
+                writeArrayData(sheet, data, startRow, startCol, styleCache);
                 return null;
             }
             if (first instanceof BMap) {
                 Type firstType = TypeUtils.getReferredType(TypeUtils.getType(first));
                 if (firstType.getTag() == TypeTags.RECORD_TYPE_TAG) {
-                    writeRecordData(sheet, data, (RecordType) firstType, config, startRow, styleCache);
+                    writeRecordData(sheet, data, (RecordType) firstType, config, startRow, startCol, styleCache);
                 } else {
-                    writeMapData(sheet, data, config, startRow, styleCache);
+                    writeMapData(sheet, data, config, startRow, startCol, styleCache);
                 }
                 return null;
             }
@@ -148,13 +150,14 @@ public final class XlsxWriter {
                 "Unsupported data type for " + contextLabel + ": " + resolvedElementType);
     }
 
-    private static void writeArrayData(Sheet sheet, BArray data, int startRow, StyleCache styleCache) {
+    private static void writeArrayData(Sheet sheet, BArray data, int startRow, int startCol,
+                                        StyleCache styleCache) {
         for (int i = 0; i < data.size(); i++) {
             BArray rowData = (BArray) data.get(i);
             Row row = sheet.createRow(startRow + i);
 
             for (int j = 0; j < rowData.size(); j++) {
-                Cell cell = row.createCell(j);
+                Cell cell = row.createCell(startCol + j);
                 Object value = rowData.get(j);
                 CellConverter.setCellValue(cell, value, styleCache);
             }
@@ -199,7 +202,8 @@ public final class XlsxWriter {
      * </ul>
      */
     private static void writeRecordData(Sheet sheet, BArray data, RecordType recordType,
-                                         XlsxConfig config, int startRow, StyleCache styleCache) {
+                                         XlsxConfig config, int startRow, int startCol,
+                                         StyleCache styleCache) {
         if (data.size() == 0) {
             return;
         }
@@ -235,7 +239,9 @@ public final class XlsxWriter {
             for (int i = 0; i < data.size(); i++) {
                 Object item = data.get(i);
                 if (!(item instanceof BMap)) {
-                    continue;
+                    throw new BallerinaErrorException(DiagnosticLog.error(
+                            "Row " + i + " has an incompatible shape for record write. "
+                                    + "All rows in a record[] write must be records."));
                 }
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> record = (BMap<BString, Object>) item;
@@ -257,7 +263,7 @@ public final class XlsxWriter {
             if (config.isWriteHeaders()) {
                 Row headerRow = sheet.createRow(currentRow++);
                 for (int i = 0; i < headerNames.size(); i++) {
-                    Cell cell = headerRow.createCell(i);
+                    Cell cell = headerRow.createCell(startCol + i);
                     cell.setCellValue(headerNames.get(i));
                 }
             }
@@ -265,14 +271,16 @@ public final class XlsxWriter {
             for (int i = 0; i < data.size(); i++) {
                 Object item = data.get(i);
                 if (!(item instanceof BMap)) {
-                    continue;
+                    throw new BallerinaErrorException(DiagnosticLog.error(
+                            "Row " + i + " has an incompatible shape for record write. "
+                                    + "All rows in a record[] write must be records."));
                 }
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> record = (BMap<BString, Object>) item;
                 Row row = sheet.createRow(currentRow++);
 
                 for (int j = 0; j < fieldNames.size(); j++) {
-                    Cell cell = row.createCell(j);
+                    Cell cell = row.createCell(startCol + j);
                     String fieldName = fieldNames.get(j);
                     Object value = record.get(io.ballerina.runtime.api.utils.StringUtils.fromString(fieldName));
                     CellConverter.setCellValue(cell, value, styleCache);
@@ -290,7 +298,7 @@ public final class XlsxWriter {
      * write using the union of all keys as headers.</p>
      */
     private static void writeMapData(Sheet sheet, BArray data, XlsxConfig config, int startRow,
-                                      StyleCache styleCache) {
+                                      int startCol, StyleCache styleCache) {
         if (data.size() == 0) {
             return;
         }
@@ -338,7 +346,7 @@ public final class XlsxWriter {
             if (config.isWriteHeaders()) {
                 Row headerRow = sheet.createRow(currentRow++);
                 for (int i = 0; i < headers.size(); i++) {
-                    Cell cell = headerRow.createCell(i);
+                    Cell cell = headerRow.createCell(startCol + i);
                     cell.setCellValue(headers.get(i));
                 }
             }
@@ -349,7 +357,7 @@ public final class XlsxWriter {
                 Row row = sheet.createRow(currentRow++);
 
                 for (int j = 0; j < headers.size(); j++) {
-                    Cell cell = row.createCell(j);
+                    Cell cell = row.createCell(startCol + j);
                     String header = headers.get(j);
                     Object value = map.get(io.ballerina.runtime.api.utils.StringUtils.fromString(header));
                     CellConverter.setCellValue(cell, value, styleCache);
@@ -371,8 +379,9 @@ public final class XlsxWriter {
 
         try {
             int startRow = config.getStartRowIndex();
+            int startCol = config.getStartColumnIndex();
             StyleCache styleCache = new StyleCache(sheet.getWorkbook());
-            return dispatchWrite(sheet, data, config, startRow, styleCache, "sheet write");
+            return dispatchWrite(sheet, data, config, startRow, startCol, styleCache, "sheet write");
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {

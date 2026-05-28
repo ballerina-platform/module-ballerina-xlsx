@@ -915,3 +915,103 @@ function testWriteTableFailureDoesNotLeak() returns error? {
 
     check file:remove(tempFile);
 }
+
+// =============================================================================
+// createTableFromData honours startColumnIndex
+// =============================================================================
+// The startColumnIndex parameter on Sheet.createTableFromData used to be
+// silently ignored on write — the table area was created at the requested
+// column but data landed at column 0. The fix threads startColumnIndex
+// through XlsxWriter so both the table metadata and the cells agree.
+
+type OffsetTableRow record {|
+    string name;
+    int age;
+|};
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataAtNonZeroStartColumn() returns error? {
+    string tempFile = getTempFilePath("table_offset_col");
+
+    OffsetTableRow[] data = [
+        {name: "Alice", age: 30},
+        {name: "Bob", age: 25}
+    ];
+
+    Workbook wb = check new;
+    Sheet sheet = check wb.createSheet("Data");
+    _ = check sheet.createTableFromData("OffsetTable", data, 2, 3);
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Re-open and verify the table is at the requested offset (row 2, col 3),
+    // and that the data cells actually landed there — not at column 0.
+    Workbook wb2 = check new(tempFile);
+    Table t2 = check wb2.getTable("OffsetTable");
+    CellRange range = t2.getRange();
+    test:assertEquals(range.firstRowIndex, 2);
+    test:assertEquals(range.firstColumnIndex, 3);
+    test:assertEquals(range.lastColumnIndex, 4);
+
+    Sheet s2 = check wb2.getSheet(0);
+    anydata headerNameCell = check s2.getCell(2, 3);
+    test:assertEquals(headerNameCell, "name",
+            "Header 'name' must be at row 2 col 3, matching the requested table offset");
+    anydata firstNameCell = check s2.getCell(3, 3);
+    test:assertEquals(firstNameCell, "Alice",
+            "Data value 'Alice' must be at row 3 col 3, not column 0");
+    check wb2.close();
+    check file:remove(tempFile);
+}
+
+// =============================================================================
+// Table writes resolve columns by header, not key order
+// =============================================================================
+// TableHandle.writeRowData used to place values positionally by key/field
+// iteration order, which silently misaligned data when the record/map shape
+// didn't match the table's column declaration order. The fix looks each
+// header up by name (with @xlsx:Name support for records).
+
+type AgeFirstRow record {|
+    int age;
+    string name;
+|};
+
+type NameFirstRow record {|
+    string name;
+    int age;
+|};
+
+@test:Config {groups: ["table"]}
+function testTableWriteResolvesColumnsByHeader() returns error? {
+    string tempFile = getTempFilePath("table_header_lookup");
+
+    Workbook wb = check new;
+    Sheet sheet = check wb.createSheet("Data");
+    // Headers declared in order: name, age.
+    check sheet.putRows([["name", "age"], ["seed", "0"]]);
+    _ = check sheet.createTable("Employees", "A1:B2");
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Write a record whose FIELD declaration order is age, name — reversed
+    // from the table's header order. Positional writing (the old behaviour)
+    // would put age in column 0 and name in column 1; header-resolved writing
+    // (the fix) places them correctly regardless of declaration order.
+    AgeFirstRow[] reverseOrderRow = [{age: 42, name: "Alice"}];
+    check writeTable(reverseOrderRow, tempFile, "Employees");
+
+    // Round-trip the table back through parseTable with a header-aligned
+    // record. parseTable maps headers → fields by name, so if writeTable had
+    // placed the values in the wrong columns, name would receive an integer
+    // (TypeConversionError) or age would receive a string ("Alice", also a
+    // TypeConversionError). A clean round-trip is the proof.
+    NameFirstRow[] parsed = check parseTable(tempFile, "Employees");
+    test:assertEquals(parsed.length(), 1,
+            "Table should contain exactly one data row after the overwrite");
+    test:assertEquals(parsed[0].name, "Alice",
+            "name field must land in the 'name' column, regardless of write key order");
+    test:assertEquals(parsed[0].age, 42,
+            "age field must land in the 'age' column, regardless of write key order");
+    check file:remove(tempFile);
+}

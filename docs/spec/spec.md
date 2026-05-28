@@ -10,7 +10,7 @@ _Edition_: Swan Lake
 
 This is the specification for the `xlsx` module of the [Ballerina language](https://ballerina.io/), which provides functionality for reading and writing Microsoft Excel files in the XLSX (Office Open XML) format with type-safe data binding to Ballerina records.
 
-The `xlsx` module specification is written to describe the functionality available from version 0.1.0 onwards.
+The `xlsx` module specification is written to describe the functionality available from version 1.0.0 onwards.
 
 If you have any feedback or suggestions about the module, start a discussion via a [GitHub issue](https://github.com/ballerina-platform/ballerina-library/issues) or in the [Discord server](https://discord.gg/ballerinalang). Based on the outcome of the discussion, the specification and implementation can be updated. Community contributions are also encouraged. If you notice an implementation that deviates from the specification, please raise an issue.
 
@@ -64,11 +64,11 @@ The `xlsx` module reads and writes Microsoft Excel files in the XLSX (Office Ope
 - **Constraint validation.** Integrates with `ballerina/constraint` annotations on parsed records.
 - **Atomic file writes.** File-based saves use a temp-file + rename pattern, so a failed write never destroys the original file.
 
-The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported in v0.1.
+The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported in v1.0.
 
-### v0.1 limitations
+### v1.0 limitations
 
-The v0.1 release deliberately defers several features. The following are **not** supported:
+The v1.0 release deliberately defers several features. The following are **not** supported:
 
 - **Formula authoring on write.** Strings starting with `=` are written verbatim as text, not as formula cells. There is no `Formula` wrapper type.
 - **Formula re-evaluation.** `FormulaMode.CACHED` returns the last cached value as-is. There is no `EVALUATE`, `RECALCULATE`, or `PRESERVE` mode.
@@ -76,7 +76,7 @@ The v0.1 release deliberately defers several features. The following are **not**
 - **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe. Formulas, formatting, charts, comments, named ranges, and other sheets are not preserved by a `parseSheet → writeSheet` cycle. (`parseTable → writeTable` preserves the surrounding workbook because it writes into an existing table; only the table's data range is overwritten.) For richer preservation, use the Workbook API and edit cells in place.
 - **XLS (legacy 97-2003) format**, password-protected files, named ranges, cell styling, and range operations.
 
-What's *included* in v0.1 that you might expect to be deferred:
+What's *included* in v1.0 that you might expect to be deferred:
 
 - **Date / time / date-time binding** to `time:Civil` / `time:Date` / `time:TimeOfDay` (target-type-driven; ISO `string` fallback). See §10.8 for code examples.
 - **Large-integer write protection**: integers with `|n| > 2^53` are written as text cells containing the exact digit string, so the data round-trips losslessly. See §10.9.
@@ -220,7 +220,7 @@ public enum FormulaMode {
 - `CACHED` (default): Returns the formula cell's last cached value. The Ballerina target type must match the cached value's type.
 - `TEXT`: Returns the formula expression as a string. The target field must accept `string` — otherwise a `TypeConversionError` is raised.
 
-**Formula authoring on write is not supported in v0.1.** Strings starting with `=` are written as plain text.
+**Formula authoring on write is not supported in v1.0.** Strings starting with `=` are written as plain text.
 
 ### 3.6 FailSafeOptions
 
@@ -825,7 +825,7 @@ RawTxn[] raw = check xlsx:parseSheet("transactions.xlsx");
 
 ### 10.9 Large integer IDs
 
-Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles. v0.1 writes them as text cells with the exact digit string preserved.
+Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles. v1.0 writes them as text cells with the exact digit string preserved.
 
 ```ballerina
 import ballerina/xlsx;
@@ -849,4 +849,4 @@ public function main() returns error? {
 }
 ```
 
-In Excel the affected cells appear as text (left-aligned, no numeric formatting). If you need Excel to treat the column as numeric for display purposes, declare the field as `string` in your record to make the intent explicit; v0.1 doesn't auto-format the cell back as numeric.
+In Excel the affected cells appear as text (left-aligned, no numeric formatting). If you need Excel to treat the column as numeric for display purposes, declare the field as `string` in your record to make the intent explicit; v1.0 doesn't auto-format the cell back as numeric.

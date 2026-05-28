@@ -2,10 +2,10 @@
 distribution = "2201.13.1"
 org = "xlsx_examples"
 name = "in_memory_pipeline"
-version = "0.1.0"
+version = "1.0.0"
 
 [[dependency]]
 org = "ballerina"
 name = "xlsx"
-version = "0.1.0"
+version = "1.0.0"
 repository = "local"

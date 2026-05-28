@@ -27,10 +27,10 @@ import io.ballerina.runtime.api.values.BString;
 public class XlsxConfig {
 
     // Parse options
-    private Integer headerRowIndex = Constants.DEFAULT_HEADER_ROW;  // null = no headers (use col0, col1, ...)
+    private Integer headerRowIndex = XlsxConstants.DEFAULT_HEADER_ROW;  // null = no headers (use col0, col1, ...)
     private Integer dataStartRowIndex;
     private Integer rowCount;  // null = read all rows
-    private String formulaMode = Constants.FORMULA_MODE_CACHED;
+    private String formulaMode = XlsxConstants.FORMULA_MODE_CACHED;
     private boolean enableConstraintValidation = true;
     private boolean caseInsensitiveHeaders = false;
 
@@ -45,9 +45,10 @@ public class XlsxConfig {
     private boolean includeSourceDataInConsole = false;
 
     // Write options
-    private String writeSheetName = Constants.DEFAULT_SHEET_NAME;
+    private String writeSheetName = XlsxConstants.DEFAULT_SHEET_NAME;
     private boolean writeHeaders = true;
     private int startRowIndex = 0;
+    private int startColumnIndex = 0;
 
     /**
      * Create config from Ballerina parse options map.
@@ -63,44 +64,44 @@ public class XlsxConfig {
         }
 
         // Header configuration - headerRowIndex can be null (no headers)
-        Object headerRowIndexVal = options.get(Constants.HEADER_ROW_INDEX);
+        Object headerRowIndexVal = options.get(XlsxConstants.HEADER_ROW_INDEX);
         if (headerRowIndexVal == null) {
             config.headerRowIndex = null;  // No headers - use col0, col1, ...
         } else {
             config.headerRowIndex = ((Long) headerRowIndexVal).intValue();
         }
 
-        Object dataStartRowIndexVal = options.get(Constants.DATA_START_ROW_INDEX);
+        Object dataStartRowIndexVal = options.get(XlsxConstants.DATA_START_ROW_INDEX);
         if (dataStartRowIndexVal != null) {
             config.dataStartRowIndex = ((Long) dataStartRowIndexVal).intValue();
         }
 
         // Row count limit
-        Object rowCountVal = options.get(Constants.ROW_COUNT);
+        Object rowCountVal = options.get(XlsxConstants.ROW_COUNT);
         if (rowCountVal != null) {
             config.rowCount = ((Long) rowCountVal).intValue();
         }
 
         // Formula handling
-        Object formulaModeVal = options.get(Constants.FORMULA_MODE);
+        Object formulaModeVal = options.get(XlsxConstants.FORMULA_MODE);
         if (formulaModeVal != null) {
             config.formulaMode = formulaModeVal.toString();
         }
 
         // Constraint validation
-        Object constraintVal = options.get(Constants.ENABLE_CONSTRAINT_VALIDATION);
+        Object constraintVal = options.get(XlsxConstants.ENABLE_CONSTRAINT_VALIDATION);
         if (constraintVal != null) {
             config.enableConstraintValidation = (Boolean) constraintVal;
         }
 
         // Case-insensitive headers
-        Object caseInsensitiveVal = options.get(Constants.CASE_INSENSITIVE_HEADERS);
+        Object caseInsensitiveVal = options.get(XlsxConstants.CASE_INSENSITIVE_HEADERS);
         if (caseInsensitiveVal != null) {
             config.caseInsensitiveHeaders = (Boolean) caseInsensitiveVal;
         }
 
         // Data projection options
-        Object projectionVal = options.get(Constants.ALLOW_DATA_PROJECTION);
+        Object projectionVal = options.get(XlsxConstants.ALLOW_DATA_PROJECTION);
         if (projectionVal != null) {
             if (projectionVal instanceof Boolean) {
                 // allowDataProjection = false disables projection
@@ -110,12 +111,12 @@ public class XlsxConfig {
                 config.allowDataProjection = true;
                 BMap<?, ?> projectionOpts = (BMap<?, ?>) projectionVal;
 
-                Object nilAsOptionalVal = projectionOpts.get(Constants.NIL_AS_OPTIONAL_FIELD);
+                Object nilAsOptionalVal = projectionOpts.get(XlsxConstants.NIL_AS_OPTIONAL_FIELD);
                 if (nilAsOptionalVal != null) {
                     config.nilAsOptionalField = (Boolean) nilAsOptionalVal;
                 }
 
-                Object absentAsNilableVal = projectionOpts.get(Constants.ABSENT_AS_NILABLE_TYPE);
+                Object absentAsNilableVal = projectionOpts.get(XlsxConstants.ABSENT_AS_NILABLE_TYPE);
                 if (absentAsNilableVal != null) {
                     config.absentAsNilableType = (Boolean) absentAsNilableVal;
                 }
@@ -123,17 +124,17 @@ public class XlsxConfig {
         }
 
         // Fail-safe options
-        Object failSafeVal = options.get(Constants.FAIL_SAFE);
+        Object failSafeVal = options.get(XlsxConstants.FAIL_SAFE);
         if (failSafeVal instanceof BMap<?, ?>) {
             config.failSafe = (BMap<?, ?>) failSafeVal;
 
             // Extract console logging options
-            Object enableConsoleLogsVal = config.failSafe.get(Constants.ENABLE_CONSOLE_LOGS);
+            Object enableConsoleLogsVal = config.failSafe.get(XlsxConstants.ENABLE_CONSOLE_LOGS);
             if (enableConsoleLogsVal != null) {
                 config.enableConsoleLogs = (Boolean) enableConsoleLogsVal;
             }
 
-            Object includeSourceDataVal = config.failSafe.get(Constants.INCLUDE_SOURCE_DATA_IN_CONSOLE);
+            Object includeSourceDataVal = config.failSafe.get(XlsxConstants.INCLUDE_SOURCE_DATA_IN_CONSOLE);
             if (includeSourceDataVal != null) {
                 config.includeSourceDataInConsole = (Boolean) includeSourceDataVal;
             }
@@ -155,19 +156,24 @@ public class XlsxConfig {
             return config;
         }
 
-        Object sheetNameVal = options.get(Constants.WRITE_SHEET_NAME);
+        Object sheetNameVal = options.get(XlsxConstants.WRITE_SHEET_NAME);
         if (sheetNameVal != null) {
             config.writeSheetName = sheetNameVal.toString();
         }
 
-        Object writeHeadersVal = options.get(Constants.WRITE_HEADERS);
+        Object writeHeadersVal = options.get(XlsxConstants.WRITE_HEADERS);
         if (writeHeadersVal != null) {
             config.writeHeaders = (Boolean) writeHeadersVal;
         }
 
-        Object startRowIndexVal = options.get(Constants.START_ROW_INDEX);
+        Object startRowIndexVal = options.get(XlsxConstants.START_ROW_INDEX);
         if (startRowIndexVal != null) {
             config.startRowIndex = ((Long) startRowIndexVal).intValue();
+        }
+
+        Object startColumnIndexVal = options.get(XlsxConstants.START_COLUMN_INDEX);
+        if (startColumnIndexVal != null) {
+            config.startColumnIndex = ((Long) startColumnIndexVal).intValue();
         }
 
         return config;
@@ -224,7 +230,7 @@ public class XlsxConfig {
     }
 
     public boolean isFormulaModeText() {
-        return Constants.FORMULA_MODE_TEXT.equals(formulaMode);
+        return XlsxConstants.FORMULA_MODE_TEXT.equals(formulaMode);
     }
 
     public boolean isEnableConstraintValidation() {
@@ -259,6 +265,10 @@ public class XlsxConfig {
 
     public int getStartRowIndex() {
         return startRowIndex;
+    }
+
+    public int getStartColumnIndex() {
+        return startColumnIndex;
     }
 
     // Fail-safe getters

@@ -35,13 +35,13 @@ import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
 import io.ballerina.stdlib.xlsx.utils.AnnotationUtils;
-import io.ballerina.stdlib.xlsx.utils.Constants;
 import io.ballerina.stdlib.xlsx.utils.DiagnosticLog;
 import io.ballerina.stdlib.xlsx.utils.ModuleUtils;
 import io.ballerina.stdlib.xlsx.utils.RecordParsingUtils;
 import io.ballerina.stdlib.xlsx.utils.RecordParsingUtils.FieldMapping;
 import io.ballerina.stdlib.xlsx.utils.UsedRangeDetector;
 import io.ballerina.stdlib.xlsx.utils.XlsxConfig;
+import io.ballerina.stdlib.xlsx.utils.XlsxConstants;
 import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
@@ -933,7 +933,7 @@ public final class SheetHandle {
 
             // Get proper Table type from module for array creation
             Type tableType = TypeUtils.getType(ValueCreator.createObjectValue(
-                    ModuleUtils.getModule(), Constants.TABLE_TYPE));
+                    ModuleUtils.getModule(), XlsxConstants.TABLE_TYPE));
             ArrayType tableArrayType = TypeCreator.createArrayType(tableType);
 
             if (!(sheet instanceof XSSFSheet)) {
@@ -1083,6 +1083,7 @@ public final class SheetHandle {
             BMap<BString, Object> writeOptions = ValueCreator.createMapValue();
             writeOptions.put(StringUtils.fromString("writeHeaders"), true);
             writeOptions.put(StringUtils.fromString("startRowIndex"), startRowIndex);
+            writeOptions.put(StringUtils.fromString("startColumnIndex"), startColumnIndex);
 
             Object writeResult = XlsxWriter.writeToSheet(xssfSheet, data, writeOptions);
             if (writeResult != null) {
@@ -1168,7 +1169,7 @@ public final class SheetHandle {
      * the sheet's parent workbook (so close()/deleteSheet() can invalidate it).
      */
     private static BObject createBallerinaTable(BObject sheetObj, XSSFTable table, XSSFSheet sheet) {
-        BObject tableObj = ValueCreator.createObjectValue(ModuleUtils.getModule(), Constants.TABLE_TYPE);
+        BObject tableObj = ValueCreator.createObjectValue(ModuleUtils.getModule(), XlsxConstants.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
         BObject parentWorkbook = (BObject) sheetObj.getNativeData(PARENT_WORKBOOK_KEY);
         if (parentWorkbook != null) {

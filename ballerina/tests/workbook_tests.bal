@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/file;
+import ballerina/io;
 import ballerina/test;
 
 // =============================================================================
@@ -920,4 +921,25 @@ function testGetNameAfterCloseReturnsError() returns error? {
     string|error nameResult = trap sheet.getName();
     test:assertTrue(nameResult is error,
             "Sheet.getName after Workbook.close should error, not silently succeed");
+}
+
+// =============================================================================
+// Non-XLSX content surfaces as ParseError, not FileNotFoundError
+// =============================================================================
+// WorkbookHandle.openWorkbookFromPath used to map every IOException, including
+// parse failures from WorkbookFactory.create, to FileNotFoundError. The fix
+// discriminates: missing file → FileNotFoundError; unreadable content → ParseError.
+
+@test:Config {groups: ["workbook"]}
+function testNonXlsxFileReturnsParseError() returns error? {
+    string tempFile = getTempFilePath("not_xlsx");
+    check io:fileWriteString(tempFile, "this is not a valid xlsx file");
+
+    Workbook|Error result = new(tempFile);
+    test:assertTrue(result is ParseError,
+            "Non-XLSX file content must surface as ParseError");
+    test:assertFalse(result is FileNotFoundError,
+            "Non-XLSX file must not be misclassified as FileNotFoundError");
+
+    check removeTempFile(tempFile);
 }

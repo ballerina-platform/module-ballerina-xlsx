@@ -54,7 +54,7 @@ dependencies = [
 [[package]]
 org = "ballerina"
 name = "xlsx"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
 	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "jballerina.java"},
@@ -67,7 +67,7 @@ modules = [
 [[package]]
 org = "xlsx_examples"
 name = "in_memory_pipeline"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
 	{org = "ballerina", name = "io"},
 	{org = "ballerina", name = "xlsx"}

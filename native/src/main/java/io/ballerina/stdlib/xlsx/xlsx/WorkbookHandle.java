@@ -31,6 +31,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.ref.PhantomReference;
 import java.lang.ref.Reference;
@@ -200,8 +201,12 @@ public final class WorkbookHandle {
             workbookObj.addNativeData(SOURCE_PATH_KEY, filePath.getValue());
             registerForCleanup(workbookObj, workbook);
             return null;
-        } catch (IOException e) {
+        } catch (FileNotFoundException e) {
             return DiagnosticLog.fileNotFoundError("Failed to open workbook: " + filePath.getValue(), e);
+        } catch (IOException e) {
+            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP,
+            // malformed OOXML, encrypted files). The file existed; reading it as XLSX failed.
+            return DiagnosticLog.parseError("Failed to parse workbook: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook: " + e.getMessage(), e);
         }
@@ -772,7 +777,7 @@ public final class WorkbookHandle {
                     io.ballerina.runtime.api.utils.TypeUtils.getType(
                             ValueCreator.createObjectValue(
                                     io.ballerina.stdlib.xlsx.utils.ModuleUtils.getModule(),
-                                    io.ballerina.stdlib.xlsx.utils.Constants.TABLE_TYPE));
+                                    io.ballerina.stdlib.xlsx.utils.XlsxConstants.TABLE_TYPE));
             io.ballerina.runtime.api.types.ArrayType tableArrayType =
                     io.ballerina.runtime.api.creators.TypeCreator.createArrayType(tableType);
 
@@ -810,7 +815,7 @@ public final class WorkbookHandle {
                                                  org.apache.poi.xssf.usermodel.XSSFSheet sheet) {
         BObject tableObj = ValueCreator.createObjectValue(
                 io.ballerina.stdlib.xlsx.utils.ModuleUtils.getModule(),
-                io.ballerina.stdlib.xlsx.utils.Constants.TABLE_TYPE);
+                io.ballerina.stdlib.xlsx.utils.XlsxConstants.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
         registerVendedHandle(workbookObj, tableObj);
         return tableObj;

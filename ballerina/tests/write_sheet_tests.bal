@@ -698,7 +698,7 @@ function testWriteSheetWithInlineLiteral() returns error? {
     check removeTempFile(tempFile);
 }
 
-// Strings beginning with "=" are written verbatim as text. Pre-v0.1 the writer
+// Strings beginning with "=" are written verbatim as text. Pre-v1.0 the writer
 // auto-promoted them to formulas, which crashed on common user text (e.g.
 // "=N/A" -> FormulaParseException) and opened an XLSX injection vector. This
 // test locks in the new behaviour for both string[][] and record inputs.
@@ -830,4 +830,29 @@ function testWriteLargeIntSilentPrecisionLoss() returns error? {
             "Off-grid mid-magnitude value must NOT round-trip exactly — Option B contract");
 
     check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// Mixed-shape Row[] writes must fail loudly, not silently drop rows
+// =============================================================================
+// XlsxWriter.writeRecordData used to `continue` past any non-record element,
+// silently losing data in a mixed Row[] input. The fix raises a typed error
+// so the caller sees the shape mismatch immediately.
+
+@test:Config {groups: ["writeSheet"]}
+function testMixedRowShapeWriteErrors() returns error? {
+    string tempFile = getTempFilePath("mixed_shape");
+
+    // Quote the keys: when the contextual type is the Row union, Ballerina
+    // routes a bare-identifier mapping constructor through the open `record{}`
+    // member, where rest-field keys must be string literals. Quoting works
+    // for both the record and map branches and keeps this test future-proof.
+    Row[] data = [
+        {"name": "Alice", "age": 30},  // record — dispatchWrite picks the record writer
+        ["Bob", "25"]                   // string[] — incompatible with record-writer path
+    ];
+
+    Error? result = writeSheet(data, tempFile);
+    test:assertTrue(result is Error,
+            "Mixed-shape Row[] write must surface a clear error, not silently drop rows");
 }

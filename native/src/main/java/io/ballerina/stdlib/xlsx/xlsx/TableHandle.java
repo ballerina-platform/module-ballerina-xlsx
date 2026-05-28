@@ -33,6 +33,7 @@ import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
+import io.ballerina.stdlib.xlsx.utils.AnnotationUtils;
 import io.ballerina.stdlib.xlsx.utils.DiagnosticLog;
 import io.ballerina.stdlib.xlsx.utils.ModuleUtils;
 import io.ballerina.stdlib.xlsx.utils.RecordParsingUtils;
@@ -456,6 +457,15 @@ public final class TableHandle {
         XlsxConfig config = XlsxConfig.fromWriteOptions(options);
         StyleCache styleCache = new StyleCache(sheet.getWorkbook());
 
+        // Resolve column index by table header name. Record/map rows route values to
+        // the column matching the field/key name (with @xlsx:Name annotation support
+        // for records); array rows fall back to positional placement at firstCol + i.
+        List<XSSFTableColumn> tableColumns = table.getColumns();
+        Map<String, Integer> headerToCol = new HashMap<>();
+        for (int i = 0; i < tableColumns.size(); i++) {
+            headerToCol.put(tableColumns.get(i).getName(), firstCol + i);
+        }
+
         // We write data directly without headers since table has its own headers
         for (int i = 0; i < dataSize; i++) {
             int rowIdx = dataFirstRow + i;
@@ -465,7 +475,7 @@ public final class TableHandle {
             }
 
             Object rowData = data.get(i);
-            writeRowData(row, firstCol, rowData, config, styleCache);
+            writeRowData(row, firstCol, rowData, headerToCol, styleCache);
         }
 
         return null;
@@ -988,18 +998,54 @@ public final class TableHandle {
     }
 
     /**
-     * Write row data to a POI Row.
+     * Write row data to a POI Row, aligning each value to its target column.
+     *
+     * <p>Records: iterate fields in declaration order, resolve each header via {@code @xlsx:Name}
+     * (falling back to the field name), look up the column in {@code headerToCol}. Maps:
+     * iterate keys and look them up. Arrays: positional placement at {@code startCol + i}
+     * (arrays have no header semantics).</p>
+     *
+     * <p>An unknown header for a record field or map key surfaces a typed
+     * {@link BallerinaErrorException} so the caller sees a clear "no matching column" error
+     * rather than a silent misalignment.</p>
      */
-    private static void writeRowData(Row row, int startCol, Object rowData, XlsxConfig config,
+    private static void writeRowData(Row row, int startCol, Object rowData,
+                                      Map<String, Integer> headerToCol,
                                       StyleCache styleCache) {
         if (rowData instanceof BMap) {
             @SuppressWarnings("unchecked")
-            BMap<BString, Object> record = (BMap<BString, Object>) rowData;
-            BString[] keys = record.getKeys();
-            for (int i = 0; i < keys.length; i++) {
-                Cell cell = row.createCell(startCol + i);
-                Object value = record.get(keys[i]);
-                CellConverter.setCellValue(cell, value, styleCache);
+            BMap<BString, Object> map = (BMap<BString, Object>) rowData;
+
+            Type valueType = TypeUtils.getReferredType(TypeUtils.getType(map));
+            RecordType recordType = valueType.getTag() == TypeTags.RECORD_TYPE_TAG
+                    ? (RecordType) valueType : null;
+
+            if (recordType != null) {
+                for (String fieldName : recordType.getFields().keySet()) {
+                    String headerName = AnnotationUtils.getHeaderName(recordType, fieldName);
+                    Integer col = headerToCol.get(headerName);
+                    if (col == null) {
+                        throw new BallerinaErrorException(DiagnosticLog.error(
+                                "Field '" + fieldName + "' (header '" + headerName
+                                        + "') has no matching column in the table"));
+                    }
+                    Object value = map.get(StringUtils.fromString(fieldName));
+                    Cell cell = row.createCell(col);
+                    CellConverter.setCellValue(cell, value, styleCache);
+                }
+            } else {
+                for (BString key : map.getKeys()) {
+                    String headerName = key.getValue();
+                    Integer col = headerToCol.get(headerName);
+                    if (col == null) {
+                        throw new BallerinaErrorException(DiagnosticLog.error(
+                                "Map key '" + headerName
+                                        + "' has no matching column in the table"));
+                    }
+                    Cell cell = row.createCell(col);
+                    Object value = map.get(key);
+                    CellConverter.setCellValue(cell, value, styleCache);
+                }
             }
         } else if (rowData instanceof BArray) {
             BArray array = (BArray) rowData;

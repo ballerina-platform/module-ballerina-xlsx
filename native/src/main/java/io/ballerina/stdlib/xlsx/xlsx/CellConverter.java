@@ -625,11 +625,16 @@ public final class CellConverter {
     }
 
     private static boolean parseBoolean(String value) {
-        if (value == null) {
+        String lower = value.trim().toLowerCase();
+        if ("true".equals(lower) || "yes".equals(lower) || "1".equals(lower)) {
+            return true;
+        }
+        if ("false".equals(lower) || "no".equals(lower) || "0".equals(lower)) {
             return false;
         }
-        String lower = value.trim().toLowerCase();
-        return "true".equals(lower) || "yes".equals(lower) || "1".equals(lower);
+        throw new TypeConversionException(
+                "Cannot convert '" + value + "' to boolean",
+                value, "boolean", "string");
     }
 
     /**

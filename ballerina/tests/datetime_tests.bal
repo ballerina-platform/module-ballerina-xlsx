@@ -315,30 +315,31 @@ function testTimeOfDaySubSecondPrecision() returns error? {
 // 1904 reference date instead of the default 1900 one. The native parser must
 // honour `Workbook.isDate1904()` rather than always assuming 1900.
 
+type Date1904Row record {|
+    time:Date col0;
+|};
+
 @test:Config {groups: ["datetime"]}
 function testParseDate1904Workbook() returns error? {
     // dates_1904.xlsx is generated programmatically in @test:BeforeSuite with the
-    // 1904 epoch flag set. Cell (0, 0) holds the numeric serial 44708, which is
-    // the day count from 1904-01-01 to 2026-05-27. Under the 1900 epoch it would
-    // map to ~2026-05-26 + 4 years of error; under the 1904 epoch it maps to
-    // 2026-05-27 exactly.
+    // 1904 epoch flag set. Cell (0, 0) holds the numeric serial 44708.
+    //
+    // Under the 1904 epoch, 1904-01-01 + 44708 days = 2026-05-28.
+    // Under the 1900 epoch, the same serial would land in mid-2022 — wildly off.
+    // The assertion below is correct ONLY if Workbook.isDate1904() is honoured.
     Workbook wb = check new(TEST_DATA_DIR + "dates_1904.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
-    // Read row 0 col 0 as a time:Date via getRow with a typed record target.
-    // The cell isn't date-formatted in this fixture (we wrote a raw int), so
-    // parsing into a time:Date target exercises the isDate1904 branch in
-    // CellConverter.convertByType (the path that calls DateUtil.getJavaDate when
-    // the target type is a date record).
-    string[][] rows = check sheet.getRows();
-    test:assertEquals(rows.length(), 1, "Should have 1 row");
-    test:assertEquals(rows[0].length(), 1, "Should have 1 column");
+    // The cell isn't date-formatted in this fixture (a raw int was written), so
+    // we exercise the 1904 branch in CellConverter.convertByType via the
+    // target-type-triggered path: parsing into a record whose field is typed
+    // time:Date drives convertSerialToLocalDate with isDate1904 = true.
+    // headerRowIndex: () puts the reader in headerless mode so column 0 is
+    // exposed as "col0" — matching the record's field name.
+    Date1904Row row = check sheet.getRow(0, {headerRowIndex: ()});
+    test:assertEquals(row.col0, {year: 2026, month: 5, day: 28},
+            "1904-epoch serial 44708 should map to 2026-05-28");
 
-    // Sanity: the raw numeric is 44708 either way (it's the serial, not the date).
-    // The actual epoch interpretation happens inside convertByType when the
-    // target type is a time:Date / time:Civil. We trigger that via getCell with
-    // a time target — but getCell returns anydata, not a typed time:Date.
-    // To exercise the 1904 path cleanly we read via a time:Date-typed record.
     check wb.close();
 }
 

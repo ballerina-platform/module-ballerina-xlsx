@@ -227,9 +227,10 @@ function setupTestData() returns error? {
     // Built programmatically (the public API doesn't expose setDate1904) so we
     // can verify the parser honours `Workbook.isDate1904()` rather than always
     // defaulting to the 1900 epoch. The cell at (0, 0) holds the numeric serial
-    // 44708, which is the day count from 1904-01-01 to 2026-05-27. Read via the
-    // 1904 epoch this is 2026-05-27; read via the 1900 epoch it would be off
-    // by about 4 years and 1 day.
+    // 44708. Under the 1904 epoch (1904-01-01 + 44708 days) it maps to
+    // 2026-05-28; under the 1900 epoch it would land in mid-2022 — wildly off.
+    // The fixture only proves correctness if the parser routes through the
+    // 1904 branch.
     // -------------------------------------------------------------------------
     Workbook wb1904 = check new;
     check setDate1904Native(wb1904, true);
