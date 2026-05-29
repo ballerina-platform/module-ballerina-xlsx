@@ -48,7 +48,7 @@ import ballerina/jballerina.java;
 # + return - Parsed data or error
 public isolated function parseSheet(string path, string|int sheet = 0, ParseOptions options = {},
         typedesc<Row> t = <>) returns t[]|Error = @java:Method {
-    'class: "io.ballerina.stdlib.xlsx.Native"
+    'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
 # Write Ballerina data to an XLSX file.
@@ -81,7 +81,7 @@ public isolated function parseSheet(string path, string|int sheet = 0, ParseOpti
 # + return - Error if write fails
 public isolated function writeSheet(Row[] data, string path, string sheetName = "Sheet1",
         *RowWriteOptions options) returns Error? = @java:Method {
-    'class: "io.ballerina.stdlib.xlsx.Native"
+    'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
 // ============================================================================
@@ -115,7 +115,7 @@ public isolated function writeSheet(Row[] data, string path, string sheetName = 
 # + return - Parsed data or TableNotFoundError
 public isolated function parseTable(string path, string tableName, ParseOptions options = {},
         typedesc<Row> t = <>) returns t[]|Error = @java:Method {
-    'class: "io.ballerina.stdlib.xlsx.Native"
+    'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
 # Write data to an existing Excel table.
@@ -135,7 +135,7 @@ public isolated function parseTable(string path, string tableName, ParseOptions 
 # + return - TableNotFoundError if table doesn't exist, or other Error
 public isolated function writeTable(Row[] data, string path, string tableName,
         *RowWriteOptions options) returns Error? = @java:Method {
-    'class: "io.ballerina.stdlib.xlsx.Native"
+    'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
 # Opens an XLSX workbook from a file path.
@@ -175,10 +175,10 @@ public isolated function fromBytes(byte[] sourceBytes) returns Workbook|Error {
 
 isolated function loadFromPath(Workbook wb, string path) returns Error? = @java:Method {
     name: "openWorkbookFromPath",
-    'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
+    'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;
 
 isolated function loadFromBytes(Workbook wb, byte[] sourceBytes) returns Error? = @java:Method {
     name: "openWorkbookFromBytes",
-    'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
+    'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;

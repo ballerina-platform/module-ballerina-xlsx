@@ -16,8 +16,11 @@
  * under the License.
  */
 
-package io.ballerina.stdlib.xlsx.utils;
+package io.ballerina.lib.xlsx.utils;
 
+import io.ballerina.lib.xlsx.xlsx.BallerinaErrorException;
+import io.ballerina.lib.xlsx.xlsx.CellConverter;
+import io.ballerina.lib.xlsx.xlsx.TypeConversionException;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
@@ -34,9 +37,6 @@ import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
-import io.ballerina.stdlib.xlsx.xlsx.BallerinaErrorException;
-import io.ballerina.stdlib.xlsx.xlsx.CellConverter;
-import io.ballerina.stdlib.xlsx.xlsx.TypeConversionException;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;

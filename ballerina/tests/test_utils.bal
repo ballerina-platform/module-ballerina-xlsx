@@ -27,12 +27,12 @@ import ballerina/test;
 // programmatically, the way Apache POI / NPOI / openpyxl handle the same need.
 
 function setDate1904Native(Workbook wb, boolean flag) returns Error? = @java:Method {
-    'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
+    'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;
 
 function setFormulaCellNative(Workbook wb, string sheetName, int row, int col, string formula)
         returns Error? = @java:Method {
-    'class: "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle"
+    'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;
 
 // =============================================================================

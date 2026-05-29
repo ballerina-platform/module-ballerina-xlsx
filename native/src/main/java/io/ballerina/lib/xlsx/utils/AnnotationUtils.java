@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.stdlib.xlsx.utils;
+package io.ballerina.lib.xlsx.utils;
 
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.utils.StringUtils;

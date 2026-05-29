@@ -117,23 +117,23 @@
     ]
   },
   {
-    "name": "io.ballerina.stdlib.xlsx.Native",
+    "name": "io.ballerina.lib.xlsx.Native",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.stdlib.xlsx.utils.ModuleUtils",
+    "name": "io.ballerina.lib.xlsx.utils.ModuleUtils",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.stdlib.xlsx.xlsx.SheetHandle",
+    "name": "io.ballerina.lib.xlsx.xlsx.SheetHandle",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.stdlib.xlsx.xlsx.TableHandle",
+    "name": "io.ballerina.lib.xlsx.xlsx.TableHandle",
     "queryAllPublicMethods": true
   },
   {
-    "name": "io.ballerina.stdlib.xlsx.xlsx.WorkbookHandle",
+    "name": "io.ballerina.lib.xlsx.xlsx.WorkbookHandle",
     "queryAllPublicMethods": true
   },
   {
