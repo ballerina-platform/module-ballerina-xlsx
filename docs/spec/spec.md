@@ -10,7 +10,7 @@ _Edition_: Swan Lake
 
 This is the specification for the `xlsx` module of the [Ballerina language](https://ballerina.io/), which provides functionality for reading and writing Microsoft Excel files in the XLSX (Office Open XML) format with type-safe data binding to Ballerina records.
 
-The `xlsx` module specification is written to describe the functionality available from version 1.0.0 onwards.
+The `xlsx` module specification is written to describe the functionality available from version 0.9.0 onwards.
 
 If you have any feedback or suggestions about the module, start a discussion via a [GitHub issue](https://github.com/ballerina-platform/ballerina-library/issues) or in the [Discord server](https://discord.gg/ballerinalang). Based on the outcome of the discussion, the specification and implementation can be updated. Community contributions are also encouraged. If you notice an implementation that deviates from the specification, please raise an issue.
 
@@ -63,11 +63,11 @@ The `xlsx` module reads and writes Microsoft Excel files in the XLSX (Office Ope
 - **Constraint validation.** Integrates with `ballerina/constraint` annotations on parsed records.
 - **Atomic file writes.** File-based saves use a temp-file + rename pattern, so a failed write never destroys the original file.
 
-The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported in v1.0.
+The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported in v0.9.
 
-### v1.0 limitations
+### v0.9 limitations
 
-The v1.0 release deliberately defers several features. The following are **not** supported:
+The v0.9 release deliberately defers several features. The following are **not** supported:
 
 - **Formula authoring on write.** Strings starting with `=` are written verbatim as text, not as formula cells. There is no `Formula` wrapper type.
 - **Formula re-evaluation.** `FormulaMode.CACHED` returns the last cached value as-is. There is no `EVALUATE`, `RECALCULATE`, or `PRESERVE` mode.
@@ -75,7 +75,7 @@ The v1.0 release deliberately defers several features. The following are **not**
 - **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe. Formulas, formatting, charts, comments, named ranges, and other sheets are not preserved by a `parseSheet → writeSheet` cycle. (`parseTable → writeTable` preserves the surrounding workbook because it writes into an existing table; only the table's data range is overwritten.) For richer preservation, use the Workbook API and edit cells in place.
 - **XLS (legacy 97-2003) format**, password-protected files, named ranges, cell styling, and range operations.
 
-What's *included* in v1.0 that you might expect to be deferred:
+What's *included* in v0.9 that you might expect to be deferred:
 
 - **Date / time / date-time binding** to `time:Civil` / `time:Date` / `time:TimeOfDay` (target-type-driven; ISO `string` fallback). See §10.8 for code examples.
 - **Large-integer write protection**: integers with `|n| > 2^53` are written as text cells containing the exact digit string, so the data round-trips losslessly. See §10.9.
@@ -89,16 +89,15 @@ What's *included* in v1.0 that you might expect to be deferred:
 
 ```ballerina
 # A single row in a sheet — the atomic data unit.
-public type Row record {} | map<anydata> | string[];
+public type Row map<anydata> | string[];
 
-# Value types supported as XLSX cell content (used by `Sheet.getColumn`).
+# A populated XLSX cell value. Where a cell may be blank, the nilable `CellValue?` is used.
 public type CellValue string|int|float|decimal|boolean
                     | time:Date|time:Civil|time:TimeOfDay;
 ```
 
 `Row` is the atomic single-row type. A row can be:
-- A **record** — fields named to match column headers (or via `@xlsx:Name`).
-- A **`map<anydata>`** — keys are column headers; values are cell contents.
+- A **`map<anydata>`** — keys are column headers; values are cell contents. A typed **record** also binds (an open record is a subtype of `map<anydata>`); name its fields to match the headers, or use `@xlsx:Name`.
 - A **`string[]`** — raw cell text in column order.
 
 `parseSheet` takes the row shape as its target `typedesc<Row> t = <>` and returns `t[]`. `Row[]` is the input type for `writeSheet` / `writeTable`. Contextual typing at the call site infers the row shape:
@@ -122,7 +121,7 @@ public type CellRange record {|
 |};
 ```
 
-Used by `Sheet.getUsedCellRange()`, `Sheet.createTable(name, range, headers)`, `Table.getRange()`, `Table.getDataRange()`, `Table.resize(newRange)`.
+Used by `Sheet.getUsedCellRange()`, `Sheet.createTable(name, range, headers)`, `Table.getCellRange()`, `Table.getDataCellRange()`, and `Table.resize(...)` (which also accepts an A1 string).
 
 ---
 
@@ -202,7 +201,7 @@ public enum FormulaMode {
 - `CACHED` (default): Returns the formula cell's last cached value. The Ballerina target type must match the cached value's type.
 - `TEXT`: Returns the formula expression as a string. The target field must accept `string` — otherwise a `TypeConversionError` is raised.
 
-**Formula authoring on write is not supported in v1.0.** Strings starting with `=` are written as plain text.
+**Formula authoring on write is not supported in v0.9.** Strings starting with `=` are written as plain text.
 
 ### 3.5 FailSafeOptions
 
@@ -415,7 +414,7 @@ disk or memory, use the module-level factory functions `xlsx:fromFile(path)`
 and `xlsx:fromBytes(bytes)`:
 
 ```ballerina
-xlsx:Workbook wb1 = check new;                              # empty in-memory
+xlsx:Workbook wb1 = new;                                    # empty in-memory
 xlsx:Workbook wb2 = check xlsx:fromFile("report.xlsx");     # open existing file
 xlsx:Workbook wb3 = check xlsx:fromBytes(sourceBytes);      # open from bytes
 ```
@@ -431,15 +430,15 @@ xlsx:Workbook wb3 = check xlsx:fromBytes(sourceBytes);      # open from bytes
 ```ballerina
 public isolated class Workbook {
     # Sheet access
-    public isolated function getSheetNames() returns string[];
-    public isolated function getSheetCount() returns int;
-    public isolated function hasSheet(string name) returns boolean;
-    public isolated function getSheet(string|int sheet) returns Sheet|SheetNotFoundError;
+    public isolated function getSheetNames() returns string[]|Error;
+    public isolated function getSheetCount() returns int|Error;
+    public isolated function hasSheet(string name) returns boolean|Error;
+    public isolated function getSheet(string|int sheet) returns Sheet|Error;
     public isolated function createSheet(string name) returns Sheet|Error;
     public isolated function deleteSheet(string|int sheet) returns Error?;
 
     # Table access (tables are unique by name across the workbook)
-    public isolated function getTable(string name) returns Table|TableNotFoundError;
+    public isolated function getTable(string name) returns Table|Error;
     public isolated function getAllTables() returns Table[]|Error;
 
     # Lifecycle
@@ -465,11 +464,11 @@ Both writes are atomic — temp file in the same directory + atomic rename. A fa
 ```ballerina
 public isolated class Sheet {
     # Identity and dimensions
-    public isolated function getName() returns string;
-    public isolated function getUsedRange() returns string;                                  # A1 notation, e.g., "A1:D50"
-    public isolated function getUsedCellRange() returns CellRange?;                          # 0-based indices; nil if empty
-    public isolated function getRowCount() returns int;
-    public isolated function getColumnCount() returns int;
+    public isolated function getName() returns string|Error;
+    public isolated function getUsedRange() returns string|Error;                            # A1 notation, e.g., "A1:D50"
+    public isolated function getUsedCellRange() returns CellRange?|Error;                    # 0-based indices; nil if empty
+    public isolated function getRowCount() returns int|Error;
+    public isolated function getColumnCount() returns int|Error;
 
     # Row reads
     public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
@@ -477,17 +476,17 @@ public isolated class Sheet {
     public isolated function getRow(int index, RowReadOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
     public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
-            typedesc<CellValue> t = <>) returns t[]|Error;
-    public isolated function getCell(int rowIndex, int columnIndex) returns anydata|Error;
+            typedesc<CellValue?> t = <>) returns t[]|Error;
+    public isolated function getCell(int rowIndex, int columnIndex) returns CellValue?|Error;
 
     # Row writes
     public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
     public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)
             returns Error?;
-    public isolated function setColumn(string|int columnRef, anydata[] data) returns Error?;
-    public isolated function setCell(int rowIndex, int columnIndex, anydata value)
+    public isolated function setColumn(string|int columnRef, CellValue?[] data) returns Error?;
+    public isolated function setCell(int rowIndex, int columnIndex, CellValue? value)
             returns Error?;
-    public isolated function setCellByAddress(string cellAddress, anydata value)
+    public isolated function setCellByAddress(string cellAddress, CellValue? value)
             returns Error?;                                                         # A1 notation
 
     # Sheet management
@@ -495,18 +494,18 @@ public isolated class Sheet {
     public isolated function rename(string newName) returns Error?;
 
     # Table access
-    public isolated function getTable(string name) returns Table|TableNotFoundError;
+    public isolated function getTable(string name) returns Table|Error;
     public isolated function getTables() returns Table[]|Error;
     public isolated function createTable(string name, CellRange|string range,
             string[]? headers = ()) returns Table|Error;
     public isolated function createTableFromData(string name, Row[] data,
             int startRowIndex = 0, int startColumnIndex = 0) returns Table|Error;
-    public isolated function deleteTable(string name) returns TableNotFoundError?;
+    public isolated function deleteTable(string name) returns Error?;
 }
 ```
 
 Notes:
-- `Sheet.getCell` returns `anydata` because the type depends on the cell's content. Callers narrow as needed.
+- `Sheet.getCell` returns `CellValue?` — the cell's value, or `nil` for a blank cell. Callers narrow as needed.
 - `Sheet.getColumn` accepts a column reference as either a header name (`string`) or a 0-based index (`int`).
 - `Sheet.deleteRow(index)` removes the row and shifts subsequent rows up by one to preserve dense indexing.
 
@@ -521,27 +520,29 @@ public isolated class Table {
     public isolated function getDisplayName() returns string;
     public isolated function getSheetName() returns string;
 
-    # Range and dimensions (0-based indices)
-    public isolated function getRange() returns CellRange;          # full table including headers/totals
-    public isolated function getDataRange() returns CellRange;      # data rows only
-    public isolated function getRowCount() returns int;             # data rows only
-    public isolated function getColumnCount() returns int;
+    # Range and dimensions
+    public isolated function getRange() returns string|Error;            # full table, A1 notation
+    public isolated function getCellRange() returns CellRange|Error;     # full table, 0-based record
+    public isolated function getDataRange() returns string|Error;        # data rows only, A1 notation
+    public isolated function getDataCellRange() returns CellRange|Error; # data rows only, 0-based record
+    public isolated function getRowCount() returns int|Error;            # data rows only
+    public isolated function getColumnCount() returns int|Error;
 
     # Headers and data
-    public isolated function getHeaders() returns string[];
+    public isolated function getHeaders() returns string[]|Error;
     public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
     public isolated function getRow(int index, RowReadOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
     public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;   # auto-expands the table
 
-    # Totals row
-    public isolated function hasTotalsRow() returns boolean;
-    public isolated function getTotalsRow() returns map<anydata>|Error;
+    # Total row
+    public isolated function hasTotalRow() returns boolean|Error;
+    public isolated function getTotalRow() returns map<CellValue?>|Error;
 
     # Modification
     public isolated function rename(string newName) returns Error?;
-    public isolated function resize(CellRange newRange) returns Error?;
+    public isolated function resize(CellRange|string newRange) returns Error?;
 }
 ```
 
@@ -699,8 +700,8 @@ public function main() returns error? {
     xlsx:Table empTable = check wb.getTable("EmployeeTable");
     Employee[] employees = check empTable.getRows();
 
-    if empTable.hasTotalsRow() {
-        map<anydata> totals = check empTable.getTotalsRow();
+    if check empTable.hasTotalRow() {
+        map<xlsx:CellValue?> totals = check empTable.getTotalRow();
         // ... inspect totals ...
     }
 
@@ -814,7 +815,7 @@ RawTxn[] raw = check xlsx:parseSheet("transactions.xlsx");
 
 ### 10.9 Large integer IDs
 
-Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles. v1.0 writes them as text cells with the exact digit string preserved.
+Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles. v0.9 writes them as text cells with the exact digit string preserved.
 
 ```ballerina
 import ballerina/xlsx;
@@ -838,4 +839,4 @@ public function main() returns error? {
 }
 ```
 
-In Excel the affected cells appear as text (left-aligned, no numeric formatting). If you need Excel to treat the column as numeric for display purposes, declare the field as `string` in your record to make the intent explicit; v1.0 doesn't auto-format the cell back as numeric.
+In Excel the affected cells appear as text (left-aligned, no numeric formatting). If you need Excel to treat the column as numeric for display purposes, declare the field as `string` in your record to make the intent explicit; v0.9 doesn't auto-format the cell back as numeric.

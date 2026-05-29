@@ -191,7 +191,7 @@ function testWriteAndParseNilableDateField() returns error? {
 }
 function testWorkbookWriteAndParseDateField() returns error? {
     // Test date handling via Workbook/Sheet API
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Events");
 
     EventWithDate[] events = [

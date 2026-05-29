@@ -47,15 +47,13 @@ public isolated class Workbook {
     # No file association; `save()` errors until a path is set via `saveAs(path)`.
     # To open an existing workbook, use `xlsx:fromFile(path)` or `xlsx:fromBytes(bytes)`.
     #
-    # + return - Error if workbook creation fails
-    public isolated function init() returns Error? {
-        check self.initNew();
+    # Creating an empty in-memory workbook cannot fail, so `init` does not return an error.
+    public isolated function init() {
+        self.initNew();
     }
 
     # Initialize a new empty workbook.
-    #
-    # + return - Error if creation fails
-    isolated function initNew() returns Error? = @java:Method {
+    isolated function initNew() = @java:Method {
         name: "createNewWorkbook",
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -63,28 +61,28 @@ public isolated class Workbook {
     # Get all sheet names in the workbook.
     #
     # + return - Array of sheet names
-    public isolated function getSheetNames() returns string[] = @java:Method {
+    public isolated function getSheetNames() returns string[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Get the number of sheets in the workbook.
     #
     # + return - Sheet count
-    public isolated function getSheetCount() returns int = @java:Method {
+    public isolated function getSheetCount() returns int|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
     # Check whether a sheet with the given name exists in the workbook.
     #
     # ```ballerina
-    # if wb.hasSheet("Sales") {
+    # if check wb.hasSheet("Sales") {
     #     xlsx:Sheet s = check wb.getSheet("Sales");
     # }
     # ```
     #
     # + name - Sheet name
-    # + return - `true` if the sheet exists, `false` otherwise
-    public isolated function hasSheet(string name) returns boolean = @java:Method {
+    # + return - `true` if the sheet exists, `false` otherwise, or an `Error` if the workbook is closed
+    public isolated function hasSheet(string name) returns boolean|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -96,17 +94,17 @@ public isolated class Workbook {
     # ```
     #
     # + target - Sheet name (string) or 0-based index (int)
-    # + return - Sheet instance or SheetNotFoundError if not found
-    public isolated function getSheet(string|int target) returns Sheet|SheetNotFoundError {
+    # + return - Sheet instance, or an `Error` (e.g. `SheetNotFoundError`) if not found or the workbook is closed
+    public isolated function getSheet(string|int target) returns Sheet|Error {
         return target is string ? self.getSheetByName(target) : self.getSheetByIndex(target);
     }
 
-    isolated function getSheetByName(string name) returns Sheet|SheetNotFoundError = @java:Method {
+    isolated function getSheetByName(string name) returns Sheet|Error = @java:Method {
         name: "getSheet",
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    isolated function getSheetByIndex(int index) returns Sheet|SheetNotFoundError = @java:Method {
+    isolated function getSheetByIndex(int index) returns Sheet|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
@@ -232,8 +230,8 @@ public isolated class Workbook {
     # ```
     #
     # + name - Table name
-    # + return - Table or error if not found
-    public isolated function getTable(string name) returns Table|TableNotFoundError = @java:Method {
+    # + return - Table, or an `Error` (e.g. `TableNotFoundError`) if not found or the workbook is closed
+    public isolated function getTable(string name) returns Table|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 

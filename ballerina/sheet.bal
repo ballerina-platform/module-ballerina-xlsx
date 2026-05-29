@@ -25,16 +25,16 @@ public type Sheet isolated object {
 
     # Get the name of the sheet.
     #
-    # + return - Sheet name
-    public isolated function getName() returns string;
+    # + return - Sheet name, or an `Error` if the handle is invalid
+    public isolated function getName() returns string|Error;
 
     # Get the used range of the sheet in A1 notation.
     #
     # The used range is the smallest rectangular area that contains all cells with data.
     # This excludes "ghost rows" - rows that have formatting but no actual data.
     #
-    # + return - Range string (e.g., "A1:D50")
-    public isolated function getUsedRange() returns string;
+    # + return - Range string (e.g., "A1:D50"), or an `Error` if the handle is invalid
+    public isolated function getUsedRange() returns string|Error;
 
     # Get the used cell range of the sheet as a structured record.
     #
@@ -55,18 +55,18 @@ public type Sheet isolated object {
     # }
     # ```
     #
-    # + return - CellRange record with 0-based indices, or nil if sheet is empty
-    public isolated function getUsedCellRange() returns CellRange?;
+    # + return - CellRange record with 0-based indices, nil if sheet is empty, or an `Error` if the handle is invalid
+    public isolated function getUsedCellRange() returns CellRange?|Error;
 
     # Get the number of rows with data.
     #
-    # + return - Row count
-    public isolated function getRowCount() returns int;
+    # + return - Row count, or an `Error` if the handle is invalid
+    public isolated function getRowCount() returns int|Error;
 
     # Get the number of columns with data.
     #
-    # + return - Column count
-    public isolated function getColumnCount() returns int;
+    # + return - Column count, or an `Error` if the handle is invalid
+    public isolated function getColumnCount() returns int|Error;
 
     # Get all rows from the sheet.
     #
@@ -142,24 +142,24 @@ public type Sheet isolated object {
     #
     # + columnRef - Column header name (string) or 0-based index (int)
     # + options - Read options
-    # + t - Target cell type descriptor (must be a `CellValue`); the function returns `t[]`
+    # + t - Target cell type descriptor (`CellValue?`; nilable for columns with blank cells); returns `t[]`
     # + return - Column values or error
     public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
-            typedesc<CellValue> t = <>) returns t[]|Error;
+            typedesc<CellValue?> t = <>) returns t[]|Error;
 
     # Read a single cell value.
     #
-    # The value is returned as `anydata` because the type depends on the cell's
-    # content. Narrow as needed at the call site.
+    # Returns the cell's value as a `CellValue` (string / number / boolean / date-time),
+    # or `nil` for a blank cell. Narrow as needed at the call site.
     #
     # ```ballerina
-    # anydata value = check sheet.getCell(0, 2);
+    # xlsx:CellValue? value = check sheet.getCell(0, 2);
     # ```
     #
     # + rowIndex - 0-based row index (absolute)
     # + columnIndex - 0-based column index (absolute)
     # + return - Cell value, `nil` for blank cells, or error
-    public isolated function getCell(int rowIndex, int columnIndex) returns anydata|Error;
+    public isolated function getCell(int rowIndex, int columnIndex) returns CellValue?|Error;
 
     # Write a single row at the specified row index.
     #
@@ -192,7 +192,7 @@ public type Sheet isolated object {
     # + columnRef - Column header name (string) or 0-based index (int)
     # + data - Column values
     # + return - Error if write fails
-    public isolated function setColumn(string|int columnRef, anydata[] data)
+    public isolated function setColumn(string|int columnRef, CellValue?[] data)
             returns Error?;
 
     # Write a single cell value by 0-based row and column index.
@@ -206,7 +206,7 @@ public type Sheet isolated object {
     # + columnIndex - 0-based column index
     # + value - Cell value
     # + return - Error if write fails
-    public isolated function setCell(int rowIndex, int columnIndex, anydata value)
+    public isolated function setCell(int rowIndex, int columnIndex, CellValue? value)
             returns Error?;
 
     # Write a single cell value by A1-notation address.
@@ -219,7 +219,7 @@ public type Sheet isolated object {
     # + cellAddress - Cell address in A1 notation (e.g., `"A1"`, `"B12"`)
     # + value - Cell value
     # + return - Error if the address is invalid or write fails
-    public isolated function setCellByAddress(string cellAddress, anydata value)
+    public isolated function setCellByAddress(string cellAddress, CellValue? value)
             returns Error?;
 
     # Delete a row from the sheet.
@@ -254,8 +254,8 @@ public type Sheet isolated object {
     # ```
     #
     # + name - Table name
-    # + return - Table or error if not found
-    public isolated function getTable(string name) returns Table|TableNotFoundError;
+    # + return - Table, or an `Error` (e.g. `TableNotFoundError`) if not found or the handle is invalid
+    public isolated function getTable(string name) returns Table|Error;
 
     # Get all tables in this sheet.
     #
@@ -294,7 +294,10 @@ public type Sheet isolated object {
 
     # Create a new table from data, automatically calculating the range.
     #
-    # Writes the data first, then creates a table around it.
+    # Writes the data first, then creates a table around it. An Excel table always has a
+    # header row: for records the field names (or `@xlsx:Name`) become the headers, for
+    # maps the keys, and for `string[][]` the first row is taken as the header. There is no
+    # option to omit headers — skipping headers is a parse-side concern (`RowReadOptions.headerRowIndex`).
     #
     # ```ballerina
     # Employee[] employees = [...];
@@ -302,7 +305,7 @@ public type Sheet isolated object {
     # ```
     #
     # + name - Unique table name (across workbook)
-    # + data - Data to write (records or arrays)
+    # + data - Data to write: records/maps (headers from field names/keys) or `string[][]` (first row = header)
     # + startRowIndex - Starting row for the table (default: 0)
     # + startColumnIndex - Starting column for the table (default: 0)
     # + return - Created table or error
@@ -319,8 +322,8 @@ public type Sheet isolated object {
     # ```
     #
     # + name - Table name to delete
-    # + return - Error if table not found
-    public isolated function deleteTable(string name) returns TableNotFoundError?;
+    # + return - An `Error` (e.g. `TableNotFoundError`) if not found or the handle is invalid
+    public isolated function deleteTable(string name) returns Error?;
 };
 
 # Concrete implementation of `Sheet`. Not exported — instances are vended
@@ -328,23 +331,23 @@ public type Sheet isolated object {
 isolated class SheetImpl {
     *Sheet;
 
-    public isolated function getName() returns string = @java:Method {
+    public isolated function getName() returns string|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getUsedRange() returns string = @java:Method {
+    public isolated function getUsedRange() returns string|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getUsedCellRange() returns CellRange? = @java:Method {
+    public isolated function getUsedCellRange() returns CellRange?|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getRowCount() returns int = @java:Method {
+    public isolated function getRowCount() returns int|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getColumnCount() returns int = @java:Method {
+    public isolated function getColumnCount() returns int|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
@@ -363,11 +366,11 @@ isolated class SheetImpl {
     } external;
 
     public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
-            typedesc<CellValue> t = <>) returns t[]|Error = @java:Method {
+            typedesc<CellValue?> t = <>) returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getCell(int rowIndex, int columnIndex) returns anydata|Error = @java:Method {
+    public isolated function getCell(int rowIndex, int columnIndex) returns CellValue?|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
@@ -376,17 +379,17 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function setColumn(string|int columnRef, anydata[] data)
+    public isolated function setColumn(string|int columnRef, CellValue?[] data)
             returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function setCell(int rowIndex, int columnIndex, anydata value)
+    public isolated function setCell(int rowIndex, int columnIndex, CellValue? value)
             returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function setCellByAddress(string cellAddress, anydata value)
+    public isolated function setCellByAddress(string cellAddress, CellValue? value)
             returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
@@ -399,7 +402,7 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getTable(string name) returns Table|TableNotFoundError = @java:Method {
+    public isolated function getTable(string name) returns Table|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
@@ -418,7 +421,7 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function deleteTable(string name) returns TableNotFoundError? = @java:Method {
+    public isolated function deleteTable(string name) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 }

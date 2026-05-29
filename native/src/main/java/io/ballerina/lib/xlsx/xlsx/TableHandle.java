@@ -92,9 +92,13 @@ public final class TableHandle {
      * @param tableObj Ballerina Table object
      * @return Table name
      */
-    public static BString getName(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        return StringUtils.fromString(table.getName());
+    public static Object getName(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            return StringUtils.fromString(table.getName());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -103,9 +107,13 @@ public final class TableHandle {
      * @param tableObj Ballerina Table object
      * @return Table display name
      */
-    public static BString getDisplayName(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        return StringUtils.fromString(table.getDisplayName());
+    public static Object getDisplayName(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            return StringUtils.fromString(table.getDisplayName());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -114,54 +122,110 @@ public final class TableHandle {
      * @param tableObj Ballerina Table object
      * @return Sheet name
      */
-    public static BString getSheetName(BObject tableObj) {
-        XSSFSheet sheet = getSheet(tableObj);
-        return StringUtils.fromString(sheet.getSheetName());
+    public static Object getSheetName(BObject tableObj) {
+        try {
+            XSSFSheet sheet = getSheet(tableObj);
+            return StringUtils.fromString(sheet.getSheetName());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     // === Range/Dimensions Methods ===
 
     /**
-     * Get the full table range (including headers and totals).
+     * Get the full table range (including headers and totals) as a CellRange record.
      *
      * @param tableObj Ballerina Table object
-     * @return CellRange record
+     * @return CellRange record, or error if the handle is invalid
      */
-    public static BMap<BString, Object> getRange(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
-        return createCellRange(area);
+    public static Object getCellRange(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+            return createCellRange(area);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
-     * Get the data range of the table (excluding headers and totals).
+     * Get the full table range (including headers and totals) in A1 notation.
      *
      * @param tableObj Ballerina Table object
-     * @return CellRange record
+     * @return A1-notation range string, or error if the handle is invalid
      */
-    public static BMap<BString, Object> getDataRange(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+    public static Object getRange(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+            return StringUtils.fromString(area.formatAsString());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
+    }
 
-        int firstRow = area.getFirstCell().getRow();
-        int lastRow = area.getLastCell().getRow();
-        int firstCol = area.getFirstCell().getCol();
-        int lastCol = area.getLastCell().getCol();
+    /**
+     * Get the data range of the table (excluding headers and totals) as a CellRange record.
+     *
+     * @param tableObj Ballerina Table object
+     * @return CellRange record, or error if the handle is invalid
+     */
+    public static Object getDataCellRange(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
 
-        // Exclude header row (first row)
-        int dataFirstRow = firstRow + 1;
+            int firstRow = area.getFirstCell().getRow();
+            int lastRow = area.getLastCell().getRow();
+            int firstCol = area.getFirstCell().getCol();
+            int lastCol = area.getLastCell().getCol();
 
-        // Exclude totals row if present (use getTotalsRowCount(), not isHasTotalsRow())
-        int dataLastRow = lastRow - table.getTotalsRowCount();
+            // Exclude header row (first row)
+            int dataFirstRow = firstRow + 1;
+            // Exclude totals row if present (use getTotalsRowCount(), not isHasTotalsRow())
+            int dataLastRow = lastRow - table.getTotalsRowCount();
 
-        BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                ModuleUtils.getModule(), "CellRange");
-        cellRange.put(StringUtils.fromString("firstRowIndex"), (long) dataFirstRow);
-        cellRange.put(StringUtils.fromString("lastRowIndex"), (long) dataLastRow);
-        cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) firstCol);
-        cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) lastCol);
+            BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
+                    ModuleUtils.getModule(), "CellRange");
+            cellRange.put(StringUtils.fromString("firstRowIndex"), (long) dataFirstRow);
+            cellRange.put(StringUtils.fromString("lastRowIndex"), (long) dataLastRow);
+            cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) firstCol);
+            cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) lastCol);
 
-        return cellRange;
+            return cellRange;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
+    }
+
+    /**
+     * Get the data range of the table (excluding headers and totals) in A1 notation.
+     *
+     * @param tableObj Ballerina Table object
+     * @return A1-notation range string, or error if the handle is invalid
+     */
+    public static Object getDataRange(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+
+            int firstRow = area.getFirstCell().getRow();
+            int lastRow = area.getLastCell().getRow();
+            int firstCol = area.getFirstCell().getCol();
+            int lastCol = area.getLastCell().getCol();
+
+            int dataFirstRow = firstRow + 1;
+            int dataLastRow = lastRow - table.getTotalsRowCount();
+
+            AreaReference dataArea = new AreaReference(
+                    new CellReference(dataFirstRow, firstCol),
+                    new CellReference(dataLastRow, lastCol),
+                    SpreadsheetVersion.EXCEL2007);
+            return StringUtils.fromString(dataArea.formatAsString());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -170,20 +234,24 @@ public final class TableHandle {
      * @param tableObj Ballerina Table object
      * @return Data row count
      */
-    public static long getRowCount(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+    public static Object getRowCount(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
 
-        int firstRow = area.getFirstCell().getRow();
-        int lastRow = area.getLastCell().getRow();
+            int firstRow = area.getFirstCell().getRow();
+            int lastRow = area.getLastCell().getRow();
 
-        // Calculate data rows: total rows - header row - totals row (if present)
-        // Use getTotalsRowCount() instead of isHasTotalsRow() for accurate count
-        int totalRows = lastRow - firstRow + 1;
-        int headerRows = 1;  // Always has one header row
-        int totalsRows = table.getTotalsRowCount();
+            // Calculate data rows: total rows - header row - totals row (if present)
+            // Use getTotalsRowCount() instead of isHasTotalsRow() for accurate count
+            int totalRows = lastRow - firstRow + 1;
+            int headerRows = 1;  // Always has one header row
+            int totalsRows = table.getTotalsRowCount();
 
-        return totalRows - headerRows - totalsRows;
+            return (long) (totalRows - headerRows - totalsRows);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -192,9 +260,13 @@ public final class TableHandle {
      * @param tableObj Ballerina Table object
      * @return Column count
      */
-    public static long getColumnCount(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        return table.getColumnCount();
+    public static Object getColumnCount(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            return (long) table.getColumnCount();
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     // === Header Methods ===
@@ -205,19 +277,23 @@ public final class TableHandle {
      * @param tableObj Ballerina Table object
      * @return Array of header strings
      */
-    public static BArray getHeaders(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        List<XSSFTableColumn> columns = table.getColumns();
+    public static Object getHeaders(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            List<XSSFTableColumn> columns = table.getColumns();
 
-        ArrayType stringArrayType = TypeCreator.createArrayType(
-                io.ballerina.runtime.api.types.PredefinedTypes.TYPE_STRING);
-        BArray headers = ValueCreator.createArrayValue(stringArrayType);
+            ArrayType stringArrayType = TypeCreator.createArrayType(
+                    io.ballerina.runtime.api.types.PredefinedTypes.TYPE_STRING);
+            BArray headers = ValueCreator.createArrayValue(stringArrayType);
 
-        for (XSSFTableColumn column : columns) {
-            headers.append(StringUtils.fromString(column.getName()));
+            for (XSSFTableColumn column : columns) {
+                headers.append(StringUtils.fromString(column.getName()));
+            }
+
+            return headers;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         }
-
-        return headers;
     }
 
     // === Data Access Methods ===
@@ -479,35 +555,39 @@ public final class TableHandle {
         return null;
     }
 
-    // === Totals Row Methods ===
+    // === Total Row Methods ===
 
     /**
-     * Check if the table has a totals row.
+     * Check if the table has a total row.
      *
      * @param tableObj Ballerina Table object
-     * @return true if totals row exists
+     * @return true if a total row exists
      */
-    public static boolean hasTotalsRow(BObject tableObj) {
-        XSSFTable table = getTable(tableObj);
-        // Use getTotalsRowCount() instead of isHasTotalsRow()
-        // isHasTotalsRow() only checks "totalsRowShown" attribute which defaults to true
-        // getTotalsRowCount() returns actual count of totals rows (0 or 1)
-        return table.getTotalsRowCount() > 0;
+    public static Object hasTotalRow(BObject tableObj) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            // Use getTotalsRowCount() instead of isHasTotalsRow()
+            // isHasTotalsRow() only checks "totalsRowShown" attribute which defaults to true
+            // getTotalsRowCount() returns actual count of total rows (0 or 1)
+            return table.getTotalsRowCount() > 0;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
-     * Get the totals row values.
+     * Get the total row values.
      *
      * @param tableObj Ballerina Table object
-     * @return Map of column names to totals values
+     * @return Map of column names to total values
      */
-    public static Object getTotalsRow(BObject tableObj) {
+    public static Object getTotalRow(BObject tableObj) {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
 
             if (table.getTotalsRowCount() == 0) {
-                return DiagnosticLog.error("Table '" + table.getName() + "' does not have a totals row");
+                return DiagnosticLog.error("Table '" + table.getName() + "' does not have a total row");
             }
 
             AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
@@ -570,18 +650,32 @@ public final class TableHandle {
      * Resize the table to a new range.
      *
      * @param tableObj Ballerina Table object
-     * @param newRange New CellRange
+     * @param newRange New range — a CellRange record or an A1-notation string
      * @return null on success, error on failure
      */
-    public static Object resize(BObject tableObj, BMap<BString, Object> newRange) {
+    public static Object resize(BObject tableObj, Object newRange) {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
 
-            int firstRow = ((Long) newRange.get(StringUtils.fromString("firstRowIndex"))).intValue();
-            int lastRow = ((Long) newRange.get(StringUtils.fromString("lastRowIndex"))).intValue();
-            int firstCol = ((Long) newRange.get(StringUtils.fromString("firstColumnIndex"))).intValue();
-            int lastCol = ((Long) newRange.get(StringUtils.fromString("lastColumnIndex"))).intValue();
+            int firstRow;
+            int lastRow;
+            int firstCol;
+            int lastCol;
+            if (newRange instanceof BString a1) {
+                AreaReference area = new AreaReference(a1.getValue(), SpreadsheetVersion.EXCEL2007);
+                firstRow = area.getFirstCell().getRow();
+                lastRow = area.getLastCell().getRow();
+                firstCol = area.getFirstCell().getCol();
+                lastCol = area.getLastCell().getCol();
+            } else {
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> rangeRecord = (BMap<BString, Object>) newRange;
+                firstRow = ((Long) rangeRecord.get(StringUtils.fromString("firstRowIndex"))).intValue();
+                lastRow = ((Long) rangeRecord.get(StringUtils.fromString("lastRowIndex"))).intValue();
+                firstCol = ((Long) rangeRecord.get(StringUtils.fromString("firstColumnIndex"))).intValue();
+                lastCol = ((Long) rangeRecord.get(StringUtils.fromString("lastColumnIndex"))).intValue();
+            }
 
             // Validate range
             if (firstRow >= lastRow) {

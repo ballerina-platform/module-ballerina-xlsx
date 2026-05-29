@@ -86,7 +86,7 @@ check wb.close();
 `Workbook` construction comes in three flavours:
 
 ```ballerina
-xlsx:Workbook wb1 = check new;                              // empty in-memory workbook (saveAs required to persist)
+xlsx:Workbook wb1 = new;                                    // empty in-memory workbook (saveAs required to persist)
 xlsx:Workbook wb2 = check xlsx:fromFile("existing.xlsx");   // open an existing file (errors if missing)
 xlsx:Workbook wb3 = check xlsx:fromBytes(sourceBytes);      // open from a byte array (e.g., SFTP / HTTP body)
 ```
@@ -128,8 +128,8 @@ xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 xlsx:Table empTable = check wb.getTable("EmployeeTable");
 
 Employee[] employees = check empTable.getRows();
-if empTable.hasTotalsRow() {
-    map<anydata> totals = check empTable.getTotalsRow();
+if check empTable.hasTotalRow() {
+    map<xlsx:CellValue?> totals = check empTable.getTotalRow();
     // ...
 }
 check empTable.putRows([...employees, ...newEmployees]);

@@ -73,7 +73,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // multi_sheet.xlsx - Multiple sheets for sheet selection tests
     // -------------------------------------------------------------------------
-    Workbook wb = check new;
+    Workbook wb = new;
 
     Sheet sheet1 = check wb.createSheet("Sheet1");
     string[][] sheet1Data = [["A1", "B1"], ["A2", "B2"]];
@@ -108,7 +108,7 @@ function setupTestData() returns error? {
     // write path treats "="-prefixed strings as text (no formula authoring).
     // The cached formula result defaults to "0" because POI doesn't evaluate.
     // -------------------------------------------------------------------------
-    Workbook wbFormula = check new;
+    Workbook wbFormula = new;
     Sheet sheetFormula = check wbFormula.createSheet("Formulas");
     check sheetFormula.setCell(0, 0, "A");
     check sheetFormula.setCell(0, 1, "B");
@@ -135,7 +135,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // edge_empty_sheet.xlsx - Empty sheet for edge case testing
     // -------------------------------------------------------------------------
-    Workbook wbEmpty = check new;
+    Workbook wbEmpty = new;
     _ = check wbEmpty.createSheet("EmptySheet");
     check wbEmpty.saveAs(TEST_DATA_DIR + "edge_empty_sheet.xlsx");
     check wbEmpty.close();
@@ -149,7 +149,7 @@ function setupTestData() returns error? {
     // -------------------------------------------------------------------------
     // edge_empty_rows.xlsx - Data with empty rows in between
     // -------------------------------------------------------------------------
-    Workbook wbGaps = check new;
+    Workbook wbGaps = new;
     Sheet sheetGaps = check wbGaps.createSheet("DataWithGaps");
     // Manually write rows with gaps using putRows at specific positions
     // Row 0: headers, Row 1: data, Row 2: empty, Row 3: data, Row 4: empty, Row 5: data
@@ -232,7 +232,7 @@ function setupTestData() returns error? {
     // The fixture only proves correctness if the parser routes through the
     // 1904 branch.
     // -------------------------------------------------------------------------
-    Workbook wb1904 = check new;
+    Workbook wb1904 = new;
     check setDate1904Native(wb1904, true);
     Sheet sheet1904 = check wb1904.createSheet("Dates");
     check sheet1904.setCell(0, 0, 44708);

@@ -89,9 +89,13 @@ public final class SheetHandle {
      * @param sheetObj Ballerina Sheet object
      * @return Sheet name
      */
-    public static BString getName(BObject sheetObj) {
-        Sheet sheet = getSheet(sheetObj);
-        return StringUtils.fromString(sheet.getSheetName());
+    public static Object getName(BObject sheetObj) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            return StringUtils.fromString(sheet.getSheetName());
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -100,10 +104,14 @@ public final class SheetHandle {
      * @param sheetObj Ballerina Sheet object
      * @return Used range string (e.g., "A1:D50")
      */
-    public static BString getUsedRange(BObject sheetObj) {
-        Sheet sheet = getSheet(sheetObj);
-        CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
-        return StringUtils.fromString(UsedRangeDetector.toA1Notation(range));
+    public static Object getUsedRange(BObject sheetObj) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
+            return StringUtils.fromString(UsedRangeDetector.toA1Notation(range));
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -113,22 +121,26 @@ public final class SheetHandle {
      * @return CellRange record with 0-based indices, or null if sheet is empty
      */
     public static Object getUsedCellRange(BObject sheetObj) {
-        Sheet sheet = getSheet(sheetObj);
-        CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
 
-        if (range == null) {
-            return null;
+            if (range == null) {
+                return null;
+            }
+
+            // Create CellRange record using the module's record type
+            BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
+                    ModuleUtils.getModule(), "CellRange");
+            cellRange.put(StringUtils.fromString("firstRowIndex"), (long) range.getFirstRow());
+            cellRange.put(StringUtils.fromString("lastRowIndex"), (long) range.getLastRow());
+            cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) range.getFirstColumn());
+            cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) range.getLastColumn());
+
+            return cellRange;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         }
-
-        // Create CellRange record using the module's record type
-        BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                ModuleUtils.getModule(), "CellRange");
-        cellRange.put(StringUtils.fromString("firstRowIndex"), (long) range.getFirstRow());
-        cellRange.put(StringUtils.fromString("lastRowIndex"), (long) range.getLastRow());
-        cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) range.getFirstColumn());
-        cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) range.getLastColumn());
-
-        return cellRange;
     }
 
     /**
@@ -137,10 +149,14 @@ public final class SheetHandle {
      * @param sheetObj Ballerina Sheet object
      * @return Number of rows with data
      */
-    public static long getRowCount(BObject sheetObj) {
-        Sheet sheet = getSheet(sheetObj);
-        CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
-        return UsedRangeDetector.getRowCount(range);
+    public static Object getRowCount(BObject sheetObj) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
+            return (long) UsedRangeDetector.getRowCount(range);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -149,10 +165,14 @@ public final class SheetHandle {
      * @param sheetObj Ballerina Sheet object
      * @return Number of columns with data
      */
-    public static long getColumnCount(BObject sheetObj) {
-        Sheet sheet = getSheet(sheetObj);
-        CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
-        return UsedRangeDetector.getColumnCount(range);
+    public static Object getColumnCount(BObject sheetObj) {
+        try {
+            Sheet sheet = getSheet(sheetObj);
+            CellRangeAddress range = UsedRangeDetector.detectUsedRange(sheet);
+            return (long) UsedRangeDetector.getColumnCount(range);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -1089,11 +1109,13 @@ public final class SheetHandle {
             int startRow = (int) startRowIndex;
             int startCol = (int) startColumnIndex;
 
-            // Get dimensions from data
-            int rowCount = (int) data.getLength() + 1; // +1 for header
+            // Get dimensions from data. Record/map rows generate a header row, so the
+            // table spans data rows + 1. A string[][] already carries its header as the
+            // first row, so its height is exactly the supplied row count.
             int colCount = 1; // Default
+            boolean arrayData = false;
 
-            // Determine column count from first record
+            // Determine column count and row shape from the first row
             if (data.getLength() > 0) {
                 Object firstItem = data.get(0);
                 if (firstItem instanceof BMap) {
@@ -1101,9 +1123,12 @@ public final class SheetHandle {
                     BMap<BString, Object> record = (BMap<BString, Object>) firstItem;
                     colCount = record.getKeys().length;
                 } else if (firstItem instanceof BArray) {
+                    arrayData = true;
                     colCount = (int) ((BArray) firstItem).getLength();
                 }
             }
+
+            int rowCount = arrayData ? (int) data.getLength() : (int) data.getLength() + 1;
 
             int lastRow = startRow + rowCount - 1;
             int lastCol = startCol + colCount - 1;

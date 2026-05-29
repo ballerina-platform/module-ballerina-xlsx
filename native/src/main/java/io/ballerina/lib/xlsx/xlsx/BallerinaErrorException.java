@@ -28,7 +28,7 @@ import io.ballerina.runtime.api.values.BError;
  * and structured details (sheetName, cellAddress, rowNumber, columnNumber).
  * </p>
  *
- * @since 1.0.0
+ * @since 0.9.0
  */
 public class BallerinaErrorException extends RuntimeException {
 

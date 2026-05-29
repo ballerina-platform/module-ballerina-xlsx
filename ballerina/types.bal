@@ -123,22 +123,23 @@ public type RowWriteOptions record {|
     int startRowIndex = 0;
 |};
 
-# A single row in a sheet — the atomic data unit. A row is one of three shapes:
-# - `record{}` - Typed record (field names map to column headers; use `@xlsx:Name` for non-matching names)
-# - `map<anydata>` - Dynamic map (keys are column headers)
+# A single row in a sheet — the atomic data unit. A row is one of two shapes:
+# - `map<anydata>` - Dynamic map (keys are column headers). A typed `record{}` also
+#   binds here, since an open record is a subtype of `map<anydata>`; use `@xlsx:Name`
+#   for field names that differ from the column headers.
 # - `string[]` - Raw cell text in column order
-public type Row record {} | map<anydata> | string[];
+public type Row map<anydata> | string[];
 
-# Value types supported as XLSX cell content.
+# A populated XLSX cell value.
 #
-# Used as the typedesc bound for column reads (`Sheet.getColumn`). A cell in
-# an XLSX file can hold a string, a number (int / float / decimal), a boolean,
-# or a date/time. This union encodes that contract honestly at the type level —
-# users can't ask for unsupported types like `xml` or `byte[]` from a cell and
-# get a runtime error; the type system rejects it at compile time.
+# A cell in an XLSX file can hold a string, a number (int / float / decimal), a
+# boolean, or a date/time. This union encodes that contract honestly at the type
+# level — users can't ask for unsupported types like `xml` or `byte[]` from a cell
+# and get a runtime error; the type system rejects it at compile time.
 #
-# Nilable variants (`int?`, `string?`, etc.) are supported via Ballerina's
-# normal subtyping — `int?` is `int|()` and `()` is in `anydata`.
+# `CellValue` is the non-nil value type. Where a cell may be blank, the nilable
+# form `CellValue?` is used — `Sheet.getCell`, `Sheet.getColumn`, the cell setters,
+# and `Table.getTotalRow` — with `()` representing an empty cell.
 public type CellValue string|int|float|decimal|boolean|time:Date|time:Civil|time:TimeOfDay;
 
 // =============================================================================

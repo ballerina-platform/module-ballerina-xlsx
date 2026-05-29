@@ -185,22 +185,22 @@ public final class WorkbookHandle {
     }
 
     /**
-     * Open a workbook directly from a file path.
+     * Open a workbook from a file path and vend it as a Ballerina Workbook.
      *
-     * @param workbookObj Ballerina Workbook object
-     * @param filePath    Path to the XLSX file
-     * @return null on success, error on failure
+     * @param filePath Path to the XLSX file
+     * @return the Workbook object on success, error on failure
      */
-    public static Object openWorkbookFromPath(BObject workbookObj, BString filePath) {
+    public static Object openWorkbookFromPath(BString filePath) {
         try (FileInputStream fis = new FileInputStream(filePath.getValue())) {
             Workbook workbook = WorkbookFactory.create(fis);
             if (workbook == null) {
                 return DiagnosticLog.error("Failed to create workbook from file: " + filePath.getValue());
             }
+            BObject workbookObj = createBallerinaWorkbook();
             workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
             workbookObj.addNativeData(SOURCE_PATH_KEY, filePath.getValue());
             registerForCleanup(workbookObj, workbook);
-            return null;
+            return workbookObj;
         } catch (FileNotFoundException e) {
             return DiagnosticLog.fileNotFoundError("Failed to open workbook: " + filePath.getValue(), e);
         } catch (IOException e) {
@@ -213,22 +213,22 @@ public final class WorkbookHandle {
     }
 
     /**
-     * Open a workbook from a byte array (no associated source path).
+     * Open a workbook from a byte array (no associated source path) and vend it as a Workbook.
      *
-     * @param workbookObj Ballerina Workbook object
-     * @param bytes       XLSX content as a byte array
-     * @return null on success, error on failure
+     * @param bytes XLSX content as a byte array
+     * @return the Workbook object on success, error on failure
      */
-    public static Object openWorkbookFromBytes(BObject workbookObj, BArray bytes) {
+    public static Object openWorkbookFromBytes(BArray bytes) {
         byte[] raw = bytes.getBytes();
         try (ByteArrayInputStream bis = new ByteArrayInputStream(raw)) {
             Workbook workbook = WorkbookFactory.create(bis);
             if (workbook == null) {
                 return DiagnosticLog.error("Failed to create workbook from byte array");
             }
+            BObject workbookObj = createBallerinaWorkbook();
             workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
             registerForCleanup(workbookObj, workbook);
-            return null;
+            return workbookObj;
         } catch (IOException e) {
             return DiagnosticLog.error("Failed to parse workbook bytes: " + e.getMessage(), e);
         } catch (Exception e) {
@@ -237,20 +237,14 @@ public final class WorkbookHandle {
     }
 
     /**
-     * Create a new empty workbook.
+     * Create a new empty workbook on the given Ballerina Workbook object.
      *
      * @param workbookObj Ballerina Workbook object
-     * @return null on success, error on failure
      */
-    public static Object createNewWorkbook(BObject workbookObj) {
-        try {
-            Workbook workbook = new XSSFWorkbook();
-            workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
-            registerForCleanup(workbookObj, workbook);
-            return null;
-        } catch (Exception e) {
-            return DiagnosticLog.error("Error creating workbook: " + e.getMessage(), e);
-        }
+    public static void createNewWorkbook(BObject workbookObj) {
+        Workbook workbook = new XSSFWorkbook();
+        workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
+        registerForCleanup(workbookObj, workbook);
     }
 
     /**
@@ -259,16 +253,20 @@ public final class WorkbookHandle {
      * @param workbookObj Ballerina Workbook object
      * @return Array of sheet names
      */
-    public static BArray getSheetNames(BObject workbookObj) {
-        Workbook workbook = getWorkbook(workbookObj);
-        int sheetCount = workbook.getNumberOfSheets();
+    public static Object getSheetNames(BObject workbookObj) {
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            int sheetCount = workbook.getNumberOfSheets();
 
-        BString[] names = new BString[sheetCount];
-        for (int i = 0; i < sheetCount; i++) {
-            names[i] = StringUtils.fromString(workbook.getSheetName(i));
+            BString[] names = new BString[sheetCount];
+            for (int i = 0; i < sheetCount; i++) {
+                names[i] = StringUtils.fromString(workbook.getSheetName(i));
+            }
+
+            return ValueCreator.createArrayValue(names);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         }
-
-        return ValueCreator.createArrayValue(names);
     }
 
     /**
@@ -277,9 +275,13 @@ public final class WorkbookHandle {
      * @param workbookObj Ballerina Workbook object
      * @return Sheet count
      */
-    public static long getSheetCount(BObject workbookObj) {
-        Workbook workbook = getWorkbook(workbookObj);
-        return workbook.getNumberOfSheets();
+    public static Object getSheetCount(BObject workbookObj) {
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            return (long) workbook.getNumberOfSheets();
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -289,9 +291,13 @@ public final class WorkbookHandle {
      * @param name        Sheet name
      * @return true if the sheet exists, false otherwise
      */
-    public static boolean hasSheet(BObject workbookObj, BString name) {
-        Workbook workbook = getWorkbook(workbookObj);
-        return findSheetIndexCaseInsensitive(workbook, name.getValue()) != -1;
+    public static Object hasSheet(BObject workbookObj, BString name) {
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            return findSheetIndexCaseInsensitive(workbook, name.getValue()) != -1;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -302,14 +308,18 @@ public final class WorkbookHandle {
      * @return Sheet BObject on success, error if not found
      */
     public static Object getSheet(BObject workbookObj, BString name) {
-        Workbook workbook = getWorkbook(workbookObj);
-        String sheetName = name.getValue();
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            String sheetName = name.getValue();
 
-        int idx = findSheetIndexCaseInsensitive(workbook, sheetName);
-        if (idx == -1) {
-            return DiagnosticLog.sheetNotFoundError(sheetName);
+            int idx = findSheetIndexCaseInsensitive(workbook, sheetName);
+            if (idx == -1) {
+                return DiagnosticLog.sheetNotFoundError(sheetName);
+            }
+            return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         }
-        return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
     }
 
     /**
@@ -320,13 +330,17 @@ public final class WorkbookHandle {
      * @return Sheet BObject on success, error if index out of range
      */
     public static Object getSheetByIndex(BObject workbookObj, long index) {
-        Workbook workbook = getWorkbook(workbookObj);
-        int idx = (int) index;
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            int idx = (int) index;
 
-        if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
-            return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
+                return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            }
+            return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         }
-        return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
     }
 
     /**
@@ -337,10 +351,10 @@ public final class WorkbookHandle {
      * @return Sheet BObject on success, error on failure
      */
     public static Object createSheet(BObject workbookObj, BString name) {
-        Workbook workbook = getWorkbook(workbookObj);
-        String sheetName = name.getValue();
-
         try {
+            Workbook workbook = getWorkbook(workbookObj);
+            String sheetName = name.getValue();
+
             validateSheetName(sheetName);
 
             // Check if sheet already exists (case-insensitive, matching Excel semantics)
@@ -482,22 +496,26 @@ public final class WorkbookHandle {
      * @return null on success, error if sheet not found
      */
     public static Object deleteSheet(BObject workbookObj, BString name) {
-        Workbook workbook = getWorkbook(workbookObj);
-        String sheetName = name.getValue();
-        int index = findSheetIndexCaseInsensitive(workbook, sheetName);
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            String sheetName = name.getValue();
+            int index = findSheetIndexCaseInsensitive(workbook, sheetName);
 
-        if (index == -1) {
-            return DiagnosticLog.sheetNotFoundError(sheetName);
-        }
-        if (workbook.getNumberOfSheets() == 1) {
-            return DiagnosticLog.error(
-                    "Cannot delete the last sheet — Excel requires at least one sheet");
-        }
+            if (index == -1) {
+                return DiagnosticLog.sheetNotFoundError(sheetName);
+            }
+            if (workbook.getNumberOfSheets() == 1) {
+                return DiagnosticLog.error(
+                        "Cannot delete the last sheet — Excel requires at least one sheet");
+            }
 
-        Sheet doomed = workbook.getSheetAt(index);
-        invalidateHandlesForSheet(workbookObj, doomed);
-        workbook.removeSheetAt(index);
-        return null;
+            Sheet doomed = workbook.getSheetAt(index);
+            invalidateHandlesForSheet(workbookObj, doomed);
+            workbook.removeSheetAt(index);
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -508,21 +526,25 @@ public final class WorkbookHandle {
      * @return null on success, error if index out of range
      */
     public static Object deleteSheetByIndex(BObject workbookObj, long index) {
-        Workbook workbook = getWorkbook(workbookObj);
-        int idx = (int) index;
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
+            int idx = (int) index;
 
-        if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
-            return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
-        }
-        if (workbook.getNumberOfSheets() == 1) {
-            return DiagnosticLog.error(
-                    "Cannot delete the last sheet — Excel requires at least one sheet");
-        }
+            if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
+                return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            }
+            if (workbook.getNumberOfSheets() == 1) {
+                return DiagnosticLog.error(
+                        "Cannot delete the last sheet — Excel requires at least one sheet");
+            }
 
-        Sheet doomed = workbook.getSheetAt(idx);
-        invalidateHandlesForSheet(workbookObj, doomed);
-        workbook.removeSheetAt(idx);
-        return null;
+            Sheet doomed = workbook.getSheetAt(idx);
+            invalidateHandlesForSheet(workbookObj, doomed);
+            workbook.removeSheetAt(idx);
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -716,28 +738,32 @@ public final class WorkbookHandle {
      * @return Ballerina Table object or error
      */
     public static Object getTable(BObject workbookObj, BString name) {
-        Workbook workbook = getWorkbook(workbookObj);
+        try {
+            Workbook workbook = getWorkbook(workbookObj);
 
-        if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
-            return DiagnosticLog.error("Tables are only supported in XLSX format");
-        }
+            if (!(workbook instanceof org.apache.poi.xssf.usermodel.XSSFWorkbook)) {
+                return DiagnosticLog.error("Tables are only supported in XLSX format");
+            }
 
-        org.apache.poi.xssf.usermodel.XSSFWorkbook xssfWorkbook =
-                (org.apache.poi.xssf.usermodel.XSSFWorkbook) workbook;
-        String tableName = name.getValue();
+            org.apache.poi.xssf.usermodel.XSSFWorkbook xssfWorkbook =
+                    (org.apache.poi.xssf.usermodel.XSSFWorkbook) workbook;
+            String tableName = name.getValue();
 
-        // Search all sheets for the table
-        for (int i = 0; i < xssfWorkbook.getNumberOfSheets(); i++) {
-            org.apache.poi.xssf.usermodel.XSSFSheet sheet =
-                    (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
-            for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
-                if (tableName.equals(table.getName()) || tableName.equals(table.getDisplayName())) {
-                    return createBallerinaTable(workbookObj, table, sheet);
+            // Search all sheets for the table
+            for (int i = 0; i < xssfWorkbook.getNumberOfSheets(); i++) {
+                org.apache.poi.xssf.usermodel.XSSFSheet sheet =
+                        (org.apache.poi.xssf.usermodel.XSSFSheet) xssfWorkbook.getSheetAt(i);
+                for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
+                    if (tableName.equals(table.getName()) || tableName.equals(table.getDisplayName())) {
+                        return createBallerinaTable(workbookObj, table, sheet);
+                    }
                 }
             }
-        }
 
-        return DiagnosticLog.tableNotFoundError(tableName);
+            return DiagnosticLog.tableNotFoundError(tableName);
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        }
     }
 
     /**
@@ -814,10 +840,37 @@ public final class WorkbookHandle {
     }
 
     /**
+     * Vend an empty Workbook BObject for the loading factories. Its `init` allocates a
+     * transient empty POI workbook; we dispose that here so a freshly-loaded workbook can
+     * take the native-data slot without orphaning the throwaway one. Mirrors
+     * {@link #createBallerinaSheet}.
+     */
+    private static BObject createBallerinaWorkbook() {
+        BObject workbookObj = ValueCreator.createObjectValue(
+                io.ballerina.lib.xlsx.utils.ModuleUtils.getModule(),
+                io.ballerina.lib.xlsx.utils.XlsxConstants.WORKBOOK_TYPE);
+        Workbook transientEmpty = (Workbook) workbookObj.getNativeData(WORKBOOK_NATIVE_KEY);
+        if (transientEmpty != null) {
+            unregisterFromCleanup(workbookObj, transientEmpty);
+            try {
+                transientEmpty.close();
+            } catch (IOException ignored) {
+                // An empty in-memory workbook holds no real resources; close failure is moot.
+            }
+        }
+        return workbookObj;
+    }
+
+    /**
      * Get the native Workbook from Ballerina object.
      */
     static Workbook getWorkbook(BObject workbookObj) {
-        return (Workbook) workbookObj.getNativeData(WORKBOOK_NATIVE_KEY);
+        Workbook workbook = (Workbook) workbookObj.getNativeData(WORKBOOK_NATIVE_KEY);
+        if (workbook == null) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Workbook handle is no longer valid. The workbook may have been closed."));
+        }
+        return workbook;
     }
 
     /**

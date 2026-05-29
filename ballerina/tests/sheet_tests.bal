@@ -61,6 +61,22 @@ function testSheetGetColumnMissingHeader() returns error? {
     check wb.close();
 }
 
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnNilableWithBlank() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    // Header at row 0; data rows 1-3, with row 2's cell intentionally left blank.
+    check sheet.setCell(0, 0, "name");
+    check sheet.setCell(1, 0, "Alice");
+    check sheet.setCell(3, 0, "Charlie");
+    string?[] names = check sheet.getColumn("name");
+    test:assertEquals(names.length(), 3, "Should read 3 data rows");
+    test:assertEquals(names[0], "Alice");
+    test:assertTrue(names[1] is (), "Blank cell should read as nil");
+    test:assertEquals(names[2], "Charlie");
+    check wb.close();
+}
+
 // =============================================================================
 // getCell
 // =============================================================================
@@ -81,7 +97,7 @@ function testSheetGetCell() returns error? {
 @test:Config {groups: ["sheet"]}
 function testSheetGetCellBlankIsNil() returns error? {
     // Build a sheet with a known blank cell at (5, 5)
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A", "B"], ["1", "2"]]);
     anydata blank = check sheet.getCell(5, 5);
@@ -95,7 +111,7 @@ function testSheetGetCellBlankIsNil() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetCell() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.setCell(0, 0, "Header");
     check sheet.setCell(1, 2, 42);
@@ -109,7 +125,7 @@ function testSheetSetCell() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetCellByAddress() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.setCellByAddress("A1", "Header");
     check sheet.setCellByAddress("D5", 42.5d);
@@ -122,7 +138,7 @@ function testSheetSetCellByAddress() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetCellByAddressInvalid() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     Error? result = sheet.setCellByAddress("not_a1_address", "value");
     test:assertTrue(result is Error, "Invalid A1 address should return Error");
@@ -135,7 +151,7 @@ function testSheetSetCellByAddressInvalid() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetRowWithStringArray() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["Name", "Age"], ["Old", "1"]]);
     // Overwrite row 1
@@ -147,7 +163,7 @@ function testSheetSetRowWithStringArray() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetRowWithRecord() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     SheetTestEmployee[] initial = [
         {Name: "Alice", Age: 30, Department: "Eng"},
@@ -165,7 +181,7 @@ function testSheetSetRowWithRecord() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetRowWithRecordRequiresHeaderRow() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     // No header row; setRow with a record should error out
     SheetTestEmployee unmatched = {Name: "Alice", Age: 30, Department: "Eng"};
@@ -180,7 +196,7 @@ function testSheetSetRowWithRecordRequiresHeaderRow() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetColumnByName() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([
         ["Name", "Bonus"],
@@ -198,7 +214,7 @@ function testSheetSetColumnByName() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetSetColumnByIndex() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A", "B"], ["1", "2"], ["3", "4"]]);
     // Replace column 1 starting at the data row
@@ -215,7 +231,7 @@ function testSheetSetColumnByIndex() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetDeleteRowShiftsSubsequentUp() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([
         ["A"],
@@ -235,7 +251,7 @@ function testSheetDeleteRowShiftsSubsequentUp() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetDeleteLastRow() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A"], ["B"], ["C"]]);
     check sheet.deleteRow(2);
@@ -247,7 +263,7 @@ function testSheetDeleteLastRow() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetDeleteRowOutOfRange() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A"], ["B"]]);
     Error? result = sheet.deleteRow(99);
@@ -261,18 +277,18 @@ function testSheetDeleteRowOutOfRange() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetRename() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("OldName");
     check sheet.rename("NewName");
-    test:assertEquals(sheet.getName(), "NewName");
-    test:assertTrue(wb.hasSheet("NewName"));
-    test:assertFalse(wb.hasSheet("OldName"));
+    test:assertEquals(check sheet.getName(), "NewName");
+    test:assertTrue(check wb.hasSheet("NewName"));
+    test:assertFalse(check wb.hasSheet("OldName"));
     check wb.close();
 }
 
 @test:Config {groups: ["sheet"]}
 function testSheetRenameToDuplicate() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     _ = check wb.createSheet("First");
     Sheet second = check wb.createSheet("Second");
     Error? result = second.rename("First");
@@ -289,7 +305,7 @@ function testSheetRenameToDuplicate() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testPutRowsRecordInlineLiteral() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     // Build a record literal in a way that resolves to the closed record type via the
     // declared array type. The inline-literal form forces contextual typing against
@@ -308,7 +324,7 @@ function testPutRowsRecordInlineLiteral() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testPutRowsMapInlineLiteral() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     map<anydata>[] rows = [
         {"Name": "Alice", "Age": 30},
@@ -324,7 +340,7 @@ function testPutRowsMapInlineLiteral() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSetRowMapInlineLiteral() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["Name", "Age"], ["Alice", "1"]]);
     map<anydata> replacement = {"Name": "Charlie", "Age": 99};

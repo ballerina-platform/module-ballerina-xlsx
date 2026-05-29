@@ -1197,7 +1197,7 @@ type NumericHeaderRow record {|
 function testNumericHeaderCellsAccepted() returns error? {
     // Build a sheet with NUMERIC header cells (years written as integers).
     string tempFile = getTempFilePath("numeric_headers");
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.setCell(0, 0, 2025);
     check sheet.setCell(0, 1, 2026);
@@ -1241,7 +1241,7 @@ function testFractionalStringToIntErrors() returns error? {
 @test:Config {groups: ["parseSheet", "error"]}
 function testFractionalNumericToIntErrors() returns error? {
     string tempFile = getTempFilePath("fractional_int_numeric");
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.setCell(0, 0, "n");
     check sheet.setCell(1, 0, 3.7d);

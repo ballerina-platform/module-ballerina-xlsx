@@ -53,7 +53,7 @@ function setupTableTestData() returns error? {
     // tables_test.xlsx - Excel file with tables
     // -------------------------------------------------------------------------
     // Note: We need to create tables programmatically using the Workbook API
-    Workbook wb = check new;
+    Workbook wb = new;
 
     // Create a sheet and add some data
     Sheet sheet1 = check wb.createSheet("Employees");
@@ -201,7 +201,7 @@ function testWorkbookGetTable() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
 
     Table empTable = check wb.getTable("EmployeeTable");
-    test:assertEquals(empTable.getName(), "EmployeeTable", "Table name should match");
+    test:assertEquals(check empTable.getName(), "EmployeeTable", "Table name should match");
 
     check wb.close();
 }
@@ -212,7 +212,7 @@ function testWorkbookGetTable() returns error? {
 function testWorkbookGetTableNotFound() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
 
-    Table|TableNotFoundError result = wb.getTable("NonExistentTable");
+    Table|Error result = wb.getTable("NonExistentTable");
     test:assertTrue(result is TableNotFoundError, "Should return TableNotFoundError");
 
     check wb.close();
@@ -228,7 +228,10 @@ function testWorkbookGetAllTables() returns error? {
     test:assertEquals(tables.length(), 2, "Should have 2 tables");
 
     // Tables could be in any order
-    string[] tableNames = tables.map(t => t.getName());
+    string[] tableNames = [];
+    foreach Table t in tables {
+        tableNames.push(check t.getName());
+    }
     test:assertTrue(tableNames.indexOf("EmployeeTable") != (), "Should contain EmployeeTable");
     test:assertTrue(tableNames.indexOf("ProductTable") != (), "Should contain ProductTable");
 
@@ -247,7 +250,7 @@ function testSheetGetTable() returns error? {
     Sheet sheet = check wb.getSheet("Employees");
 
     Table empTable = check sheet.getTable("EmployeeTable");
-    test:assertEquals(empTable.getName(), "EmployeeTable", "Table name should match");
+    test:assertEquals(check empTable.getName(), "EmployeeTable", "Table name should match");
 
     check wb.close();
 }
@@ -261,7 +264,7 @@ function testSheetGetTables() returns error? {
 
     Table[] tables = check sheet.getTables();
     test:assertEquals(tables.length(), 1, "Employees sheet should have 1 table");
-    test:assertEquals(tables[0].getName(), "EmployeeTable", "Table name should be EmployeeTable");
+    test:assertEquals(check tables[0].getName(), "EmployeeTable", "Table name should be EmployeeTable");
 
     check wb.close();
 }
@@ -270,7 +273,7 @@ function testSheetGetTables() returns error? {
     groups: ["table"]
 }
 function testSheetCreateTable() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // First write some data
@@ -289,8 +292,8 @@ function testSheetCreateTable() returns error? {
         lastColumnIndex: 1
     });
 
-    test:assertEquals(newTable.getName(), "NewTable", "Table name should match");
-    test:assertEquals(newTable.getRowCount(), 2, "Should have 2 data rows");
+    test:assertEquals(check newTable.getName(), "NewTable", "Table name should match");
+    test:assertEquals(check newTable.getRowCount(), 2, "Should have 2 data rows");
 
     check wb.close();
 }
@@ -299,7 +302,7 @@ function testSheetCreateTable() returns error? {
     groups: ["table"]
 }
 function testSheetCreateTableFromData() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     TableEmployee[] employees = [
@@ -309,9 +312,33 @@ function testSheetCreateTableFromData() returns error? {
 
     Table newTable = check sheet.createTableFromData("EmpTable", employees);
 
-    test:assertEquals(newTable.getName(), "EmpTable", "Table name should match");
-    test:assertEquals(newTable.getColumnCount(), 3, "Should have 3 columns");
-    test:assertEquals(newTable.getRowCount(), 2, "Should have 2 data rows");
+    test:assertEquals(check newTable.getName(), "EmpTable", "Table name should match");
+    test:assertEquals(check newTable.getColumnCount(), 3, "Should have 3 columns");
+    test:assertEquals(check newTable.getRowCount(), 2, "Should have 2 data rows");
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testCreateTableFromDataWithStringArray() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("TestSheet");
+
+    // For string[][] the first row is the header. The table height must equal the
+    // supplied row count (3) — header at row 0, data at rows 1-2 — with no phantom
+    // trailing row (regression test for the createTableFromData off-by-one).
+    string[][] data = [
+        ["Col1", "Col2"],
+        ["A", "B"],
+        ["C", "D"]
+    ];
+
+    Table t = check sheet.createTableFromData("StringTable", data);
+    test:assertEquals(check t.getRowCount(), 2, "Should have exactly 2 data rows, no phantom row");
+    CellRange range = check t.getCellRange();
+    test:assertEquals(range.lastRowIndex, 2, "Last row index should equal data height (header 0, data 1-2)");
 
     check wb.close();
 }
@@ -320,7 +347,7 @@ function testSheetCreateTableFromData() returns error? {
     groups: ["table"]
 }
 function testSheetDeleteTable() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // Create data and table
@@ -358,9 +385,9 @@ function testTableIdentityMethods() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    test:assertEquals(empTable.getName(), "EmployeeTable", "getName() should return table name");
-    test:assertEquals(empTable.getDisplayName(), "EmployeeTable", "getDisplayName() should return display name");
-    test:assertEquals(empTable.getSheetName(), "Employees", "getSheetName() should return sheet name");
+    test:assertEquals(check empTable.getName(), "EmployeeTable", "getName() should return table name");
+    test:assertEquals(check empTable.getDisplayName(), "EmployeeTable", "getDisplayName() should return display name");
+    test:assertEquals(check empTable.getSheetName(), "Employees", "getSheetName() should return sheet name");
 
     check wb.close();
 }
@@ -373,17 +400,17 @@ function testTableRangeMethods() returns error? {
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Full range (including header)
-    CellRange fullRange = empTable.getRange();
+    CellRange fullRange = check empTable.getCellRange();
     test:assertEquals(fullRange.firstRowIndex, 0, "Full range starts at row 0");
     test:assertEquals(fullRange.lastRowIndex, 3, "Full range ends at row 3");
 
     // Data range (excluding header)
-    CellRange dataRange = empTable.getDataRange();
+    CellRange dataRange = check empTable.getDataCellRange();
     test:assertEquals(dataRange.firstRowIndex, 1, "Data range starts at row 1");
     test:assertEquals(dataRange.lastRowIndex, 3, "Data range ends at row 3");
 
-    test:assertEquals(empTable.getRowCount(), 3, "Should have 3 data rows");
-    test:assertEquals(empTable.getColumnCount(), 3, "Should have 3 columns");
+    test:assertEquals(check empTable.getRowCount(), 3, "Should have 3 data rows");
+    test:assertEquals(check empTable.getColumnCount(), 3, "Should have 3 columns");
 
     check wb.close();
 }
@@ -395,7 +422,7 @@ function testTableGetHeaders() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    string[] headers = empTable.getHeaders();
+    string[] headers = check empTable.getHeaders();
     test:assertEquals(headers.length(), 3, "Should have 3 headers");
     test:assertEquals(headers[0], "Name", "First header should be Name");
     test:assertEquals(headers[1], "Age", "Second header should be Age");
@@ -439,7 +466,7 @@ function testTableGetRow() returns error? {
     groups: ["table"]
 }
 function testTablePutRows() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Test");
 
     // Create initial data and table
@@ -478,7 +505,7 @@ function testTablePutRows() returns error? {
     groups: ["table"]
 }
 function testTableRename() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Test");
 
     // Create a table
@@ -491,11 +518,11 @@ function testTableRename() returns error? {
         lastColumnIndex: 1
     });
 
-    test:assertEquals(t.getName(), "OldName", "Initial name should be OldName");
+    test:assertEquals(check t.getName(), "OldName", "Initial name should be OldName");
 
     // Rename
     check t.rename("NewName");
-    test:assertEquals(t.getName(), "NewName", "Name should be NewName after rename");
+    test:assertEquals(check t.getName(), "NewName", "Name should be NewName after rename");
 
     check wb.close();
 }
@@ -504,7 +531,7 @@ function testTableRename() returns error? {
     groups: ["table"]
 }
 function testTableResize() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Test");
 
     // Create initial data (more than the table will initially cover)
@@ -524,7 +551,7 @@ function testTableResize() returns error? {
         lastColumnIndex: 1
     });
 
-    test:assertEquals(t.getRowCount(), 1, "Initial row count should be 1");
+    test:assertEquals(check t.getRowCount(), 1, "Initial row count should be 1");
 
     // Resize to include more data
     check t.resize({
@@ -534,8 +561,8 @@ function testTableResize() returns error? {
         lastColumnIndex: 2
     });
 
-    test:assertEquals(t.getRowCount(), 3, "Row count should be 3 after resize");
-    test:assertEquals(t.getColumnCount(), 3, "Column count should be 3 after resize");
+    test:assertEquals(check t.getRowCount(), 3, "Row count should be 3 after resize");
+    test:assertEquals(check t.getColumnCount(), 3, "Column count should be 3 after resize");
 
     check wb.close();
 }
@@ -550,7 +577,7 @@ function testTableResize() returns error? {
 function testTableNotFoundErrorType() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
 
-    Table|TableNotFoundError result = wb.getTable("NonExistent");
+    Table|Error result = wb.getTable("NonExistent");
     test:assertTrue(result is TableNotFoundError, "Should be TableNotFoundError");
 
     if result is TableNotFoundError {
@@ -568,7 +595,7 @@ function testSheetTableNotFoundError() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Sheet sheet = check wb.getSheet("Employees");
 
-    Table|TableNotFoundError result = sheet.getTable("NonExistent");
+    Table|Error result = sheet.getTable("NonExistent");
     test:assertTrue(result is TableNotFoundError, "Should be TableNotFoundError");
 
     check wb.close();
@@ -578,10 +605,10 @@ function testSheetTableNotFoundError() returns error? {
     groups: ["table"]
 }
 function testDeleteNonExistentTable() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Test");
 
-    TableNotFoundError? result = sheet.deleteTable("NonExistent");
+    Error? result = sheet.deleteTable("NonExistent");
     test:assertTrue(result is TableNotFoundError, "Should return TableNotFoundError");
 
     check wb.close();
@@ -599,7 +626,7 @@ function testTableHasTotalsRowFalse() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    test:assertFalse(empTable.hasTotalsRow(), "Table should not have totals row");
+    test:assertFalse(check empTable.hasTotalRow(), "Table should not have totals row");
 
     check wb.close();
 }
@@ -612,7 +639,7 @@ function testTableGetTotalsRowError() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    map<anydata>|Error result = empTable.getTotalsRow();
+    map<anydata>|Error result = empTable.getTotalRow();
     test:assertTrue(result is Error, "Should return error when table has no totals row");
 
     check wb.close();
@@ -626,7 +653,7 @@ function testTableGetTotalsRowError() returns error? {
     groups: ["table"]
 }
 function testTableOverlapError() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // Create initial data
@@ -662,7 +689,7 @@ function testTableOverlapError() returns error? {
     groups: ["table"]
 }
 function testInvalidTableRangeError() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
     // Try to resize a table to invalid range (firstRow > lastRow would be caught by CellRange validation)
@@ -692,7 +719,7 @@ function testInvalidTableRangeError() returns error? {
         test:assertTrue(true, "Correctly returned InvalidTableRangeError");
     } else {
         // If it didn't fail, verify the table is in a valid state
-        test:assertTrue(t.getRowCount() >= 0, "Table should have valid row count");
+        test:assertTrue(check t.getRowCount() >= 0, "Table should have valid row count");
     }
 
     check wb.close();
@@ -724,7 +751,7 @@ function testWriteTableNotFound() returns error? {
     string tempFile = TEST_DATA_DIR + "temp_table_write_notfound.xlsx";
 
     // Create a file without the target table
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Sheet1");
     string[][] data = [["A", "B"], ["1", "2"]];
     check sheet.putRows(data);
@@ -851,7 +878,7 @@ function testUseTableAfterCloseReturnsError() returns error? {
 
 @test:Config {groups: ["table"]}
 function testCreateTableInvalidNameWithSpace() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A", "B"], ["1", "2"]]);
     Table|Error result = sheet.createTable("Bad Table", "A1:B2");
@@ -861,7 +888,7 @@ function testCreateTableInvalidNameWithSpace() returns error? {
 
 @test:Config {groups: ["table"]}
 function testCreateTableNameStartsWithDigit() returns error? {
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A", "B"], ["1", "2"]]);
     Table|Error result = sheet.createTable("1Sales", "A1:B2");
@@ -874,7 +901,7 @@ function testCreateTableNameStartsWithDigit() returns error? {
 function testWriteTableFailureDoesNotLeak() returns error? {
     string tempFile = TEST_DATA_DIR + "table_leak_regression.xlsx";
 
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sh = check wb.createSheet("Data");
     check sh.putRows([["msg"], ["init"]]);
     _ = check sh.createTable("Logs", "A1:A2");
@@ -938,7 +965,7 @@ function testCreateTableFromDataAtNonZeroStartColumn() returns error? {
         {name: "Bob", age: 25}
     ];
 
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     _ = check sheet.createTableFromData("OffsetTable", data, 2, 3);
     check wb.saveAs(tempFile);
@@ -948,7 +975,7 @@ function testCreateTableFromDataAtNonZeroStartColumn() returns error? {
     // and that the data cells actually landed there — not at column 0.
     Workbook wb2 = check fromFile(tempFile);
     Table t2 = check wb2.getTable("OffsetTable");
-    CellRange range = t2.getRange();
+    CellRange range = check t2.getCellRange();
     test:assertEquals(range.firstRowIndex, 2);
     test:assertEquals(range.firstColumnIndex, 3);
     test:assertEquals(range.lastColumnIndex, 4);
@@ -986,7 +1013,7 @@ type NameFirstRow record {|
 function testTableWriteResolvesColumnsByHeader() returns error? {
     string tempFile = getTempFilePath("table_header_lookup");
 
-    Workbook wb = check new;
+    Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     // Headers declared in order: name, age.
     check sheet.putRows([["name", "age"], ["seed", "0"]]);

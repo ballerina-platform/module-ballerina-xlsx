@@ -71,7 +71,7 @@ public function main() returns error? {
     ];
 
     // Build the workbook from scratch using the Workbook API.
-    xlsx:Workbook wb = check new;
+    xlsx:Workbook wb = new;
 
     // Orders sheet — wrapped in a real Excel Table via createTableFromData,
     // so the data range is registered as a structured Table on open.
@@ -108,7 +108,7 @@ public function main() returns error? {
     // writes data values starting at row 1 — so we set the header explicitly
     // and feed setColumn the data values only.
     check summarySheet.setCell(0, 3, "% of Total");
-    anydata[] pctValues = [];
+    string[] pctValues = [];
     foreach RegionSummary s in summary {
         decimal pct = (s.totalRevenue * 100d) / grandTotal;
         // Round to 2 decimal places. Ballerina decimal arithmetic preserves
@@ -128,7 +128,7 @@ public function main() returns error? {
     // Reopen the file and inspect it via the Workbook + Table APIs.
     xlsx:Workbook reopened = check xlsx:fromFile(path);
 
-    string[] sheetNames = reopened.getSheetNames();
+    string[] sheetNames = check reopened.getSheetNames();
     string joined = "";
     foreach string n in sheetNames {
         joined = joined == "" ? n : joined + ", " + n;
@@ -139,12 +139,12 @@ public function main() returns error? {
     io:println(string `Workbook contains ${allTables.length()} table(s).`);
 
     xlsx:Table ordersTable = check reopened.getTable("OrdersTable");
-    string[] headers = ordersTable.getHeaders();
+    string[] headers = check ordersTable.getHeaders();
     string headersJoined = "";
     foreach string h in headers {
         headersJoined = headersJoined == "" ? h : headersJoined + " | " + h;
     }
-    io:println(string `Table '${ordersTable.getName()}' columns: ${headersJoined}`);
+    io:println(string `Table '${check ordersTable.getName()}' columns: ${headersJoined}`);
 
     // Read all orders back through the Table API — headers are excluded.
     Order[] readBack = check ordersTable.getRows();

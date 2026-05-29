@@ -96,8 +96,8 @@ xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 xlsx:Table empTable = check wb.getTable("EmployeeTable");
 
 Employee[] employees = check empTable.getRows();
-if empTable.hasTotalsRow() {
-    map<anydata> totals = check empTable.getTotalsRow();
+if check empTable.hasTotalRow() {
+    map<xlsx:CellValue?> totals = check empTable.getTotalRow();
     // ...
 }
 

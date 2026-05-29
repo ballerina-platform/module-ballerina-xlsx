@@ -149,11 +149,10 @@ public isolated function writeTable(Row[] data, string path, string tableName,
 #
 # + path - Path to the XLSX file
 # + return - The opened workbook, or an Error if the path is missing or the file is invalid
-public isolated function fromFile(string path) returns Workbook|Error {
-    Workbook wb = check new;
-    check loadFromPath(wb, path);
-    return wb;
-}
+public isolated function fromFile(string path) returns Workbook|Error = @java:Method {
+    name: "openWorkbookFromPath",
+    'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
+} external;
 
 # Opens an XLSX workbook from an in-memory byte array.
 #
@@ -167,18 +166,7 @@ public isolated function fromFile(string path) returns Workbook|Error {
 #
 # + sourceBytes - XLSX content as a byte array
 # + return - The opened workbook, or an Error if the bytes are invalid
-public isolated function fromBytes(byte[] sourceBytes) returns Workbook|Error {
-    Workbook wb = check new;
-    check loadFromBytes(wb, sourceBytes);
-    return wb;
-}
-
-isolated function loadFromPath(Workbook wb, string path) returns Error? = @java:Method {
-    name: "openWorkbookFromPath",
-    'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
-} external;
-
-isolated function loadFromBytes(Workbook wb, byte[] sourceBytes) returns Error? = @java:Method {
+public isolated function fromBytes(byte[] sourceBytes) returns Workbook|Error = @java:Method {
     name: "openWorkbookFromBytes",
     'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;

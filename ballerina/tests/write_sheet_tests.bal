@@ -110,7 +110,7 @@ function testWriteWithCustomSheetName() returns error? {
 
     // Verify by opening as workbook and checking sheet name
     Workbook wb = check fromFile(tempFile);
-    string[] sheetNames = wb.getSheetNames();
+    string[] sheetNames = check wb.getSheetNames();
     test:assertEquals(sheetNames.length(), 1, "Should have 1 sheet");
     test:assertEquals(sheetNames[0], "MyCustomSheet", "Sheet name should match");
     check wb.close();

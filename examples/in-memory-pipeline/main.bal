@@ -93,7 +93,7 @@ function applyTaxSurcharge(byte[] input, decimal rate) returns byte[]|error {
 
     // Discover the data extent rather than assuming a fixed shape — real
     // partner data rarely fits a hard-coded assumption.
-    xlsx:CellRange? used = sheet.getUsedCellRange();
+    xlsx:CellRange? used = check sheet.getUsedCellRange();
     if used is () {
         return error("Empty sheet — nothing to transform");
     }
@@ -146,7 +146,7 @@ function buildIncomingPayload() returns byte[]|error {
         {itemCode: "SKU-300", description: "Gizmo", amount: 8.25},
         {itemCode: "SKU-400", description: "Sprocket", amount: 125.00}
     ];
-    xlsx:Workbook wb = check new;
+    xlsx:Workbook wb = new;
     xlsx:Sheet sheet = check wb.createSheet("Invoices");
     check sheet.putRows(invoices);
     byte[] bytes = check wb.toBytes();
