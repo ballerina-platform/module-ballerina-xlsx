@@ -15,7 +15,7 @@ observabilityIncluded = false
 graalvmCompatible = true
 
 [[platform.java21.dependency]]
-groupId = "io.ballerina.stdlib"
+groupId = "io.ballerina.lib"
 artifactId = "xlsx-native"
 version = "1.0.0"
 path = "../native/build/libs/xlsx-native-1.0.0-SNAPSHOT.jar"
