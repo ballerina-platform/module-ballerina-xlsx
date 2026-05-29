@@ -26,7 +26,7 @@ import ballerina/log;
 # + err - Optional error object
 # + stackTrace - Optional stack trace
 # + keyValues - Optional key-value pairs for structured logging (e.g., offendingRow)
-isolated function printError(string message, error? err = (), error:StackFrame[]? stackTrace = (),
+isolated function printFailSafeWarning(string message, error? err = (), error:StackFrame[]? stackTrace = (),
         *log:KeyValues keyValues) {
     log:printWarn(message, err, stackTrace, keyValues = keyValues);
 }

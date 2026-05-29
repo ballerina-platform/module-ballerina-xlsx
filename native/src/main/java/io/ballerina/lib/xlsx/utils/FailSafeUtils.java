@@ -49,8 +49,8 @@ import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_WRITE_ERROR;
 import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_WRITE_OPTION;
 import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_WRITE_OVERWRITE;
 import static io.ballerina.lib.xlsx.utils.XlsxConstants.OFFENDING_ROW;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.PRINT_ERROR;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.XLSX_PARSE_ERROR;
+import static io.ballerina.lib.xlsx.utils.XlsxConstants.PRINT_FAILSAFE_WARNING;
+import static io.ballerina.lib.xlsx.utils.XlsxConstants.XLSX_PARSE_WARNING;
 
 /**
  * Utility class for fail-safe error handling and logging in XLSX operations.
@@ -144,11 +144,11 @@ public final class FailSafeUtils {
         if (includeSourceData && offendingRow != null) {
             keyValues.put(OFFENDING_ROW, StringUtils.fromString(offendingRow.trim()));
         }
-        printErrorLogs(environment, exception, keyValues, rowIndex, columnIndex);
+        printFailSafeWarning(environment, exception, keyValues, rowIndex, columnIndex);
     }
 
     /**
-     * Print error logs using Ballerina's log module via the printError function.
+     * Print a fail-safe warning using Ballerina's log module via the printFailSafeWarning function.
      *
      * @param environment The Ballerina environment
      * @param exception   The exception
@@ -156,14 +156,16 @@ public final class FailSafeUtils {
      * @param rowIndex    Row index (0-based)
      * @param columnIndex Column index (0-based)
      */
-    public static void printErrorLogs(Environment environment, Exception exception,
-                                      BMap<BString, Object> keyValues, int rowIndex, int columnIndex) {
+    public static void printFailSafeWarning(Environment environment, Exception exception,
+                                            BMap<BString, Object> keyValues, int rowIndex, int columnIndex) {
         StrandMetadata strandMetadata = new StrandMetadata(true,
-                ModuleUtils.getProperties(PRINT_ERROR));
+                ModuleUtils.getProperties(PRINT_FAILSAFE_WARNING));
         // Convert to 1-based indexing for display
-        String errorMessage = String.format(XLSX_PARSE_ERROR, rowIndex + 1, columnIndex + 1, exception.getMessage());
-        Object[] arguments = new Object[]{StringUtils.fromString(errorMessage), null, null, keyValues};
-        environment.getRuntime().callFunction(ModuleUtils.getModule(), PRINT_ERROR, strandMetadata, arguments);
+        String warningMessage = String.format(
+                XLSX_PARSE_WARNING, rowIndex + 1, columnIndex + 1, exception.getMessage());
+        Object[] arguments = new Object[]{StringUtils.fromString(warningMessage), null, null, keyValues};
+        environment.getRuntime().callFunction(
+                ModuleUtils.getModule(), PRINT_FAILSAFE_WARNING, strandMetadata, arguments);
     }
 
     /**

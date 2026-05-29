@@ -102,10 +102,10 @@ public final class XlsxConstants {
     public static final String FILE_WRITE_OVERWRITE = "OVERWRITE";
 
     // Fail-safe function name
-    public static final String PRINT_ERROR = "printError";
+    public static final String PRINT_FAILSAFE_WARNING = "printFailSafeWarning";
 
     // Fail-safe warning messages
-    public static final String XLSX_PARSE_ERROR = "XLSX parse warning at row %d, column %d: %s";
+    public static final String XLSX_PARSE_WARNING = "XLSX parse warning at row %d, column %d: %s";
     public static final String FILE_IO_ERROR = "Failed to create log file at: %s. Caused by: %s";
     public static final String FILE_OVERWRITE_ERROR = "Failed to overwrite log file at: %s. Caused by: %s";
     public static final String FILE_WRITE_ERROR = "Failed to write log file at: %s. Caused by: %s";
