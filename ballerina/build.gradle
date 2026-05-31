@@ -1,0 +1,138 @@
+/*
+ * Copyright (c) 2026, WSO2 LLC. (http://www.wso2.com).
+ *
+ * WSO2 LLC. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import org.apache.tools.ant.taskdefs.condition.Os
+
+plugins {
+    id 'io.ballerina.plugin'
+}
+
+description = 'Xlsx - Ballerina'
+
+def packageName = "xlsx"
+def packageOrg = "ballerina"
+def tomlVersion = stripBallerinaExtensionVersion("${project.version}")
+def ballerinaTomlFilePlaceHolder = new File("${project.rootDir}/build-config/resources/Ballerina.toml")
+def ballerinaTomlFile = new File("$project.projectDir/Ballerina.toml")
+
+def stripBallerinaExtensionVersion(String extVersion) {
+    if (extVersion.matches(project.ext.timestampedVersionRegex)) {
+        def splitVersion = extVersion.split('-')
+        if (splitVersion.length > 3) {
+            def strippedValues = splitVersion[0..-4]
+            return strippedValues.join('-')
+        } else {
+            return extVersion
+        }
+    } else {
+        return extVersion.replace("${project.ext.snapshotVersion}", "")
+    }
+}
+
+ballerina {
+    packageOrganization = packageOrg
+    module = packageName
+    langVersion = project.ballerinaLangVersion
+    testCoverageParam = "--code-coverage --coverage-format=xml"
+    isConnector = false
+    platform = "java21"
+}
+
+task updateTomlFiles {
+    doLast {
+        def newBallerinaToml = ballerinaTomlFilePlaceHolder.text
+            .replace("@project.version@", project.version)
+            .replace("@toml.version@", tomlVersion)
+            .replace("@poi.version@", project.poiVersion)
+            .replace("@commons.compress.version@", project.commonsCompressVersion)
+            .replace("@commons.collections4.version@", project.commonsCollections4Version)
+            .replace("@xmlbeans.version@", project.xmlbeansVersion)
+            .replace("@sparseBitSet.version@", project.sparseBitSetVersion)
+            .replace("@commons.io.version@", project.commonsIoVersion)
+            .replace("@log4j.version@", project.log4jVersion)
+        ballerinaTomlFile.text = newBallerinaToml
+    }
+}
+
+updateTomlFiles.dependsOn copyStdlibs
+
+task commitTomlFiles {
+    doLast {
+        def filesToCommit = []
+        def ballerinaToml = new File("$project.projectDir/Ballerina.toml")
+        def dependenciesToml = new File("$project.projectDir/Dependencies.toml")
+        
+        if (ballerinaToml.exists()) {
+            filesToCommit.add("Ballerina.toml")
+        }
+        if (dependenciesToml.exists()) {
+            filesToCommit.add("Dependencies.toml")
+        }
+        
+        if (filesToCommit.isEmpty()) {
+            println "No TOML files to commit"
+            return
+        }
+        
+        project.exec {
+            ignoreExitValue true
+            def filesList = filesToCommit.join(" ")
+            if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+                commandLine 'cmd', '/c', "git commit -m \"[Automated] Update the toml files\" ${filesList}"
+            } else {
+                commandLine 'sh', '-c', "git commit -m '[Automated] Update the toml files' ${filesList}"
+            }
+        }
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifact source: createArtifactZip, extension: 'zip'
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/ballerina-platform/module-${packageOrg}-${packageName}")
+            credentials {
+                username = System.getenv("publishUser")
+                password = System.getenv("publishPAT")
+            }
+        }
+    }
+}
+
+clean {
+    delete 'build'
+}
+
+task deleteDependencyTomlFiles {
+    if (project.hasProperty("deleteDependencies")) {
+        delete "${project.projectDir}/Dependencies.toml"
+    }
+}
+
+build.dependsOn ":xlsx-native:build"
+build.dependsOn "generatePomFileForMavenPublication"
+build.dependsOn deleteDependencyTomlFiles
+test.dependsOn ":xlsx-native:build"
+test.dependsOn deleteDependencyTomlFiles
+publishToMavenLocal.dependsOn build
+publish.dependsOn build

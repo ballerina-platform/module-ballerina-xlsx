@@ -1,0 +1,71 @@
+[package]
+distribution = "2201.13.1"
+org = "ballerina"
+name = "xlsx"
+version = "@toml.version@"
+license = ["Apache-2.0"]
+authors = ["Ballerina"]
+keywords = ["xlsx", "excel", "spreadsheet", "data"]
+repository = "https://github.com/ballerina-platform/module-ballerina-xlsx"
+
+[build-options]
+observabilityIncluded = false
+
+[platform.java21]
+graalvmCompatible = true
+
+[[platform.java21.dependency]]
+groupId = "io.ballerina.lib"
+artifactId = "xlsx-native"
+version = "@toml.version@"
+path = "../native/build/libs/xlsx-native-@project.version@.jar"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.poi"
+artifactId = "poi"
+version = "@poi.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.poi"
+artifactId = "poi-ooxml"
+version = "@poi.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.poi"
+artifactId = "poi-ooxml-lite"
+version = "@poi.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.commons"
+artifactId = "commons-compress"
+version = "@commons.compress.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.commons"
+artifactId = "commons-collections4"
+version = "@commons.collections4.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.xmlbeans"
+artifactId = "xmlbeans"
+version = "@xmlbeans.version@"
+
+[[platform.java21.dependency]]
+groupId = "com.zaxxer"
+artifactId = "SparseBitSet"
+version = "@sparseBitSet.version@"
+
+[[platform.java21.dependency]]
+groupId = "commons-io"
+artifactId = "commons-io"
+version = "@commons.io.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.logging.log4j"
+artifactId = "log4j-api"
+version = "@log4j.version@"
+
+[[platform.java21.dependency]]
+groupId = "org.apache.logging.log4j"
+artifactId = "log4j-core"
+version = "@log4j.version@"
