@@ -231,7 +231,7 @@ function testParseWithCustomDataStartRow() returns error? {
     groups: ["parseSheet", "options"]
 }
 function testParsePreservesEmptyRows() returns error? {
-    // v1.0 behavior: every row in the used range produces an entry — empty
+    // Every row in the used range produces an entry — empty
     // rows are NOT filtered. Empty cells are bound by the standard cell-binding
     // path (string[][] → padded empty strings; record → nil for nilable fields).
     string[][] rows = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx");

@@ -45,7 +45,7 @@ function setFormulaCellNative(Workbook wb, string sheetName, int row, int col, s
 function setupTestData() returns error? {
     // Ensure test data directory exists
     if !check file:test(TEST_DATA_DIR, file:EXISTS) {
-        check file:createDir(TEST_DATA_DIR);
+        check file:createDir(TEST_DATA_DIR, file:RECURSIVE);
     }
 
     // -------------------------------------------------------------------------

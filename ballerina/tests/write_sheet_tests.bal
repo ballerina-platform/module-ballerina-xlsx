@@ -698,10 +698,6 @@ function testWriteSheetWithInlineLiteral() returns error? {
     check removeTempFile(tempFile);
 }
 
-// Strings beginning with "=" are written verbatim as text. Pre-v1.0 the writer
-// auto-promoted them to formulas, which crashed on common user text (e.g.
-// "=N/A" -> FormulaParseException) and opened an XLSX injection vector. This
-// test locks in the new behaviour for both string[][] and record inputs.
 @test:Config {groups: ["writeSheet"]}
 function testWriteEqualsPrefixedStringAsText() returns error? {
     string tempFile = getTempFilePath("equals_prefixed_text");

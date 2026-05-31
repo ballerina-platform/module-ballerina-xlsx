@@ -46,7 +46,7 @@ final string[][] EXPECTED_TABLE_STRING_DATA = [
 function setupTableTestData() returns error? {
     // Ensure test data directory exists
     if !check file:test(TEST_DATA_DIR, file:EXISTS) {
-        check file:createDir(TEST_DATA_DIR);
+        check file:createDir(TEST_DATA_DIR, file:RECURSIVE);
     }
 
     // -------------------------------------------------------------------------
