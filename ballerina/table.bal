@@ -162,7 +162,9 @@ public type Table isolated object {
 
     # Get the total row values.
     #
-    # Returns a map where keys are column names and values are the totals.
+    # Returns a map keyed by column name. Each value binds to its natural cell value —
+    # a whole number to `int`, a fractional number to `decimal`, a date/time to an ISO
+    # string — or `()` for a blank total cell.
     #
     # ```ballerina
     # if check table.hasTotalRow() {
@@ -171,8 +173,10 @@ public type Table isolated object {
     # }
     # ```
     #
+    # + t - Result map type descriptor; leave at the default `map<CellValue?>` (the intended
+    #       target). A narrower target (e.g. `map<int>`) only succeeds if every total cell fits it.
     # + return - Map of column names to total values, or error if no total row
-    public isolated function getTotalRow() returns map<CellValue?>|Error;
+    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>) returns t|Error;
 
     # Rename the table.
     #
@@ -255,7 +259,8 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getTotalRow() returns map<CellValue?>|Error = @java:Method {
+    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>)
+            returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 

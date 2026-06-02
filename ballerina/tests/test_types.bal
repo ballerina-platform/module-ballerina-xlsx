@@ -245,22 +245,27 @@ type HeaderlessRecord record {|
 |};
 
 // =============================================================================
-// OPEN RECORD POPULATION TEST TYPES
+// EXTRA-COLUMN CAPTURE TEST TYPES
 // =============================================================================
 
-// Open record that only defines some fields - extra columns should populate rest field
-// Note: Uses { } instead of {| |} to make it an open record
-type OpenEmployee record {
+// Record that only defines some fields, with a CellValue? rest descriptor so columns
+// beyond the declared fields are captured into the rest field. The rest type must be
+// CellValue? (not the open-record `anydata` default) to satisfy the `Row` bound.
+type OpenEmployee record {|
     string name;
     int age;
-    // No 'department' field defined - but it should be populated as extra field
-};
+    // No 'department' field defined - extra columns populate the rest field
+    CellValue?...;
+|};
 
-// Open record with anydata rest field for type flexibility
-type OpenEmployeeAnydata record {
-    string name;
-    int age;
-};
+// Declares only some of natural_types.xlsx's columns; the remaining typed columns
+// (decimalCol, dateCol, datetimeCol) fall to the CellValue? rest field, which must
+// keep their natural Ballerina types rather than collapsing to strings.
+type PartialNaturalRow record {|
+    int intCol;
+    boolean boolCol;
+    CellValue?...;
+|};
 
 // =============================================================================
 // HELPER CONSTANTS

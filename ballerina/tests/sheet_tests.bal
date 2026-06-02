@@ -77,9 +77,49 @@ function testSheetGetColumnNilableWithBlank() returns error? {
     check wb.close();
 }
 
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnBroadCellValue() returns error? {
+    // A CellValue?[] (broad) target must preserve natural types, not collapse to strings.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    CellValue?[] ints = check sheet.getColumn("intCol");
+    test:assertEquals(ints, [42], "Numeric column under CellValue? bound → int");
+    CellValue?[] decimals = check sheet.getColumn("decimalCol");
+    test:assertEquals(decimals, [3.14d], "Fractional column under CellValue? bound → decimal");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnStringFallback() returns error? {
+    // The mirror of the broad case: a pinned string[] target must COLLAPSE genuinely
+    // typed cells to their string forms, not return ints/decimals/dates.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    string[] ints = check sheet.getColumn("intCol");
+    test:assertEquals(ints, ["42"], "Whole-number cell under string[] → \"42\"");
+    string[] decimals = check sheet.getColumn("decimalCol");
+    test:assertEquals(decimals, ["3.14"], "Fractional cell under string[] → \"3.14\"");
+    string[] dates = check sheet.getColumn("dateCol");
+    test:assertEquals(dates, ["2026-05-28"], "Date cell under string[] → ISO string");
+    check wb.close();
+}
+
 // =============================================================================
 // getCell
 // =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetCellNaturalTypes() returns error? {
+    // Genuinely typed cells must bind to their natural Ballerina types via getCell.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    // Row 1 holds the typed data cells (row 0 is the header row).
+    test:assertEquals(check sheet.getCell(1, 0), 42, "Whole number → int");
+    test:assertEquals(check sheet.getCell(1, 1), 3.14d, "Fractional → decimal");
+    test:assertEquals(check sheet.getCell(1, 2), true, "Boolean → boolean");
+    test:assertEquals(check sheet.getCell(1, 3), "2026-05-28", "Date → ISO string");
+    check wb.close();
+}
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetCell() returns error? {
@@ -118,8 +158,8 @@ function testSheetSetCell() returns error? {
     anydata v00 = check sheet.getCell(0, 0);
     anydata v12 = check sheet.getCell(1, 2);
     test:assertEquals(v00, "Header");
-    // Numeric cells with an anydata target come back as decimal.
-    test:assertEquals(v12, 42d);
+    // A whole-number cell binds to its natural type: int.
+    test:assertEquals(v12, 42);
     check wb.close();
 }
 
@@ -326,7 +366,7 @@ function testPutRowsRecordInlineLiteral() returns error? {
 function testPutRowsMapInlineLiteral() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
-    map<anydata>[] rows = [
+    map<CellValue?>[] rows = [
         {"Name": "Alice", "Age": 30},
         {"Name": "Bob", "Age": 25}
     ];
@@ -343,7 +383,7 @@ function testSetRowMapInlineLiteral() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["Name", "Age"], ["Alice", "1"]]);
-    map<anydata> replacement = {"Name": "Charlie", "Age": 99};
+    map<CellValue?> replacement = {"Name": "Charlie", "Age": 99};
     check sheet.setRow(1, replacement);
     string[][] reread = check sheet.getRows();
     test:assertEquals(reread[1][0], "Charlie", "Row 1 Name should be Charlie");

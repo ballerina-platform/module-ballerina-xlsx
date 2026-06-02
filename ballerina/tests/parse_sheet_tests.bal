@@ -199,7 +199,7 @@ function testParseToTypedRecordWithVariousTypes() returns error? {
     groups: ["parseSheet", "types"]
 }
 function testParseToMapArray() returns error? {
-    map<anydata>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
+    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records (excluding header)");
     test:assertEquals(data[0]["Name"], "John", "First record Name should be 'John'");
@@ -508,7 +508,7 @@ function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
     groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldTrue() returns error? {
-    // Test nilAsOptionalField for map<anydata>[] - nil values should be skipped
+    // Test nilAsOptionalField for map<CellValue?>[] - nil values should be skipped
     ParseOptions opts = {
         allowDataProjection: {
             nilAsOptionalField: true,
@@ -518,7 +518,7 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
 
     // edge_empty_rows.xlsx has some empty cells which become nil
     // With nilAsOptionalField=true, nil values should not be added to the map
-    map<anydata>[] data = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
+    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
 
     // Just verify parsing succeeds - actual behavior depends on data content
     test:assertTrue(data.length() >= 0, "Should parse successfully");
@@ -528,7 +528,7 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
     groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldFalse() returns error? {
-    // Test nilAsOptionalField=false for map<anydata>[] - nil values should be included
+    // Test nilAsOptionalField=false for map<CellValue?>[] - nil values should be included
     ParseOptions opts = {
         allowDataProjection: {
             nilAsOptionalField: false,
@@ -536,10 +536,29 @@ function testParseMapWithNilAsOptionalFieldFalse() returns error? {
         }
     };
 
-    map<anydata>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    // Build a fixture with a GENUINELY blank cell (a skipped cell, not an empty
+    // string) so the read hits the BLANK → () path. With nilAsOptionalField=false,
+    // that column's key must be PRESENT in the map with value ().
+    string nilMapFile = TEST_DATA_DIR + "temp_nil_map.xlsx";
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "name");
+    check sheet.setCell(0, 1, "department");
+    check sheet.setCell(1, 0, "Alice");
+    check sheet.setCell(1, 1, "Engineering");
+    check sheet.setCell(2, 0, "Jane");
+    // Row 2, col 1 (department) intentionally left blank — a true gap, not "".
+    check wb.saveAs(nilMapFile);
+    check wb.close();
 
-    test:assertEquals(data.length(), 3, "Should have 3 records");
-    // All cells have values in simple.xlsx, so we're just verifying the option is accepted
+    map<CellValue?>[] data = check parseSheet(nilMapFile, 0, opts);
+
+    test:assertEquals(data.length(), 2, "Should have 2 data rows");
+    map<CellValue?> jane = data[1];
+    test:assertTrue(jane.hasKey("department"), "Blank cell's key must be present in the map");
+    test:assertTrue(jane["department"] is (), "Blank cell must bind to () in map<CellValue?>");
+
+    check file:remove(nilMapFile);
 }
 
 // =============================================================================
@@ -879,7 +898,7 @@ function testParseHeaderlessToMap() returns error? {
     ParseOptions opts = {
         headerRowIndex: ()
     };
-    map<anydata>[] result = check parseSheet(testFile, 0, opts);
+    map<CellValue?>[] result = check parseSheet(testFile, 0, opts);
 
     test:assertEquals(result.length(), 2, "Should have 2 rows");
     test:assertEquals(result[0]["col0"], "Alice", "First row col0 should be 'Alice'");
@@ -1026,6 +1045,42 @@ function testParseClosedRecordIgnoresExtraColumns() returns error? {
     test:assertEquals(employees[0].department, "Engineering", "First employee department");
 
     // Closed record should not have any extra fields - all fields are defined
+}
+
+// =============================================================================
+// Natural-type binding for untyped / broad reads (map<CellValue?>, rest fields)
+// =============================================================================
+
+@test:Config {
+    groups: ["parseSheet", "types"]
+}
+function testParseNaturalTypedCellsIntoMap() returns error? {
+    // natural_types.xlsx holds genuinely typed cells. Reading into map<CellValue?>[]
+    // must bind each value to its natural Ballerina type, not collapse to strings.
+    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
+
+    test:assertEquals(data.length(), 1, "Should have 1 data row");
+    test:assertEquals(data[0]["intCol"], 42, "Whole number should bind to int");
+    test:assertEquals(data[0]["decimalCol"], 3.14d, "Fractional number should bind to decimal");
+    test:assertEquals(data[0]["boolCol"], true, "Boolean cell should bind to boolean");
+    test:assertEquals(data[0]["dateCol"], "2026-05-28", "Date cell should bind to ISO date string");
+    test:assertEquals(data[0]["datetimeCol"], "2026-05-28 14:30:00",
+            "Date-time cell should bind to ISO date-time string (time preserved)");
+}
+
+@test:Config {
+    groups: ["parseSheet", "openrecord"]
+}
+function testParseNaturalTypedCellsIntoRestField() returns error? {
+    // intCol/boolCol are declared fields; the remaining typed columns fall to the
+    // CellValue? rest field and must keep their natural types.
+    PartialNaturalRow[] rows = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
+
+    test:assertEquals(rows.length(), 1);
+    test:assertEquals(rows[0].intCol, 42, "Declared int field");
+    test:assertEquals(rows[0].boolCol, true, "Declared boolean field");
+    test:assertEquals(rows[0]["decimalCol"], 3.14d, "Rest field: fractional → decimal");
+    test:assertEquals(rows[0]["dateCol"], "2026-05-28", "Rest field: date → ISO string");
 }
 
 // =============================================================================

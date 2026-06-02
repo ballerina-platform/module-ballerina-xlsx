@@ -89,7 +89,7 @@ What's *included* in v0.9 that you might expect to be deferred:
 
 ```ballerina
 # A single row in a sheet — the atomic data unit.
-public type Row map<anydata> | string[];
+public type Row map<CellValue?> | string[];
 
 # A populated XLSX cell value. Where a cell may be blank, the nilable `CellValue?` is used.
 public type CellValue string|int|float|decimal|boolean
@@ -97,17 +97,27 @@ public type CellValue string|int|float|decimal|boolean
 ```
 
 `Row` is the atomic single-row type. A row can be:
-- A **`map<anydata>`** — keys are column headers; values are cell contents. A typed **record** also binds (an open record is a subtype of `map<anydata>`); name its fields to match the headers, or use `@xlsx:Name`.
+- A **`map<CellValue?>`** — keys are column headers; values are cell values (`()` for a blank cell). A typed **record** also binds when every field is `CellValue?`-typed; name its fields to match the headers, or use `@xlsx:Name`. To capture columns beyond the declared fields, give the record a `CellValue?` rest descriptor (`record {| ...; CellValue?...; |}`).
 - A **`string[]`** — raw cell text in column order.
+
+The map's value type is `CellValue?` (not `anydata`) so the row contract matches what a cell can hold: a target field of an unsupported type (`xml`, `byte[]`, a nested record) is rejected at compile time rather than failing at runtime.
 
 `parseSheet` takes the row shape as its target `typedesc<Row> t = <>` and returns `t[]`. `Row[]` is the input type for `writeSheet` / `writeTable`. Contextual typing at the call site infers the row shape:
 
 ```ballerina
 type Order record {| int id; decimal amount; |};
-Order[] orders   = check xlsx:parseSheet("orders.xlsx");      // t = Order; returns Order[]
-string[][] raw   = check xlsx:parseSheet("orders.xlsx");      // t = string[]; returns string[][]
-map<anydata>[] m = check xlsx:parseSheet("orders.xlsx");      // t = map<anydata>; returns map<anydata>[]
+Order[] orders     = check xlsx:parseSheet("orders.xlsx");    // t = Order; returns Order[]
+string[][] raw     = check xlsx:parseSheet("orders.xlsx");    // t = string[]; returns string[][]
+map<CellValue?>[] m = check xlsx:parseSheet("orders.xlsx");   // t = map<CellValue?>; returns map<CellValue?>[]
 ```
+
+**Untyped / broad reads.** When the target does not pin a specific scalar type — a
+`map<CellValue?>` value, a `CellValue?` rest field, `Sheet.getCell`, `Sheet.getColumn`
+under a `CellValue?` bound, and `Table.getTotalRow` — each cell binds to its natural
+`CellValue`: a whole number → `int`, a fractional number → `decimal`, a boolean →
+`boolean`, a string → `string`, a date / time / date-time cell → an ISO 8601 `string`
+(the fallback when no `time:*` target drives the binding; the time component is
+preserved), and a blank cell → `()`.
 
 ### 2.2 CellRange
 
@@ -297,7 +307,7 @@ Reads the specified sheet from an XLSX file and binds rows to the target type in
 | `path` | (required) | Path to the XLSX file. |
 | `sheet` | `0` | Sheet selector — sheet name (`string`) or 0-based index (`int`). |
 | `options` | `{}` | `ParseOptions` (see [3.1](#31-parseoptions)). |
-| `t` | inferred | Target row type — a `Row` member (record, `map<anydata>`, or `string[]`). Function returns `t[]`. See [2.1](#21-row-and-cellvalue). |
+| `t` | inferred | Target row type — a `Row` member (record, `map<CellValue?>`, or `string[]`). Function returns `t[]`. See [2.1](#21-row-and-cellvalue). |
 
 Examples:
 
@@ -366,7 +376,7 @@ Reads from an Excel Table (ListObject) by name. Tables are unique by name across
 | `path` | (required) | Path to the XLSX file. |
 | `tableName` | (required) | Name of the table. Raises `TableNotFoundError` if no matching table exists in any sheet. |
 | `options` | `{}` | `ParseOptions`. `headerRowIndex` and `dataStartRowIndex` are ignored — the table's own range defines these. All other fields (`formulaMode`, `enableConstraintValidation`, `caseInsensitiveHeaders`, `allowDataProjection`, `failSafe`) apply normally. |
-| `t` | inferred | Target row type — a `Row` member (record, `map<anydata>`, or `string[]`). Function returns `t[]`. |
+| `t` | inferred | Target row type — a `Row` member (record, `map<CellValue?>`, or `string[]`). Function returns `t[]`. |
 
 Example:
 
@@ -538,7 +548,7 @@ public isolated class Table {
 
     # Total row
     public isolated function hasTotalRow() returns boolean|Error;
-    public isolated function getTotalRow() returns map<CellValue?>|Error;
+    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>) returns t|Error;
 
     # Modification
     public isolated function rename(string newName) returns Error?;

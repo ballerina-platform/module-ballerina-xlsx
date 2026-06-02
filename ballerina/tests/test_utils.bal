@@ -17,6 +17,7 @@
 import ballerina/file;
 import ballerina/jballerina.java;
 import ballerina/test;
+import ballerina/time;
 
 // =============================================================================
 // TEST-ONLY NATIVE EXTERNALS
@@ -33,6 +34,11 @@ function setDate1904Native(Workbook wb, boolean flag) returns Error? = @java:Met
 function setFormulaCellNative(Workbook wb, string sheetName, int row, int col, string formula)
         returns Error? = @java:Method {
     'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
+} external;
+
+function setTotalRowNative(Table tbl, int totalColIndex, float totalValue)
+        returns Error? = @java:Method {
+    'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
 } external;
 
 // =============================================================================
@@ -238,6 +244,30 @@ function setupTestData() returns error? {
     check sheet1904.setCell(0, 0, 44708);
     check wb1904.saveAs(TEST_DATA_DIR + "dates_1904.xlsx");
     check wb1904.close();
+
+    // -------------------------------------------------------------------------
+    // natural_types.xlsx - Genuinely typed cells (numeric / boolean / date /
+    // date-time) written via the Workbook API, so each cell carries a real Excel
+    // type rather than text. Used to verify that untyped / broad reads
+    // (map<CellValue?>, getCell, getColumn, rest fields) bind to the natural
+    // Ballerina type — string-only fixtures cannot exercise this.
+    // -------------------------------------------------------------------------
+    time:Date naturalDate = {year: 2026, month: 5, day: 28};
+    time:Civil naturalDateTime = {year: 2026, month: 5, day: 28, hour: 14, minute: 30, second: 0d};
+    Workbook wbNatural = new;
+    Sheet sheetNatural = check wbNatural.createSheet("Data");
+    check sheetNatural.setCell(0, 0, "intCol");
+    check sheetNatural.setCell(0, 1, "decimalCol");
+    check sheetNatural.setCell(0, 2, "boolCol");
+    check sheetNatural.setCell(0, 3, "dateCol");
+    check sheetNatural.setCell(0, 4, "datetimeCol");
+    check sheetNatural.setCell(1, 0, 42);
+    check sheetNatural.setCell(1, 1, 3.14d);
+    check sheetNatural.setCell(1, 2, true);
+    check sheetNatural.setCell(1, 3, naturalDate);
+    check sheetNatural.setCell(1, 4, naturalDateTime);
+    check wbNatural.saveAs(TEST_DATA_DIR + "natural_types.xlsx");
+    check wbNatural.close();
 }
 
 // Cleanup test data files after running tests
@@ -259,7 +289,8 @@ function cleanupTestData() returns error? {
         "nilable_fields.xlsx",
         "case_headers.xlsx",
         "extreme_numeric_test.xlsx",
-        "dates_1904.xlsx"
+        "dates_1904.xlsx",
+        "natural_types.xlsx"
     ];
 
     foreach string fileName in filesToRemove {

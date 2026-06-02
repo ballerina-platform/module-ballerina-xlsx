@@ -28,7 +28,7 @@ import ballerina/jballerina.java;
 # Supports parsing to:
 # - `string[][]` - Raw string array
 # - `record{}[]` - Array of records (with header-to-field mapping)
-# - `map<anydata>[]` - Array of maps
+# - `map<CellValue?>[]` - Array of maps (keys are column headers)
 #
 # ```ballerina
 # // Parse first sheet as records
@@ -59,7 +59,7 @@ public isolated function parseSheet(string path, string|int sheet = 0, ParseOpti
 # Supports writing from:
 # - `string[][]` - Raw string array (first row can be headers)
 # - `record{}[]` - Array of records (field names become headers)
-# - `map<anydata>[]` - Array of maps (keys become headers)
+# - `map<CellValue?>[]` - Array of maps (keys become headers)
 #
 # ```ballerina
 # Employee[] employees = [{name: "John", age: 30}];
@@ -96,7 +96,7 @@ public isolated function writeSheet(Row[] data, string path, string sheetName = 
 # Supports parsing to:
 # - `string[][]` - Raw string array
 # - `record{}[]` - Array of records (table headers map to fields)
-# - `map<anydata>[]` - Array of maps
+# - `map<CellValue?>[]` - Array of maps (keys are column headers)
 #
 # ```ballerina
 # // Parse table as records

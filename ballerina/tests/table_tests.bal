@@ -99,7 +99,8 @@ function cleanupTableTestData() returns error? {
         "tables_test.xlsx",
         "temp_table_write.xlsx",
         "temp_table_create.xlsx",
-        "temp_table_write_notfound.xlsx"
+        "temp_table_write_notfound.xlsx",
+        "temp_table_totals.xlsx"
     ];
 
     foreach string fileName in filesToRemove {
@@ -143,7 +144,7 @@ function testParseTableToStringArray() returns error? {
     groups: ["table"]
 }
 function testParseTableToMaps() returns error? {
-    map<anydata>[] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
+    map<CellValue?>[] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
 
     test:assertEquals(data.length(), 3, "Should have 3 maps");
     test:assertEquals(data[0]["Name"], "Alice", "First employee name");
@@ -639,10 +640,50 @@ function testTableGetTotalsRowError() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    map<anydata>|Error result = empTable.getTotalRow();
+    map<CellValue?>|Error result = empTable.getTotalRow();
     test:assertTrue(result is Error, "Should return error when table has no totals row");
 
     check wb.close();
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testTableGetTotalRow() returns error? {
+    // Build a table, author a total row via the test-only helper, then read it back.
+    // The total-row map must come back typed as map<CellValue?> with the total bound
+    // to its natural Ballerina type (a whole number → int).
+    string totalsFile = TEST_DATA_DIR + "temp_table_totals.xlsx";
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    string[][] salesData = [
+        ["Region", "Amount"],
+        ["North", "100"],
+        ["South", "250"]
+    ];
+    check sheet.putRows(salesData);
+    Table salesTable = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    // Write 350 as the total into the "Amount" column (table column index 1).
+    check setTotalRowNative(salesTable, 1, 350.0);
+    check wb.saveAs(totalsFile);
+    check wb.close();
+
+    Workbook reopened = check fromFile(totalsFile);
+    Table reopenedTable = check reopened.getTable("SalesTable");
+
+    test:assertTrue(check reopenedTable.hasTotalRow(), "Table should have a total row");
+
+    map<CellValue?> totals = check reopenedTable.getTotalRow();
+    CellValue? amountTotal = totals["Amount"];
+    test:assertEquals(amountTotal, 350, "Total should bind to its natural type (int 350)");
+    test:assertTrue(amountTotal is int, "Whole-number total must bind to int, not decimal/string");
+
+    check reopened.close();
 }
 
 // =============================================================================

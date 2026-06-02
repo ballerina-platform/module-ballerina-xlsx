@@ -301,7 +301,7 @@ function testWriteBooleanValues() returns error? {
     groups: ["writeSheet", "types"]
 }
 function testWriteMapArray() returns error? {
-    map<anydata>[] data = [
+    map<CellValue?>[] data = [
         {"Name": "Alice", "Age": 28, "City": "NYC"},
         {"Name": "Bob", "Age": 35, "City": "LA"}
     ];

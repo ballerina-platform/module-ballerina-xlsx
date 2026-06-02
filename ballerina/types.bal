@@ -124,11 +124,17 @@ public type RowWriteOptions record {|
 |};
 
 # A single row in a sheet — the atomic data unit. A row is one of two shapes:
-# - `map<anydata>` - Dynamic map (keys are column headers). A typed `record{}` also
-#   binds here, since an open record is a subtype of `map<anydata>`; use `@xlsx:Name`
-#   for field names that differ from the column headers.
+# - `map<CellValue?>` - Dynamic map (keys are column headers; values are cell values,
+#   with `()` for a blank cell). A typed record also binds when every field is
+#   `CellValue?`-typed; use `@xlsx:Name` for field names that differ from the column
+#   headers. To absorb columns beyond the declared fields, give the record a
+#   `CellValue?` rest descriptor — `record {| ...; CellValue?...; |}`.
 # - `string[]` - Raw cell text in column order
-public type Row map<anydata> | string[];
+#
+# The map's value type is `CellValue?` (not `anydata`) so the row contract matches what
+# a cell can actually hold: a target field of an unsupported type (e.g. `xml`, `byte[]`,
+# a nested record) is rejected at compile time rather than failing at runtime.
+public type Row map<CellValue?> | string[];
 
 # A populated XLSX cell value.
 #

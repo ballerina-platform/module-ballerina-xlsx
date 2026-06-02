@@ -212,7 +212,7 @@ public final class SheetHandle {
                 return getRowsAsRecords(env, sheet, config, (RecordType) describingType);
             }
 
-            // map<anydata> → map<anydata>[]
+            // map<CellValue?> → map<CellValue?>[]
             if (typeTag == TypeTags.MAP_TAG) {
                 return getRowsAsMaps(env, sheet, config, (MapType) describingType);
             }
@@ -512,7 +512,7 @@ public final class SheetHandle {
     }
 
     /**
-     * Get rows as map<anydata>[].
+     * Get rows as map<CellValue?>[].
      */
     private static Object getRowsAsMaps(Environment env, Sheet sheet, XlsxConfig config, MapType mapType) {
         CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
@@ -735,7 +735,7 @@ public final class SheetHandle {
                 return null;
             }
             return DiagnosticLog.error(
-                    "setRow data must be string[], record, or map<anydata>");
+                    "setRow data must be string[], record, or map<CellValue?>");
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
