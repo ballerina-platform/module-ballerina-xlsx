@@ -37,6 +37,17 @@ public final class DiagnosticLog {
     private static final String ERROR_PREFIX = "error.";
     private static ResourceBundle errorBundle;
 
+    // Ballerina error type names (as declared in errors.bal).
+    private static final String ERROR_TYPE = "Error";
+    private static final String PARSE_ERROR_TYPE = "ParseError";
+    private static final String FILE_NOT_FOUND_ERROR_TYPE = "FileNotFoundError";
+    private static final String SHEET_NOT_FOUND_ERROR_TYPE = "SheetNotFoundError";
+    private static final String TYPE_CONVERSION_ERROR_TYPE = "TypeConversionError";
+    private static final String CONSTRAINT_VALIDATION_ERROR_TYPE = "ConstraintValidationError";
+    private static final String TABLE_NOT_FOUND_ERROR_TYPE = "TableNotFoundError";
+    private static final String TABLE_OVERLAP_ERROR_TYPE = "TableOverlapError";
+    private static final String INVALID_TABLE_RANGE_ERROR_TYPE = "InvalidTableRangeError";
+
     private DiagnosticLog() {
         // Private constructor to prevent instantiation
     }
@@ -59,7 +70,7 @@ public final class DiagnosticLog {
     public static BError error(String message) {
         return ErrorCreator.createError(
                 ModuleUtils.getModule(),
-                XlsxConstants.ERROR_TYPE,
+                ERROR_TYPE,
                 StringUtils.fromString(message),
                 null,
                 null
@@ -78,7 +89,7 @@ public final class DiagnosticLog {
                 ErrorCreator.createError(StringUtils.fromString(cause.getMessage()));
         return ErrorCreator.createError(
                 ModuleUtils.getModule(),
-                XlsxConstants.ERROR_TYPE,
+                ERROR_TYPE,
                 StringUtils.fromString(message),
                 causeError,
                 null
@@ -104,7 +115,7 @@ public final class DiagnosticLog {
      * @return BError
      */
     public static BError parseError(String message) {
-        return createTypedError(XlsxConstants.PARSE_ERROR_TYPE, message, null);
+        return createTypedError(PARSE_ERROR_TYPE, message, null);
     }
 
     /**
@@ -118,7 +129,7 @@ public final class DiagnosticLog {
      */
     public static BError parseError(String message, String sheetName, Integer row, Integer column) {
         BMap<BString, Object> details = createErrorDetails(sheetName, null, null, row, column);
-        return createTypedError(XlsxConstants.PARSE_ERROR_TYPE, message, details);
+        return createTypedError(PARSE_ERROR_TYPE, message, details);
     }
 
     /**
@@ -128,7 +139,7 @@ public final class DiagnosticLog {
      * @return BError
      */
     public static BError fileNotFoundError(String message) {
-        return createTypedError(XlsxConstants.FILE_NOT_FOUND_ERROR_TYPE, message, null);
+        return createTypedError(FILE_NOT_FOUND_ERROR_TYPE, message, null);
     }
 
     /**
@@ -143,7 +154,7 @@ public final class DiagnosticLog {
                 ErrorCreator.createError(StringUtils.fromString(cause.getMessage()));
         return ErrorCreator.createError(
                 ModuleUtils.getModule(),
-                XlsxConstants.FILE_NOT_FOUND_ERROR_TYPE,
+                FILE_NOT_FOUND_ERROR_TYPE,
                 StringUtils.fromString(message),
                 causeError,
                 null
@@ -159,7 +170,7 @@ public final class DiagnosticLog {
     public static BError sheetNotFoundError(String sheetName) {
         String message = "Sheet '" + sheetName + "' not found in workbook";
         BMap<BString, Object> details = createErrorDetails(sheetName, null, null, null, null);
-        return createTypedError(XlsxConstants.SHEET_NOT_FOUND_ERROR_TYPE, message, details);
+        return createTypedError(SHEET_NOT_FOUND_ERROR_TYPE, message, details);
     }
 
     /**
@@ -171,7 +182,7 @@ public final class DiagnosticLog {
      */
     public static BError sheetNotFoundError(int index, int maxIndex) {
         String message = "Sheet at index " + index + " not found (valid range: 0-" + maxIndex + ")";
-        return createTypedError(XlsxConstants.SHEET_NOT_FOUND_ERROR_TYPE, message, null);
+        return createTypedError(SHEET_NOT_FOUND_ERROR_TYPE, message, null);
     }
 
     /**
@@ -185,7 +196,7 @@ public final class DiagnosticLog {
      */
     public static BError typeConversionError(String message, String cellAddress, Integer row, Integer column) {
         BMap<BString, Object> details = createErrorDetails(null, null, cellAddress, row, column);
-        return createTypedError(XlsxConstants.TYPE_CONVERSION_ERROR_TYPE, message, details);
+        return createTypedError(TYPE_CONVERSION_ERROR_TYPE, message, details);
     }
 
     /**
@@ -198,7 +209,7 @@ public final class DiagnosticLog {
      */
     public static BError constraintValidationError(String message, Integer row, Integer column) {
         BMap<BString, Object> details = createErrorDetails(null, null, null, row, column);
-        return createTypedError(XlsxConstants.CONSTRAINT_VALIDATION_ERROR_TYPE, message, details);
+        return createTypedError(CONSTRAINT_VALIDATION_ERROR_TYPE, message, details);
     }
 
     /**
@@ -210,7 +221,7 @@ public final class DiagnosticLog {
     public static BError tableNotFoundError(String tableName) {
         String message = "Table '" + tableName + "' not found in workbook";
         BMap<BString, Object> details = createErrorDetails(null, tableName, null, null, null);
-        return createTypedError(XlsxConstants.TABLE_NOT_FOUND_ERROR_TYPE, message, details);
+        return createTypedError(TABLE_NOT_FOUND_ERROR_TYPE, message, details);
     }
 
     /**
@@ -223,7 +234,7 @@ public final class DiagnosticLog {
     public static BError tableNotFoundError(String tableName, String sheetName) {
         String message = "Table '" + tableName + "' not found in sheet '" + sheetName + "'";
         BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
-        return createTypedError(XlsxConstants.TABLE_NOT_FOUND_ERROR_TYPE, message, details);
+        return createTypedError(TABLE_NOT_FOUND_ERROR_TYPE, message, details);
     }
 
     /**
@@ -238,7 +249,7 @@ public final class DiagnosticLog {
         String message = "Cannot create table '" + tableName + "': range overlaps with existing table '" +
                 existingTable + "' in sheet '" + sheetName + "'";
         BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
-        return createTypedError(XlsxConstants.TABLE_OVERLAP_ERROR_TYPE, message, details);
+        return createTypedError(TABLE_OVERLAP_ERROR_TYPE, message, details);
     }
 
     /**
@@ -250,7 +261,7 @@ public final class DiagnosticLog {
      */
     public static BError invalidTableRangeError(String message, String sheetName) {
         BMap<BString, Object> details = createErrorDetails(sheetName, null, null, null, null);
-        return createTypedError(XlsxConstants.INVALID_TABLE_RANGE_ERROR_TYPE, message, details);
+        return createTypedError(INVALID_TABLE_RANGE_ERROR_TYPE, message, details);
     }
 
     /**
@@ -260,7 +271,7 @@ public final class DiagnosticLog {
      * @return BError
      */
     public static BError invalidTableRangeError(String message) {
-        return createTypedError(XlsxConstants.INVALID_TABLE_RANGE_ERROR_TYPE, message, null);
+        return createTypedError(INVALID_TABLE_RANGE_ERROR_TYPE, message, null);
     }
 
     private static BError createTypedError(String errorType, String message, BMap<BString, Object> details) {

@@ -50,6 +50,10 @@ import java.util.Map;
  */
 public final class WorkbookHandle {
 
+    // Ballerina type name for the public `Workbook` object type. Native instance construction
+    // must target the concrete class name.
+    private static final String WORKBOOK_TYPE = "Workbook";
+
     private static final String WORKBOOK_NATIVE_KEY = "workbookNative";
     private static final String SOURCE_PATH_KEY = "sourcePathNative";
     private static final String PHANTOM_REF_KEY = "phantomRef";
@@ -781,7 +785,7 @@ public final class WorkbookHandle {
                     io.ballerina.runtime.api.utils.TypeUtils.getType(
                             ValueCreator.createObjectValue(
                                     io.ballerina.lib.xlsx.utils.ModuleUtils.getModule(),
-                                    io.ballerina.lib.xlsx.utils.XlsxConstants.TABLE_TYPE));
+                                    TableHandle.TABLE_TYPE));
             io.ballerina.runtime.api.types.ArrayType tableArrayType =
                     io.ballerina.runtime.api.creators.TypeCreator.createArrayType(tableType);
 
@@ -819,7 +823,7 @@ public final class WorkbookHandle {
                                                  org.apache.poi.xssf.usermodel.XSSFSheet sheet) {
         BObject tableObj = ValueCreator.createObjectValue(
                 io.ballerina.lib.xlsx.utils.ModuleUtils.getModule(),
-                io.ballerina.lib.xlsx.utils.XlsxConstants.TABLE_TYPE);
+                TableHandle.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
         registerVendedHandle(workbookObj, tableObj);
         return tableObj;
@@ -833,7 +837,7 @@ public final class WorkbookHandle {
     private static BObject createBallerinaSheet(BObject workbookObj, Sheet sheet) {
         BObject sheetObj = ValueCreator.createObjectValue(
                 io.ballerina.lib.xlsx.utils.ModuleUtils.getModule(),
-                io.ballerina.lib.xlsx.utils.XlsxConstants.SHEET_TYPE);
+                SheetHandle.SHEET_TYPE);
         SheetHandle.initSheet(sheetObj, sheet);
         registerVendedHandle(workbookObj, sheetObj);
         return sheetObj;
@@ -848,7 +852,7 @@ public final class WorkbookHandle {
     private static BObject createBallerinaWorkbook() {
         BObject workbookObj = ValueCreator.createObjectValue(
                 io.ballerina.lib.xlsx.utils.ModuleUtils.getModule(),
-                io.ballerina.lib.xlsx.utils.XlsxConstants.WORKBOOK_TYPE);
+                WORKBOOK_TYPE);
         Workbook transientEmpty = (Workbook) workbookObj.getNativeData(WORKBOOK_NATIVE_KEY);
         if (transientEmpty != null) {
             unregisterFromCleanup(workbookObj, transientEmpty);

@@ -63,6 +63,10 @@ import java.util.Map;
  */
 public final class TableHandle {
 
+    // Ballerina type name for the public `Table` object type, whose implementation is the
+    // non-public `TableImpl` class. Native instance construction must target the concrete class name.
+    public static final String TABLE_TYPE = "TableImpl";
+
     // Package-private so WorkbookHandle/SheetHandle can null these slots during invalidation.
     static final String TABLE_NATIVE_KEY = "tableNative";
     static final String SHEET_NATIVE_KEY = "sheetNative";

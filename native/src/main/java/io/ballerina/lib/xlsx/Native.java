@@ -19,7 +19,7 @@
 package io.ballerina.lib.xlsx;
 
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
-import io.ballerina.lib.xlsx.utils.XlsxConstants;
+import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.lib.xlsx.xlsx.XlsxParser;
 import io.ballerina.lib.xlsx.xlsx.XlsxWriter;
 import io.ballerina.runtime.api.Environment;
@@ -80,7 +80,7 @@ public final class Native {
                                     BMap<BString, Object> options) {
         // Inject the sheet name into the options BMap so the existing
         // XlsxConfig.fromWriteOptions extraction path picks it up unchanged.
-        options.put(XlsxConstants.WRITE_SHEET_NAME, sheetName);
+        options.put(XlsxConfig.WRITE_SHEET_NAME, sheetName);
         return XlsxWriter.writeToFile(filePath.getValue(), data, options);
     }
 

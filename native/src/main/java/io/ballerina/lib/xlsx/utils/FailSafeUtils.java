@@ -38,24 +38,34 @@ import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.FAILED_FILE_IO_OPE
 import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.HEADER_CANNOT_BE_EMPTY;
 import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.INVALID_XLSX_DATA_FORMAT;
 import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.NO_FIELD_FOR_HEADER;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.CONTENT_TYPE;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.CONTENT_TYPE_METADATA;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.CONTENT_TYPE_RAW;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_IO_ERROR;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_OUTPUT_MODE;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_OVERWRITE_ERROR;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_PATH;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_WRITE_ERROR;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_WRITE_OPTION;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.FILE_WRITE_OVERWRITE;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.OFFENDING_ROW;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.PRINT_FAILSAFE_WARNING;
-import static io.ballerina.lib.xlsx.utils.XlsxConstants.XLSX_PARSE_WARNING;
 
 /**
  * Utility class for fail-safe error handling and logging in XLSX operations.
  */
 public final class FailSafeUtils {
+
+    // Fail-safe options field names
+    private static final BString FILE_OUTPUT_MODE = StringUtils.fromString("fileOutputMode");
+    private static final BString FILE_PATH = StringUtils.fromString("filePath");
+    private static final BString CONTENT_TYPE = StringUtils.fromString("contentType");
+    private static final BString FILE_WRITE_OPTION = StringUtils.fromString("fileWriteOption");
+    private static final BString OFFENDING_ROW = StringUtils.fromString("offendingRow");
+
+    // Fail-safe content type values
+    private static final String CONTENT_TYPE_METADATA = "METADATA";
+    private static final String CONTENT_TYPE_RAW = "RAW";
+
+    // Fail-safe file write option value
+    private static final String FILE_WRITE_OVERWRITE = "OVERWRITE";
+
+    // Name of the Ballerina function used to emit fail-safe warnings
+    private static final String PRINT_FAILSAFE_WARNING = "printFailSafeWarning";
+
+    // Fail-safe warning and error messages
+    private static final String XLSX_PARSE_WARNING = "XLSX parse warning at row %d, column %d: %s";
+    private static final String FILE_IO_ERROR = "Failed to create log file at: %s. Caused by: %s";
+    private static final String FILE_OVERWRITE_ERROR = "Failed to overwrite log file at: %s. Caused by: %s";
+    private static final String FILE_WRITE_ERROR = "Failed to write log file at: %s. Caused by: %s";
 
     private FailSafeUtils() {
         // Private constructor to prevent instantiation

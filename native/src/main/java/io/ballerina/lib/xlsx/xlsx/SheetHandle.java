@@ -25,7 +25,6 @@ import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils.FieldMapping;
 import io.ballerina.lib.xlsx.utils.UsedRangeDetector;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
-import io.ballerina.lib.xlsx.utils.XlsxConstants;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
@@ -64,6 +63,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * This class wraps the POI Sheet and provides methods called from Ballerina.
  */
 public final class SheetHandle {
+
+    // Ballerina type name for the public `Sheet` object type, whose implementation is the
+    // non-public `SheetImpl` class. Native instance construction must target the concrete class name.
+    public static final String SHEET_TYPE = "SheetImpl";
 
     // Package-private so WorkbookHandle can null this slot during close()/deleteSheet() invalidation.
     static final String SHEET_NATIVE_KEY = "sheetNative";
@@ -948,7 +951,7 @@ public final class SheetHandle {
 
             // Get proper Table type from module for array creation
             Type tableType = TypeUtils.getType(ValueCreator.createObjectValue(
-                    ModuleUtils.getModule(), XlsxConstants.TABLE_TYPE));
+                    ModuleUtils.getModule(), TableHandle.TABLE_TYPE));
             ArrayType tableArrayType = TypeCreator.createArrayType(tableType);
 
             if (!(sheet instanceof XSSFSheet)) {
@@ -1189,7 +1192,7 @@ public final class SheetHandle {
      * the sheet's parent workbook (so close()/deleteSheet() can invalidate it).
      */
     private static BObject createBallerinaTable(BObject sheetObj, XSSFTable table, XSSFSheet sheet) {
-        BObject tableObj = ValueCreator.createObjectValue(ModuleUtils.getModule(), XlsxConstants.TABLE_TYPE);
+        BObject tableObj = ValueCreator.createObjectValue(ModuleUtils.getModule(), TableHandle.TABLE_TYPE);
         TableHandle.initTable(tableObj, table, sheet);
         BObject parentWorkbook = (BObject) sheetObj.getNativeData(PARENT_WORKBOOK_KEY);
         if (parentWorkbook != null) {
