@@ -63,6 +63,10 @@ import java.util.Map;
  */
 public final class TableHandle {
 
+    // Ballerina type name for the public `Table` object type, whose implementation is the
+    // non-public `TableImpl` class. Native instance construction must target the concrete class name.
+    public static final String TABLE_TYPE = "TableImpl";
+
     // Package-private so WorkbookHandle/SheetHandle can null these slots during invalidation.
     static final String TABLE_NATIVE_KEY = "tableNative";
     static final String SHEET_NATIVE_KEY = "sheetNative";
@@ -368,7 +372,7 @@ public final class TableHandle {
             return getTableRowsAsRecords(table, sheet, config, (RecordType) describingType);
         }
 
-        // map<anydata> → map<anydata>[]
+        // map<CellValue?> → map<CellValue?>[]
         if (typeTag == TypeTags.MAP_TAG) {
             return getTableRowsAsMaps(table, sheet, config, (MapType) describingType);
         }
@@ -578,10 +582,11 @@ public final class TableHandle {
     /**
      * Get the total row values.
      *
-     * @param tableObj Ballerina Table object
+     * @param tableObj   Ballerina Table object
+     * @param targetType Descriptor for the result map type ({@code map<CellValue?>})
      * @return Map of column names to total values
      */
-    public static Object getTotalRow(BObject tableObj) {
+    public static Object getTotalRow(BObject tableObj, BTypedesc targetType) {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
@@ -597,8 +602,9 @@ public final class TableHandle {
             Row totalsRow = sheet.getRow(totalsRowIdx);
             List<XSSFTableColumn> columns = table.getColumns();
 
-            MapType mapType = TypeCreator.createMapType(
-                    io.ballerina.runtime.api.types.PredefinedTypes.TYPE_ANYDATA);
+            // Bind the result to the declared map type (map<CellValue?>) so its runtime
+            // type matches the Ballerina contract rather than the wider map<anydata>.
+            MapType mapType = (MapType) TypeUtils.getReferredType(targetType.getDescribingType());
             BMap<BString, Object> totals = ValueCreator.createMapValue(mapType);
 
             XlsxConfig defaultConfig = new XlsxConfig();
@@ -609,7 +615,7 @@ public final class TableHandle {
                 int colIdx = firstCol + i;
 
                 Cell cell = totalsRow != null ? totalsRow.getCell(colIdx) : null;
-                Object value = convertCellToAnydata(cell, defaultConfig);
+                Object value = CellConverter.convertToCellValue(cell, defaultConfig);
                 totals.put(StringUtils.fromString(columnName), value);
             }
 
@@ -619,6 +625,63 @@ public final class TableHandle {
             return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error getting totals row: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Add a total row to a table and write a literal numeric total into one column.
+     *
+     * <p>Package-private — reachable only from test code via a private
+     * {@code @java:Method} external in {@code test_utils.bal}. The public Ballerina
+     * API does not author total rows (they require formula/aggregation authoring,
+     * which is out of scope); this helper exists so fixtures can contain a real
+     * total row for testing the {@code getTotalRow} read path. A literal value is
+     * written rather than a {@code SUM} aggregation because POI does not evaluate
+     * formulas, so a cached aggregation would read back as 0.</p>
+     *
+     * @param tableObj   Ballerina Table object
+     * @param totalColIndex 0-based column offset (within the table) to receive the total
+     * @param totalValue The literal numeric total to write into that column
+     * @return null on success, error on failure
+     */
+    public static Object setTotalRowNative(BObject tableObj, long totalColIndex, double totalValue) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+            int firstRow = area.getFirstCell().getRow();
+            int firstCol = area.getFirstCell().getCol();
+            int lastCol = area.getLastCell().getCol();
+            int lastRow = area.getLastCell().getRow();
+
+            // Extend the table area downward by one row to hold the total row.
+            int totalsRowIdx = lastRow + 1;
+            CellReference topLeft = new CellReference(firstRow, firstCol);
+            CellReference bottomRight = new CellReference(totalsRowIdx, lastCol);
+            AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+
+            CTTable ctTable = table.getCTTable();
+            ctTable.setRef(newArea.formatAsString());
+            ctTable.setTotalsRowCount(1);
+            ctTable.setTotalsRowShown(true);
+            table.updateHeaders();
+
+            Row totalsRow = sheet.getRow(totalsRowIdx);
+            if (totalsRow == null) {
+                totalsRow = sheet.createRow(totalsRowIdx);
+            }
+            int colIdx = firstCol + (int) totalColIndex;
+            Cell cell = totalsRow.getCell(colIdx);
+            if (cell == null) {
+                cell = totalsRow.createCell(colIdx);
+            }
+            cell.setCellValue(totalValue);
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error setting total row: " + e.getMessage(), e);
         }
     }
 
@@ -920,7 +983,7 @@ public final class TableHandle {
     }
 
     /**
-     * Get table rows as map<anydata>[].
+     * Get table rows as map<CellValue?>[].
      */
     private static Object getTableRowsAsMaps(XSSFTable table, Sheet sheet, XlsxConfig config, MapType mapType) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
@@ -954,7 +1017,7 @@ public final class TableHandle {
                 int colIdx = firstCol + i;
 
                 Cell cell = row != null ? row.getCell(colIdx) : null;
-                Object value = convertCellToAnydata(cell, config);
+                Object value = CellConverter.convertToCellValue(cell, config);
                 map.put(StringUtils.fromString(columnName), value);
             }
 
@@ -1146,55 +1209,6 @@ public final class TableHandle {
                 Object value = array.get(i);
                 CellConverter.setCellValue(cell, value, styleCache);
             }
-        }
-    }
-
-    /**
-     * Convert a cell to anydata (preserving type information).
-     * For map<anydata>, we want to preserve actual types (numbers, booleans, strings).
-     */
-    private static Object convertCellToAnydata(Cell cell, XlsxConfig config) {
-        if (cell == null) {
-            return null;
-        }
-
-        org.apache.poi.ss.usermodel.CellType cellType = cell.getCellType();
-
-        // Handle formula cells
-        if (cellType == org.apache.poi.ss.usermodel.CellType.FORMULA) {
-            if (config != null && config.isFormulaModeText()) {
-                return StringUtils.fromString("=" + cell.getCellFormula());
-            }
-            cellType = cell.getCachedFormulaResultType();
-        }
-
-        switch (cellType) {
-            case STRING:
-                return StringUtils.fromString(cell.getStringCellValue());
-            case NUMERIC:
-                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
-                    // Bypass POI's getDateCellValue (which routes through
-                    // LocaleUtil.getLocaleCalendar and inherits the system TZ).
-                    // Compute the LocalDate directly from the serial in UTC so the
-                    // ISO string is identical across machines.
-                    double serial = cell.getNumericCellValue();
-                    boolean is1904 = CellConverter.isWorkbookDate1904(cell);
-                    java.time.LocalDate localDate =
-                            CellConverter.convertSerialToLocalDate(serial, is1904);
-                    return StringUtils.fromString(localDate.toString());
-                }
-                double numValue = cell.getNumericCellValue();
-                // Return as long if it's a whole number, otherwise as decimal
-                if (numValue == Math.floor(numValue) && !Double.isInfinite(numValue)) {
-                    return (long) numValue;
-                }
-                return ValueCreator.createDecimalValue(java.math.BigDecimal.valueOf(numValue));
-            case BOOLEAN:
-                return cell.getBooleanCellValue();
-            case BLANK:
-                return null;
-            default:
-                return StringUtils.fromString(cell.toString());
         }
     }
 

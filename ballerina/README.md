@@ -34,7 +34,7 @@ You can also target a specific sheet by name or index, or fall back to a flexibl
 
 ```ballerina
 Employee[] sales = check xlsx:parseSheet("report.xlsx", "Sales");
-map<anydata>[] rows = check xlsx:parseSheet("unknown.xlsx");
+map<xlsx:CellValue?>[] rows = check xlsx:parseSheet("unknown.xlsx");
 string[][] raw = check xlsx:parseSheet("anything.xlsx");
 ```
 

@@ -173,7 +173,7 @@ public type Sheet isolated object {
     # ```
     #
     # + rowIndex - 0-based row index (absolute)
-    # + data - Row data (`string[]`, record, or `map<anydata>`)
+    # + data - Row data (`string[]`, record, or `map<CellValue?>`)
     # + options - Write options
     # + return - Error if write fails
     public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)

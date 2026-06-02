@@ -9,7 +9,7 @@ The `ballerina/xlsx` library provides practical examples illustrating usage in v
 
 ## Prerequisites
 
-- Ballerina Swan Lake 2201.13.1 or later
+- Ballerina Swan Lake 2201.12.0 or later
 
 ## Running an example
 

@@ -107,6 +107,12 @@ public final class CellConverter {
             return null;
         }
 
+        // A "broad" target (anydata, or a union with more than one non-nil member such as
+        // CellValue?) does not pin a single scalar type — bind to the cell's natural value.
+        if (isBroadTarget(targetType)) {
+            return convertToCellValue(cell, config);
+        }
+
         CellType cellType = cell.getCellType();
 
         // Handle formula cells
@@ -115,6 +121,129 @@ public final class CellConverter {
         }
 
         return convertByType(cell, cellType, targetType, config);
+    }
+
+    /**
+     * Convert a cell to its natural Ballerina {@code CellValue} when the caller has not
+     * pinned a specific scalar target type (see {@link #isBroadTarget}). Values bind by
+     * shape: a whole number to {@code int}, a fractional number to {@code decimal}; a
+     * boolean to {@code boolean}; a string to {@code string}; a date / time / date-time
+     * cell to an ISO 8601 {@code string} (the documented fallback when no {@code time:*}
+     * target type drives the binding); and a blank cell to {@code ()}.
+     *
+     * @param cell   The cell to convert
+     * @param config Parsing configuration (drives formula CACHED vs TEXT handling)
+     * @return The natural Ballerina value, or null for a blank cell
+     */
+    public static Object convertToCellValue(Cell cell, XlsxConfig config) {
+        if (cell == null) {
+            return null;
+        }
+
+        CellType cellType = cell.getCellType();
+        if (cellType == CellType.FORMULA) {
+            if (config != null && config.isFormulaModeText()) {
+                return StringUtils.fromString("=" + cell.getCellFormula());
+            }
+            cellType = cell.getCachedFormulaResultType();
+        }
+
+        switch (cellType) {
+            case STRING:
+                return StringUtils.fromString(cell.getStringCellValue());
+
+            case NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    return StringUtils.fromString(formatCellDateIso(cell));
+                }
+                double numValue = cell.getNumericCellValue();
+                // Whole number → int; fractional → decimal.
+                if (numValue == Math.floor(numValue) && !Double.isInfinite(numValue)) {
+                    return (long) numValue;
+                }
+                return ValueCreator.createDecimalValue(BigDecimal.valueOf(numValue));
+
+            case BOOLEAN:
+                return cell.getBooleanCellValue();
+
+            case BLANK:
+                return null;
+
+            default:
+                return StringUtils.fromString(cell.toString());
+        }
+    }
+
+    /**
+     * Whether a target type fails to pin a single scalar Ballerina type, so a cell should
+     * bind to its natural value via {@link #convertToCellValue}. True for {@code anydata}
+     * and for a union with more than one non-nil member (e.g. {@code CellValue?}, whether
+     * the runtime represents it flattened or as {@code CellValue | ()}). A union with a
+     * single non-nil member that is itself a plain type (e.g. {@code int?},
+     * {@code time:Civil?}) is NOT broad — it resolves to that member via the typed path.
+     */
+    private static boolean isBroadTarget(Type targetType) {
+        if (targetType == null) {
+            return false;
+        }
+        Type resolved = TypeUtils.getReferredType(targetType);
+        int tag = resolved.getTag();
+        if (tag == TypeTags.ANYDATA_TAG) {
+            return true;
+        }
+        if (tag != TypeTags.UNION_TAG) {
+            return false;
+        }
+
+        Type singleNonNil = null;
+        int nonNilCount = 0;
+        for (Type member : ((UnionType) resolved).getMemberTypes()) {
+            Type resolvedMember = TypeUtils.getReferredType(member);
+            if (resolvedMember.getTag() == TypeTags.NULL_TAG) {
+                continue;
+            }
+            nonNilCount++;
+            if (nonNilCount > 1) {
+                return true;  // multiple non-nil members (e.g. a flattened CellValue?)
+            }
+            singleNonNil = resolvedMember;
+        }
+        // One non-nil member: broad only if it is itself a union/anydata, which is how a
+        // named-union nilable such as `CellValue?` (= `CellValue | ()`) can appear.
+        if (nonNilCount == 1) {
+            int innerTag = singleNonNil.getTag();
+            return innerTag == TypeTags.UNION_TAG || innerTag == TypeTags.ANYDATA_TAG;
+        }
+        return false;
+    }
+
+    /**
+     * Format a date-formatted numeric cell as an ISO 8601 string, preserving its
+     * date / time / date-time shape.
+     *
+     * <p>Computed directly from the serial in UTC (honouring {@code isDate1904}). We
+     * deliberately bypass POI's DataFormatter / {@code cell.getDateCellValue()} which both
+     * route through LocaleUtil and would inherit the system timezone. Branch on the
+     * serial's integer + fractional parts so date-time and time-only cells keep their time
+     * component instead of collapsing to a plain "yyyy-MM-dd".</p>
+     */
+    private static String formatCellDateIso(Cell cell) {
+        double serial = cell.getNumericCellValue();
+        boolean is1904 = isWorkbookDate1904(cell);
+        boolean hasTimeFraction = serial != Math.floor(serial);
+        // 1900 epoch: serials < 1 are time-only by convention.
+        // 1904 epoch: serial 0 = 1904-01-01, so all serials >= 0 have a date part.
+        boolean hasDatePart = is1904 ? serial >= 0.0 : serial >= 1.0;
+
+        if (hasDatePart && hasTimeFraction) {
+            LocalDate date = convertSerialToLocalDate(serial, is1904);
+            LocalTime time = convertNumericToTime(serial);
+            return DATETIME_FORMAT.format(LocalDateTime.of(date, time));
+        }
+        if (hasDatePart) {
+            return DATE_FORMAT.format(convertSerialToLocalDate(serial, is1904));
+        }
+        return TIME_FORMAT.format(convertNumericToTime(serial));
     }
 
     /**
@@ -146,30 +275,7 @@ public final class CellConverter {
 
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    // Direct serial → LocalDate / LocalTime math (UTC, honours isDate1904).
-                    // We deliberately bypass POI's DataFormatter / cell.getDateCellValue()
-                    // which both route through LocaleUtil and would inherit the system
-                    // timezone. Branch on the serial's integer + fractional parts so
-                    // datetime and time-only cells keep their time component instead of
-                    // collapsing to a plain "yyyy-MM-dd".
-                    double serial = cell.getNumericCellValue();
-                    boolean is1904 = isWorkbookDate1904(cell);
-                    boolean hasTimeFraction = serial != Math.floor(serial);
-                    // 1900 epoch: serials < 1 are time-only by convention.
-                    // 1904 epoch: serial 0 = 1904-01-01, so all serials >= 0 have a date part.
-                    boolean hasDatePart = is1904 ? serial >= 0.0 : serial >= 1.0;
-
-                    if (hasDatePart && hasTimeFraction) {
-                        LocalDate date = convertSerialToLocalDate(serial, is1904);
-                        LocalTime time = convertNumericToTime(serial);
-                        return DATETIME_FORMAT.format(LocalDateTime.of(date, time));
-                    }
-                    if (hasDatePart) {
-                        LocalDate date = convertSerialToLocalDate(serial, is1904);
-                        return DATE_FORMAT.format(date);
-                    }
-                    LocalTime time = convertNumericToTime(serial);
-                    return TIME_FORMAT.format(time);
+                    return formatCellDateIso(cell);
                 }
                 double numValue = cell.getNumericCellValue();
                 // Format as integer if it's a whole number
