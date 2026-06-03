@@ -314,10 +314,11 @@ function testFailSafeMetadataOnlyMode() returns error? {
 
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
 
-    // METADATA mode must include all of timestamp, location, and message
-    test:assertTrue(logContent.includes("time"), "METADATA log should contain time field");
-    test:assertTrue(logContent.includes("location"), "METADATA log should contain location field");
-    test:assertTrue(logContent.includes("message"), "METADATA log should contain message field");
+    // METADATA mode must include all of timestamp, location, and message. Match the
+    // quoted JSON keys, not bare substrings, so a value can't pass these by accident.
+    test:assertTrue(logContent.includes("\"time\""), "METADATA log should contain time JSON key");
+    test:assertTrue(logContent.includes("\"location\""), "METADATA log should contain location JSON key");
+    test:assertTrue(logContent.includes("\"message\""), "METADATA log should contain message JSON key");
 
     // METADATA mode should NOT include offendingRow
     test:assertFalse(logContent.includes("\"offendingRow\""),
@@ -483,7 +484,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
         "Error log should be created for Sheet.getRows with failSafe");
 
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
-    test:assertTrue(logContent.includes("message"), "Log should contain error messages");
+    test:assertTrue(logContent.includes("\"message\""), "Log should contain the message JSON key");
 
     check wb.close();
 }

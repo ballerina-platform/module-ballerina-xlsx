@@ -576,6 +576,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
             int colIdx = resolveColumnRef(sheet, columnRef, config);
 
             // Under typedesc<anydata>, the describing type IS the cell element type
