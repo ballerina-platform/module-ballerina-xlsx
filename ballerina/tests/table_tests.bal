@@ -134,10 +134,7 @@ function testParseTableToRecords() returns error? {
 function testParseTableToStringArray() returns error? {
     string[][] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
 
-    test:assertEquals(data.length(), 3, "Should have 3 rows");
-    test:assertEquals(data[0][0], "Alice", "First cell");
-    test:assertEquals(data[0][1], "30", "Age as string");
-    test:assertEquals(data[0][2], "Engineering", "Department");
+    assertStringArrayEquals(data, EXPECTED_TABLE_STRING_DATA, "Table string rows");
 }
 
 @test:Config {
@@ -189,6 +186,15 @@ function testWriteTableExpands() returns error? {
     test:assertEquals(result.length(), 4, "Should have 4 employees after write");
     test:assertEquals(result[0].Name, "David", "First employee should be David");
     test:assertEquals(result[3].Name, "Grace", "Last employee should be Grace");
+
+    // Verify the table RANGE metadata actually expanded (original had 3 data rows),
+    // not just that the data was written.
+    Workbook wbCheck = check fromFile(tempFile);
+    Table expanded = check wbCheck.getTable("EmployeeTable");
+    test:assertEquals(check expanded.getRowCount(), 4, "Table data-row count should be 4 after auto-expand");
+    CellRange dataRange = check expanded.getDataCellRange();
+    test:assertEquals(dataRange.lastRowIndex, 4, "Data range should extend to row 4 after auto-expand");
+    check wbCheck.close();
 }
 
 // =============================================================================
@@ -441,10 +447,7 @@ function testTableGetRows() returns error? {
 
     TableEmployee[] employees = check empTable.getRows();
 
-    test:assertEquals(employees.length(), 3, "Should have 3 employees");
-    test:assertEquals(employees[0].Name, "Alice", "First employee name");
-    test:assertEquals(employees[1].Name, "Bob", "Second employee name");
-    test:assertEquals(employees[2].Name, "Charlie", "Third employee name");
+    test:assertEquals(employees, EXPECTED_TABLE_EMPLOYEES, "Table rows should match expected employees");
 
     check wb.close();
 }
@@ -642,6 +645,10 @@ function testTableGetTotalsRowError() returns error? {
 
     map<CellValue?>|Error result = empTable.getTotalRow();
     test:assertTrue(result is Error, "Should return error when table has no totals row");
+    if result is Error {
+        test:assertTrue(result.message().includes("does not have a total row"),
+                "Error must identify the missing-total-row cause");
+    }
 
     check wb.close();
 }
@@ -679,6 +686,10 @@ function testTableGetTotalRow() returns error? {
     test:assertTrue(check reopenedTable.hasTotalRow(), "Table should have a total row");
 
     map<CellValue?> totals = check reopenedTable.getTotalRow();
+    // The returned map must be a genuine map<CellValue?>, not the wider map<anydata> the
+    // native builds internally — this guards the typedesc-based inherent-type fix.
+    test:assertTrue(totals is map<CellValue?>,
+            "Total row must be a genuine map<CellValue?>, not map<anydata>");
     CellValue? amountTotal = totals["Amount"];
     test:assertEquals(amountTotal, 350, "Total should bind to its natural type (int 350)");
     test:assertTrue(amountTotal is int, "Whole-number total must bind to int, not decimal/string");
@@ -733,8 +744,6 @@ function testInvalidTableRangeError() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("TestSheet");
 
-    // Try to resize a table to invalid range (firstRow > lastRow would be caught by CellRange validation)
-    // Instead, let's test a scenario where resize would make the table too small
     string[][] data = [["A", "B"], ["1", "2"], ["3", "4"]];
     check sheet.putRows(data);
 
@@ -745,22 +754,20 @@ function testInvalidTableRangeError() returns error? {
         lastColumnIndex: 1
     });
 
-    // Try to resize to have no data rows (only header) - this should fail or produce invalid state
-    // Note: POI may or may not validate this, so we test what our implementation does
+    // Resizing to a header-only range (firstRow == lastRow, no data row) is rejected:
+    // an Excel table must keep at least one header row and one data row.
     Error? result = t.resize({
         firstRowIndex: 0,
-        lastRowIndex: 0,  // Only header row, no data
+        lastRowIndex: 0,  // Only header row, no data row
         firstColumnIndex: 0,
         lastColumnIndex: 1
     });
 
-    // The resize might succeed in POI but produce invalid table state
-    // Our implementation should catch this as InvalidTableRangeError
+    test:assertTrue(result is InvalidTableRangeError,
+            "Resizing to a header-only range must return InvalidTableRangeError");
     if result is InvalidTableRangeError {
-        test:assertTrue(true, "Correctly returned InvalidTableRangeError");
-    } else {
-        // If it didn't fail, verify the table is in a valid state
-        test:assertTrue(check t.getRowCount() >= 0, "Table should have valid row count");
+        test:assertTrue(result.message().includes("at least one header row and one data row"),
+                "Error must identify the missing data row");
     }
 
     check wb.close();
@@ -872,8 +879,12 @@ function testWriteTableWithInlineLiteral() returns error? {
     Workbook check_wb = check fromFile(tempFile);
     Table empTable = check check_wb.getTable("EmployeeTable");
     string[][] rows = check empTable.getRows();
+    // writeTable overwrites from the first data row and expands when needed, but does not
+    // shrink — writing two rows over the original three leaves the third row in place.
+    test:assertEquals(rows.length(), 3, "Table keeps 3 data rows (overwrite-in-place, no shrink)");
     test:assertEquals(rows[0][0], "Eve");
     test:assertEquals(rows[1][0], "Frank");
+    test:assertEquals(rows[2][0], "Charlie", "Untouched trailing row is preserved");
     check check_wb.close();
     check removeTempFile(tempFile);
 }
@@ -911,6 +922,10 @@ function testUseTableAfterCloseReturnsError() returns error? {
     check wb.close();
     string[][]|Error result = empTable.getRows();
     test:assertTrue(result is Error, "Table.getRows after Workbook.close should return Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("no longer valid"),
+                "Error must indicate the handle was invalidated");
+    }
 }
 
 // =============================================================================
@@ -924,6 +939,10 @@ function testCreateTableInvalidNameWithSpace() returns error? {
     check sheet.putRows([["A", "B"], ["1", "2"]]);
     Table|Error result = sheet.createTable("Bad Table", "A1:B2");
     test:assertTrue(result is Error, "Table name with space must be rejected");
+    if result is Error {
+        test:assertTrue(result.message().includes("cannot contain spaces"),
+                "Error must identify the space as the cause");
+    }
     check wb.close();
 }
 
@@ -935,6 +954,10 @@ function testCreateTableNameStartsWithDigit() returns error? {
     Table|Error result = sheet.createTable("1Sales", "A1:B2");
     test:assertTrue(result is Error,
             "Table name starting with a digit must be rejected");
+    if result is Error {
+        test:assertTrue(result.message().includes("must start with a letter or underscore"),
+                "Error must identify the leading-digit as the cause");
+    }
     check wb.close();
 }
 

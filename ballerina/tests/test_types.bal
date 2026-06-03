@@ -117,13 +117,6 @@ final string[][] EXPECTED_SHEET3_DATA = [
     ["P2", "Q2"]
 ];
 
-// Expected data for complex_headers.xlsx (data starts at row 3)
-final string[][] EXPECTED_COMPLEX_HEADERS_DATA = [
-    ["Name", "Value", "Status"],
-    ["Item1", "100", "Active"],
-    ["Item2", "200", "Inactive"]
-];
-
 // Expected formula values (cached results)
 final string[][] EXPECTED_FORMULA_CACHED = [
     ["A", "B", "Sum"],
@@ -136,12 +129,6 @@ final string[][] EXPECTED_FORMULA_TEXT = [
     ["A", "B", "Sum"],
     ["10", "20", "=A2+B2"],
     ["15", "25", "=A3+B3"]
-];
-
-// Expected data for types_variety.xlsx
-final TypeVariety[] EXPECTED_TYPE_VARIETY = [
-    {text: "Hello", number: 42, amount: 99.99d, flag: true},
-    {text: "World", number: -10, amount: 0.001d, flag: false}
 ];
 
 // =============================================================================
@@ -265,6 +252,15 @@ type PartialNaturalRow record {|
     int intCol;
     boolean boolCol;
     CellValue?...;
+|};
+
+// Maps the genuinely-typed scalar columns of natural_types.xlsx (int, decimal,
+// boolean) onto strongly-typed record fields to exercise the typed-cell →
+// typed-record binding path.
+type NaturalTypedRow record {|
+    int intCol;
+    decimal decimalCol;
+    boolean boolCol;
 |};
 
 // =============================================================================

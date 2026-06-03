@@ -397,10 +397,8 @@ function testDatetimeCellReadAsStringPreservesTime() returns error? {
     string[][] rows = check parseSheet(tempFile);
     test:assertEquals(rows.length(), 2, "Expected header row + 1 data row");
     string tsCell = rows[1][1];
-    test:assertTrue(tsCell.includes("2026-05-28"),
-            "Datetime string must include the date component (got: " + tsCell + ")");
-    test:assertTrue(tsCell.includes("14:30:45"),
-            "Datetime string must include the time component (got: " + tsCell + ")");
+    test:assertEquals(tsCell, "2026-05-28 14:30:45",
+            "Datetime cell must preserve the full date and time as 'yyyy-MM-dd HH:mm:ss'");
 
     check removeTempFile(tempFile);
 }

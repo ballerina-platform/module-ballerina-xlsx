@@ -234,7 +234,10 @@ public final class WorkbookHandle {
             registerForCleanup(workbookObj, workbook);
             return workbookObj;
         } catch (IOException e) {
-            return DiagnosticLog.error("Failed to parse workbook bytes: " + e.getMessage(), e);
+            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP,
+            // malformed OOXML, encrypted content). The bytes were readable; interpreting
+            // them as XLSX failed.
+            return DiagnosticLog.parseError("Failed to parse workbook bytes: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook from bytes: " + e.getMessage(), e);
         }
@@ -658,10 +661,12 @@ public final class WorkbookHandle {
      * @param row         0-based row index
      * @param col         0-based column index
      * @param formula     Formula expression without the leading "="
+     * @param cachedValue Cached numeric result stored alongside the formula, mimicking the
+     *                    {@code <v>} an Excel-authored file carries (not an evaluation)
      * @return null on success, error on failure
      */
     public static Object setFormulaCellNative(BObject workbookObj, BString sheetName,
-                                              long row, long col, BString formula) {
+                                              long row, long col, BString formula, double cachedValue) {
         try {
             Workbook workbook = getWorkbook(workbookObj);
             Sheet sheet = workbook.getSheet(sheetName.getValue());
@@ -677,6 +682,9 @@ public final class WorkbookHandle {
                 cell = poiRow.createCell((int) col);
             }
             cell.setCellFormula(formula.getValue());
+            // Populate the cached result the way Excel would; setting a value on a formula
+            // cell updates the cached <v> while preserving the <f> formula expression.
+            cell.setCellValue(cachedValue);
             return null;
         } catch (Exception e) {
             return DiagnosticLog.error("Error setting formula cell: " + e.getMessage(), e);

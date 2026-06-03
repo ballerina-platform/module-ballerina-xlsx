@@ -352,6 +352,7 @@ public final class TableHandle {
     private static Object parseTableInternal(Environment env, XSSFTable table, XSSFSheet sheet,
                                               BMap<BString, Object> options, BTypedesc targetType) {
         XlsxConfig config = XlsxConfig.fromParseOptions(options);
+        RecordParsingUtils.validateReadConfig(config);
 
         // Under the typedesc<Row> signature, the describing type IS the row element type
         // (the function returns `t[]`). Dispatch directly on the row shape.
@@ -402,6 +403,7 @@ public final class TableHandle {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
 
             AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
             int firstRow = area.getFirstCell().getRow();

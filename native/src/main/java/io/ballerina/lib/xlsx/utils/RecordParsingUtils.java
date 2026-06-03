@@ -330,6 +330,24 @@ public final class RecordParsingUtils {
         }
     }
 
+    /**
+     * Reject read options that cannot resolve to a sensible position before parsing begins.
+     * {@code headerRowIndex} must be {@code null} (no headers) or a non-negative row index; a
+     * negative value would place the header — and the data-start row derived from it — at a
+     * position that cannot exist.
+     *
+     * @param config Parsing configuration
+     * @throws BallerinaErrorException wrapping a {@code ParseError} when the options are invalid
+     */
+    public static void validateReadConfig(XlsxConfig config) {
+        Integer headerRowIndex = config.getHeaderRowIndex();
+        if (headerRowIndex != null && headerRowIndex < 0) {
+            throw new BallerinaErrorException(DiagnosticLog.parseError(
+                    "Invalid headerRowIndex " + headerRowIndex
+                            + ": must be 0 or greater, or null for no headers"));
+        }
+    }
+
     // =========================================================================
     // Shared Row Parsing Methods
     // =========================================================================
