@@ -59,12 +59,10 @@ function testFailFastModeDefault() returns error? {
         // Verify error details
         ErrorDetails details = result.detail();
 
-        // Row 2 (0-indexed) contains "Jane" with "invalid" age - first error encountered
-        // In 1-based Excel terms, this is row 3 (row 1 = header, row 2 = John, row 3 = Jane)
-        test:assertTrue(details.rowNumber is int, "Error should include row number");
-
-        // Column 2 (0-indexed column 1) is the "age" field
-        test:assertTrue(details.columnNumber is int, "Error should include column number");
+        // "Jane" with the "invalid" age is the first error (POI row index 2:
+        // index 0 = header, 1 = John, 2 = Jane). "age" is column index 1.
+        test:assertEquals(details.rowNumber, 2, "Error row should be Jane's row (index 2)");
+        test:assertEquals(details.columnNumber, 1, "Error column should be the age column (index 1)");
 
         // Error message should mention the conversion failure
         string message = result.message();
@@ -133,9 +131,9 @@ function testFailSafeWithFileLogging() returns error? {
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
     test:assertTrue(logContent.length() > 0, "Log file should have content");
 
-    // Verify log content contains error information
-    test:assertTrue(logContent.includes("message"), "Log should contain error message field");
-    test:assertTrue(logContent.includes("location"), "Log should contain location field");
+    // Verify log content contains the metadata JSON keys
+    test:assertTrue(logContent.includes("\"message\""), "Log should contain message JSON key");
+    test:assertTrue(logContent.includes("\"location\""), "Log should contain location JSON key");
 }
 
 @test:Config {
@@ -241,10 +239,10 @@ function testFailSafeConsoleAndFileTogether() returns error? {
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
     test:assertTrue(logContent.length() > 0, "Log file should have content");
 
-    // When RAW_AND_METADATA is used with file logging, it should contain both
-    test:assertTrue(logContent.includes("message"), "Log should contain error message");
-    test:assertTrue(logContent.includes("location"), "Log should contain location info");
-    test:assertTrue(logContent.includes("offendingRow"), "RAW_AND_METADATA should include offendingRow");
+    // When RAW_AND_METADATA is used with file logging, it should contain all JSON keys
+    test:assertTrue(logContent.includes("\"message\""), "Log should contain message JSON key");
+    test:assertTrue(logContent.includes("\"location\""), "Log should contain location JSON key");
+    test:assertTrue(logContent.includes("\"offendingRow\""), "RAW_AND_METADATA should include offendingRow key");
 }
 
 @test:Config {
@@ -316,13 +314,70 @@ function testFailSafeMetadataOnlyMode() returns error? {
 
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
 
-    // METADATA mode should include timestamp, location, message
-    test:assertTrue(logContent.includes("time") || logContent.includes("location") || logContent.includes("message"),
-        "METADATA log should contain time, location, or message fields");
+    // METADATA mode must include all of timestamp, location, and message. Match the
+    // quoted JSON keys, not bare substrings, so a value can't pass these by accident.
+    test:assertTrue(logContent.includes("\"time\""), "METADATA log should contain time JSON key");
+    test:assertTrue(logContent.includes("\"location\""), "METADATA log should contain location JSON key");
+    test:assertTrue(logContent.includes("\"message\""), "METADATA log should contain message JSON key");
 
     // METADATA mode should NOT include offendingRow
-    test:assertFalse(logContent.includes("offendingRow"),
+    test:assertFalse(logContent.includes("\"offendingRow\""),
         "METADATA mode should NOT include offendingRow field");
+}
+
+@test:Config {
+    groups: ["failsafe"],
+    before: setupFailSafeTestData,
+    after: cleanupFailSafeLogFile
+}
+function testFailSafeFileAppendMode() returns error? {
+    // APPEND mode should accumulate entries across parse runs into the same file.
+    if check file:test(FAIL_SAFE_ERROR_LOG, file:EXISTS) {
+        check file:remove(FAIL_SAFE_ERROR_LOG);
+    }
+
+    ParseOptions opts = {
+        failSafe: {
+            enableConsoleLogs: false,
+            fileOutputMode: {
+                filePath: FAIL_SAFE_ERROR_LOG,
+                contentType: RAW_AND_METADATA,
+                fileWriteOption: APPEND
+            }
+        }
+    };
+
+    // First run writes the offending-row entries.
+    FailSafeEmployee[] _ = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    string afterFirst = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
+    int firstLength = afterFirst.length();
+    test:assertTrue(firstLength > 0, "First run should produce log content");
+
+    // Second run with APPEND must add to the existing file, not replace it.
+    FailSafeEmployee[] _ = check parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    string afterSecond = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
+
+    test:assertTrue(afterSecond.length() > firstLength,
+        "APPEND mode should grow the log file across runs");
+    test:assertTrue(afterSecond.startsWith(afterFirst),
+        "APPEND mode should retain the first run's entries");
+}
+
+@test:Config {
+    groups: ["failsafe"]
+}
+function testFailSafeDoesNotSwallowStructuralError() returns error? {
+    // Fail-safe only skips row-level errors. A structural error (missing file)
+    // must still fail, not be silently swallowed.
+    ParseOptions opts = {
+        failSafe: {
+            enableConsoleLogs: false
+        }
+    };
+
+    FailSafeEmployee[]|Error result = parseSheet(FAIL_SAFE_TEST_DIR + "does_not_exist.xlsx", 0, opts);
+    test:assertTrue(result is Error,
+        "Structural error must fail even with fail-safe enabled");
 }
 
 // =============================================================================
@@ -429,7 +484,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
         "Error log should be created for Sheet.getRows with failSafe");
 
     string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
-    test:assertTrue(logContent.includes("message"), "Log should contain error messages");
+    test:assertTrue(logContent.includes("\"message\""), "Log should contain the message JSON key");
 
     check wb.close();
 }

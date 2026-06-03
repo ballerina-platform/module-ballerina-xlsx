@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/test;
+import ballerina/time;
 
 // =============================================================================
 // Helper record types
@@ -58,6 +59,10 @@ function testSheetGetColumnMissingHeader() returns error? {
     Sheet sheet = check wb.getSheet(0);
     string[]|Error result = sheet.getColumn("NonExistentHeader");
     test:assertTrue(result is Error, "Missing header should return Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("not found in sheet"),
+                "Error message should mention the header was not found in sheet");
+    }
     check wb.close();
 }
 
@@ -83,8 +88,10 @@ function testSheetGetColumnBroadCellValue() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
     Sheet sheet = check wb.getSheet(0);
     CellValue?[] ints = check sheet.getColumn("intCol");
+    test:assertEquals(ints.length(), 1, "natural_types has one data row");
     test:assertEquals(ints, [42], "Numeric column under CellValue? bound → int");
     CellValue?[] decimals = check sheet.getColumn("decimalCol");
+    test:assertEquals(decimals.length(), 1, "natural_types has one data row");
     test:assertEquals(decimals, [3.14d], "Fractional column under CellValue? bound → decimal");
     check wb.close();
 }
@@ -135,6 +142,15 @@ function testSheetGetCell() returns error? {
 }
 
 @test:Config {groups: ["sheet"]}
+function testSheetGetCellDateTime() returns error? {
+    // A datetime cell must bind to its ISO string form with the time component preserved.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    test:assertEquals(check sheet.getCell(1, 4), "2026-05-28 14:30:00", "Datetime → ISO string with time");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
 function testSheetGetCellBlankIsNil() returns error? {
     // Build a sheet with a known blank cell at (5, 5)
     Workbook wb = new;
@@ -164,6 +180,20 @@ function testSheetSetCell() returns error? {
 }
 
 @test:Config {groups: ["sheet"]}
+function testSheetSetCellTypedValues() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, 3.14d);
+    check sheet.setCell(0, 1, true);
+    time:Date d = {year: 2026, month: 5, day: 28};
+    check sheet.setCell(0, 2, d);
+    test:assertEquals(check sheet.getCell(0, 0), 3.14d, "Decimal → decimal");
+    test:assertEquals(check sheet.getCell(0, 1), true, "Boolean → boolean");
+    test:assertEquals(check sheet.getCell(0, 2), "2026-05-28", "Date → ISO string");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
 function testSheetSetCellByAddress() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
@@ -182,6 +212,10 @@ function testSheetSetCellByAddressInvalid() returns error? {
     Sheet sheet = check wb.createSheet("Data");
     Error? result = sheet.setCellByAddress("not_a1_address", "value");
     test:assertTrue(result is Error, "Invalid A1 address should return Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("Invalid cell address"),
+                "Error message should mention the invalid cell address");
+    }
     check wb.close();
 }
 
@@ -227,6 +261,10 @@ function testSheetSetRowWithRecordRequiresHeaderRow() returns error? {
     SheetTestEmployee unmatched = {Name: "Alice", Age: 30, Department: "Eng"};
     Error? result = sheet.setRow(0, unmatched);
     test:assertTrue(result is Error, "setRow with record needs an existing header row");
+    if result is Error {
+        test:assertTrue(result.message().includes("requires an existing header row"),
+                "Error message should mention that a header row is required");
+    }
     check wb.close();
 }
 
@@ -249,6 +287,10 @@ function testSheetSetColumnByName() returns error? {
     test:assertEquals(result[1][1], "1000");
     test:assertEquals(result[2][1], "2000");
     test:assertEquals(result[3][1], "1500");
+    // The header row must remain intact and the values must land under the "Bonus" column.
+    test:assertEquals(result[0], ["Name", "Bonus"], "Header row should be unchanged");
+    string[] bonus = check sheet.getColumn("Bonus");
+    test:assertEquals(bonus, ["1000", "2000", "1500"], "Bonus column should hold the written values");
     check wb.close();
 }
 
@@ -262,6 +304,10 @@ function testSheetSetColumnByIndex() returns error? {
     string[][] result = check sheet.getRows();
     test:assertEquals(result[1][1], "99");
     test:assertEquals(result[2][1], "100");
+    // The header row and the untouched column 0 must remain intact.
+    test:assertEquals(result[0], ["A", "B"], "Header row should be unchanged");
+    test:assertEquals(result[1][0], "1", "Column 0 should be untouched");
+    test:assertEquals(result[2][0], "3", "Column 0 should be untouched");
     check wb.close();
 }
 
@@ -308,6 +354,10 @@ function testSheetDeleteRowOutOfRange() returns error? {
     check sheet.putRows([["A"], ["B"]]);
     Error? result = sheet.deleteRow(99);
     test:assertTrue(result is Error, "Out-of-range delete should return Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("out of range for deletion"),
+                "Error message should mention the row is out of range for deletion");
+    }
     check wb.close();
 }
 
@@ -333,6 +383,10 @@ function testSheetRenameToDuplicate() returns error? {
     Sheet second = check wb.createSheet("Second");
     Error? result = second.rename("First");
     test:assertTrue(result is Error, "Rename to existing sheet name should error");
+    if result is Error {
+        test:assertTrue(result.message().includes("already exists"),
+                "Error message should mention the sheet name already exists");
+    }
     check wb.close();
 }
 
@@ -373,8 +427,10 @@ function testPutRowsMapInlineLiteral() returns error? {
     check sheet.putRows(rows);
     string[][] reread = check sheet.getRows();
     test:assertEquals(reread.length(), 3, "Should have header + 2 data rows");
-    test:assertTrue(reread[0].indexOf("Name") != (), "Should have Name header");
-    test:assertTrue(reread[0].indexOf("Age") != (), "Should have Age header");
+    string[] headerRow = reread[0];
+    test:assertEquals(headerRow.length(), 2, "Header row should hold both keys");
+    test:assertTrue(headerRow.indexOf("Name") != (), "Header row should contain Name");
+    test:assertTrue(headerRow.indexOf("Age") != (), "Header row should contain Age");
     check wb.close();
 }
 
@@ -386,6 +442,7 @@ function testSetRowMapInlineLiteral() returns error? {
     map<CellValue?> replacement = {"Name": "Charlie", "Age": 99};
     check sheet.setRow(1, replacement);
     string[][] reread = check sheet.getRows();
+    test:assertEquals(reread[0], ["Name", "Age"], "Header row should remain intact after setRow");
     test:assertEquals(reread[1][0], "Charlie", "Row 1 Name should be Charlie");
     test:assertEquals(reread[1][1], "99", "Row 1 Age should be 99");
     check wb.close();
@@ -417,5 +474,28 @@ function testSheetGetRowWithRowTarget() returns error? {
     if r is string[] {
         test:assertEquals(r[0], "John Doe");
     }
+    check wb.close();
+}
+
+// =============================================================================
+// getRow bounds
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetRowOutOfRange() returns error? {
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+
+    // employees.xlsx has 3 data rows (indices 0-2 relative to the data start row).
+    string[]|Error tooHigh = sheet.getRow(99);
+    test:assertTrue(tooHigh is Error, "Row index beyond the data range must return Error");
+    if tooHigh is Error {
+        test:assertTrue(tooHigh.message().includes("out of range"),
+                "Error should mention the row is out of range");
+    }
+
+    string[]|Error negative = sheet.getRow(-1);
+    test:assertTrue(negative is Error, "Negative row index must return Error");
+
     check wb.close();
 }

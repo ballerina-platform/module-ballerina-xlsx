@@ -192,6 +192,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
 
             // Under the typedesc<Row> signature, the describing type IS the row element type
             // (the function returns `t[]`). Dispatch directly on the row shape.
@@ -247,6 +248,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
 
             CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
 
@@ -574,6 +576,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
             int colIdx = resolveColumnRef(sheet, columnRef, config);
 
             // Under typedesc<anydata>, the describing type IS the cell element type
