@@ -47,28 +47,38 @@ public type NameConfig record {|
 # Annotation to specify the Excel column name for a record field.
 public const annotation NameConfig Name on record field;
 
-# Options for parsing XLSX data.
-public type ParseOptions record {|
+# Options shared by every read operation, regardless of result shape.
+#
+# Included into the operation-specific option records (`ParseOptions`,
+# `RowParseOptions`, `ColumnParseOptions`) via type inclusion (`*CommonParseOptions;`).
+public type CommonParseOptions record {|
     # Row containing column headers/names (0-based index).
     # Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
     # Example: If headers are in row 1 (second row), set this to 1.
+    # Note: when reading into `string[][]`, the header row is returned as data (raw mode is
+    # lossless) and this field is ignored - use `dataStartRowIndex` to skip leading rows.
     int? headerRowIndex = 0;
     # Row where actual data begins (0-based index).
     # If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
     int dataStartRowIndex?;
+    # How to handle formula cells (default: CACHED)
+    FormulaMode formulaMode = CACHED;
+    # Whether to match headers case-insensitively (default: false).
+    # When enabled, header "Name" will match record field "name" or "NAME".
+    boolean caseInsensitiveHeaders = false;
+|};
+
+# Options for bulk row reads — `parseSheet`, `parseTable`, `Sheet.getRows`, `Table.getRows`.
+public type ParseOptions record {|
+    *CommonParseOptions;
     # Maximum number of data rows to read. Set to `null` to read all rows (default).
     # Example: `rowCount: 100` reads at most 100 rows starting from dataStartRowIndex.
     int? rowCount = ();
-    # How to handle formula cells (default: CACHED)
-    FormulaMode formulaMode = CACHED;
     # Whether to validate type constraints (default: true).
     # When enabled, parsed records are validated against any Ballerina
     # `@constraint` annotations defined on the record type.
     # Note: Disable for better performance when constraints aren't needed.
     boolean enableConstraintValidation = true;
-    # Whether to match headers case-insensitively (default: false).
-    # When enabled, header "Name" will match record field "name" or "NAME".
-    boolean caseInsensitiveHeaders = false;
     # Data projection configuration (default: enabled/lenient mode).
     # - Default `{}`: Lenient mode - sheet columns don't need to match all record fields
     # - Set to `false`: Strict mode - all record fields must have matching columns
@@ -85,34 +95,34 @@ public type ParseOptions record {|
     FailSafeOptions failSafe?;
 |};
 
-# Options for reading rows from a sheet.
-public type RowReadOptions record {|
-    # Row containing column headers/names (0-based index).
-    # Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
-    int? headerRowIndex = 0;
-    # Row where actual data begins (0-based index).
-    # If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
-    int dataStartRowIndex?;
-    # Maximum number of data rows to read. Set to `null` to read all rows (default).
-    int? rowCount = ();
-    # How to handle formula cells (default: CACHED)
-    FormulaMode formulaMode = CACHED;
+# Options for reading a single row — `Sheet.getRow`, `Table.getRow`.
+#
+# Single-row reads are fail-fast, so there is no `failSafe` (skipping the only requested
+# row would leave nothing to return) and no `rowCount`. Constraint validation and data
+# projection still apply.
+public type RowParseOptions record {|
+    *CommonParseOptions;
     # Whether to validate type constraints (default: true).
-    # When enabled, parsed records are validated against any Ballerina
+    # When enabled, the parsed record is validated against any Ballerina
     # `@constraint` annotations defined on the record type.
-    # Note: Disable for better performance when constraints aren't needed.
     boolean enableConstraintValidation = true;
-    # Whether to match headers case-insensitively (default: false).
-    boolean caseInsensitiveHeaders = false;
-    # Data projection configuration (see ParseOptions for details).
+    # Data projection configuration (see `ParseOptions` for details).
     record {|
         # Treat nil cells as field absence for optional fields
         boolean nilAsOptionalField = false;
         # Allow missing columns for nilable/optional fields
         boolean absentAsNilableType = false;
     |}|false allowDataProjection = {};
-    # Fail-safe error handling configuration (see ParseOptions).
-    FailSafeOptions failSafe?;
+|};
+
+# Options for reading a single column — `Sheet.getColumn`.
+#
+# A column read yields scalar cell values rather than records, so constraint validation,
+# data projection, and fail-safe (record/bulk concerns) do not apply.
+public type ColumnParseOptions record {|
+    *CommonParseOptions;
+    # Maximum number of cells to read. Set to `null` to read all (default).
+    int? rowCount = ();
 |};
 
 # Options for writing rows to a sheet.

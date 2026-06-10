@@ -642,7 +642,7 @@ function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "case_headers.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet1");
-    RowReadOptions opts = {
+    ParseOptions opts = {
         caseInsensitiveHeaders: true
     };
 

@@ -22,7 +22,6 @@ import io.ballerina.lib.xlsx.utils.AnnotationUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
-import io.ballerina.lib.xlsx.utils.RecordParsingUtils.FieldMapping;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.creators.TypeCreator;
@@ -44,6 +43,7 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.util.AreaReference;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFTable;
@@ -56,6 +56,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Native handle for Apache POI XSSFTable.
@@ -370,12 +371,12 @@ public final class TableHandle {
 
         // record{} → record[]
         if (typeTag == TypeTags.RECORD_TYPE_TAG) {
-            return getTableRowsAsRecords(table, sheet, config, (RecordType) describingType);
+            return getTableRowsAsRecords(env, table, sheet, config, (RecordType) describingType);
         }
 
         // map<CellValue?> → map<CellValue?>[]
         if (typeTag == TypeTags.MAP_TAG) {
-            return getTableRowsAsMaps(table, sheet, config, (MapType) describingType);
+            return getTableRowsAsMaps(env, table, sheet, config, (MapType) describingType);
         }
 
         // Row (the public union) — default to string[][].
@@ -439,7 +440,7 @@ public final class TableHandle {
 
             // record{}
             if (typeTag == TypeTags.RECORD_TYPE_TAG) {
-                return getTableRowAsRecord(table, sheet, row, firstCol, lastCol, config, (RecordType) resolvedType);
+                return getTableRowAsRecord(table, sheet, row, actualRowIndex, config, (RecordType) resolvedType);
             }
 
             // Row (the public union) — default to string[].
@@ -855,184 +856,76 @@ public final class TableHandle {
     }
 
     /**
-     * Get table rows as record[].
+     * Get table rows as record[] via the shared per-row binder. Multi-row reads honour
+     * fail-safe when configured (env threaded through), and constraint validation when
+     * enabled. The header map comes from the table's column definitions; the data range
+     * excludes the header row and any totals row.
      */
-    private static Object getTableRowsAsRecords(XSSFTable table, Sheet sheet, XlsxConfig config,
-                                                  RecordType recordType) {
+    private static Object getTableRowsAsRecords(Environment env, XSSFTable table, Sheet sheet, XlsxConfig config,
+                                                RecordType recordType) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
         int firstRow = area.getFirstCell().getRow();
         int lastRow = area.getLastCell().getRow();
         int firstCol = area.getFirstCell().getCol();
         int lastCol = area.getLastCell().getCol();
 
-        // Data starts after header row
         int dataFirstRow = firstRow + 1;
         int dataLastRow = lastRow - table.getTotalsRowCount();
 
-        // Build header map from table columns
-        List<XSSFTableColumn> columns = table.getColumns();
-        Map<String, Integer> headerMap = new HashMap<>();
-        for (int i = 0; i < columns.size(); i++) {
-            String colName = columns.get(i).getName();
-            if (config.isCaseInsensitiveHeaders()) {
-                headerMap.put(colName.toLowerCase(), firstCol + i);
-            } else {
-                headerMap.put(colName, firstCol + i);
-            }
-        }
+        Map<String, Integer> headerMap = RecordParsingUtils.buildHeaderMapFromColumns(
+                columnNames(table), firstCol, config.isCaseInsensitiveHeaders());
+        RecordParsingUtils.RecordBinding binding =
+                RecordParsingUtils.buildRecordBinding(recordType, headerMap, sheet.getSheetName(), config);
 
-        // Get field mappings
-        Map<Integer, FieldMapping> columnToField = new HashMap<>();
-        List<FieldMapping> absentFields = new ArrayList<>();
-        RecordParsingUtils.buildFieldMappings(recordType, headerMap, columnToField, absentFields);
+        // usedRange = the full table area. The per-row binder reads it only for fail-safe row
+        // serialization (column bounds); row iteration is bounded by dataFirstRow..dataLastRow,
+        // so the totals row stays excluded.
+        CellRangeAddress tableArea = new CellRangeAddress(firstRow, lastRow, firstCol, lastCol);
+        RecordParsingUtils.ParseContext context = new RecordParsingUtils.ParseContext(
+                sheet, tableArea, config, recordType, env, new AtomicBoolean(false));
 
-        // Build extra column mappings for open records
-        Map<Integer, String> extraColumns = new HashMap<>();
-        boolean isOpenRecord = RecordParsingUtils.isOpenRecord(recordType);
-        Type restFieldType = null;
-        if (isOpenRecord) {
-            RecordParsingUtils.buildExtraColumnMappings(headerMap, columnToField, extraColumns);
-            restFieldType = recordType.getRestFieldType();
-        }
-
-        // Validate absent fields
-        RecordParsingUtils.validateAbsentFields(absentFields, sheet.getSheetName(), config);
-
-        // Parse rows
-        ArrayType arrayType = TypeCreator.createArrayType(recordType);
-        List<BMap<BString, Object>> records = new ArrayList<>();
-
-        Integer rowCountLimit = config.getRowCount();
-        int parsedCount = 0;
-
-        for (int rowIdx = dataFirstRow; rowIdx <= dataLastRow; rowIdx++) {
-            if (rowCountLimit != null && parsedCount >= rowCountLimit) {
-                break;
-            }
-
-            Row row = sheet.getRow(rowIdx);
-            BMap<BString, Object> record = ValueCreator.createRecordValue(recordType);
-
-            // Parse defined fields
-            for (Map.Entry<Integer, FieldMapping> entry : columnToField.entrySet()) {
-                int colIdx = entry.getKey();
-                FieldMapping mapping = entry.getValue();
-
-                Cell cell = row != null ? row.getCell(colIdx) : null;
-                Object value;
-                try {
-                    value = CellConverter.convert(cell, mapping.type, config);
-                } catch (TypeConversionException e) {
-                    String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                    throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                            e.getMessage(), cellAddress, rowIdx, colIdx));
-                }
-
-                if (value != null) {
-                    record.put(StringUtils.fromString(mapping.fieldName), value);
-                } else {
-                    if (config.isNilAsOptionalField() && mapping.isOptional) {
-                        continue;
-                    }
-                    if (RecordParsingUtils.isNilableType(mapping.type) || mapping.isOptional) {
-                        record.put(StringUtils.fromString(mapping.fieldName), null);
-                    } else {
-                        String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                        throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                                "Required field '" + mapping.fieldName + "' cannot be null (blank cell)",
-                                cellAddress, rowIdx, colIdx));
-                    }
-                }
-            }
-
-            // Parse extra columns for open records
-            if (restFieldType != null && !extraColumns.isEmpty()) {
-                for (Map.Entry<Integer, String> entry : extraColumns.entrySet()) {
-                    int colIdx = entry.getKey();
-                    String headerName = entry.getValue();
-
-                    Cell cell = row != null ? row.getCell(colIdx) : null;
-                    Object value;
-                    try {
-                        value = CellConverter.convert(cell, restFieldType, config);
-                    } catch (TypeConversionException e) {
-                        String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                        throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                                e.getMessage(), cellAddress, rowIdx, colIdx));
-                    }
-
-                    if (value != null) {
-                        record.put(StringUtils.fromString(headerName), value);
-                    } else if (!config.isNilAsOptionalField()) {
-                        record.put(StringUtils.fromString(headerName), null);
-                    }
-                }
-            }
-
-            // Handle absent fields
-            RecordParsingUtils.handleAbsentFields(record, absentFields, config);
-
-            records.add(record);
-            parsedCount++;
-        }
-
-        BArray result = ValueCreator.createArrayValue(arrayType);
-        for (BMap<BString, Object> record : records) {
-            result.append(record);
-        }
-
-        return result;
+        return RecordParsingUtils.bindRecordRows(context, binding, dataFirstRow, dataLastRow);
     }
 
     /**
-     * Get table rows as map<CellValue?>[].
+     * Get table rows as map&lt;CellValue?&gt;[] via the shared per-row binder. Map keys are the
+     * table's column names. Honours fail-safe when configured (env threaded through).
      */
-    private static Object getTableRowsAsMaps(XSSFTable table, Sheet sheet, XlsxConfig config, MapType mapType) {
+    private static Object getTableRowsAsMaps(Environment env, XSSFTable table, Sheet sheet, XlsxConfig config,
+                                             MapType mapType) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
         int firstRow = area.getFirstCell().getRow();
         int lastRow = area.getLastCell().getRow();
         int firstCol = area.getFirstCell().getCol();
+        int lastCol = area.getLastCell().getCol();
 
-        // Data starts after header row
         int dataFirstRow = firstRow + 1;
         int dataLastRow = lastRow - table.getTotalsRowCount();
 
-        // Get column names from table
         List<XSSFTableColumn> columns = table.getColumns();
-
-        ArrayType arrayType = TypeCreator.createArrayType(mapType);
-        List<BMap<BString, Object>> maps = new ArrayList<>();
-
-        Integer rowCountLimit = config.getRowCount();
-        int parsedCount = 0;
-
-        for (int rowIdx = dataFirstRow; rowIdx <= dataLastRow; rowIdx++) {
-            if (rowCountLimit != null && parsedCount >= rowCountLimit) {
-                break;
-            }
-
-            Row row = sheet.getRow(rowIdx);
-            BMap<BString, Object> map = ValueCreator.createMapValue(mapType);
-
-            for (int i = 0; i < columns.size(); i++) {
-                String columnName = columns.get(i).getName();
-                int colIdx = firstCol + i;
-
-                Cell cell = row != null ? row.getCell(colIdx) : null;
-                Object value = CellConverter.convertToCellValue(cell, config);
-                map.put(StringUtils.fromString(columnName), value);
-            }
-
-            maps.add(map);
-            parsedCount++;
+        Map<Integer, String> columnToHeader = new HashMap<>();
+        for (int i = 0; i < columns.size(); i++) {
+            columnToHeader.put(firstCol + i, columns.get(i).getName());
         }
+        Type constraintType = mapType.getConstrainedType();
 
-        BArray result = ValueCreator.createArrayValue(arrayType);
-        for (BMap<BString, Object> map : maps) {
-            result.append(map);
+        CellRangeAddress tableArea = new CellRangeAddress(firstRow, lastRow, firstCol, lastCol);
+        RecordParsingUtils.ParseContext context = new RecordParsingUtils.ParseContext(
+                sheet, tableArea, config, mapType, env, new AtomicBoolean(false));
+
+        return RecordParsingUtils.bindMapRows(context, columnToHeader, constraintType, dataFirstRow, dataLastRow);
+    }
+
+    /**
+     * Collect a table's column header names in column order.
+     */
+    private static List<String> columnNames(XSSFTable table) {
+        List<XSSFTableColumn> columns = table.getColumns();
+        List<String> names = new ArrayList<>(columns.size());
+        for (XSSFTableColumn column : columns) {
+            names.add(column.getName());
         }
-
-        return result;
+        return names;
     }
 
     /**
@@ -1053,105 +946,31 @@ public final class TableHandle {
     }
 
     /**
-     * Get a single table row as record.
+     * Get a single table row as a record via the shared per-row binder. Single-row reads
+     * are fail-fast (env = null): a fail-safe context would skip the one row the caller
+     * asked for. Constraint validation still applies.
+     *
+     * @return BMap on success, or a typed BError on a conversion / constraint / projection failure
      */
-    private static BMap<BString, Object> getTableRowAsRecord(XSSFTable table, Sheet sheet, Row row,
-                                                               int firstCol, int lastCol, XlsxConfig config,
-                                                               RecordType recordType) {
-        // Build header map from table columns
-        List<XSSFTableColumn> columns = table.getColumns();
-        Map<String, Integer> headerMap = new HashMap<>();
-        for (int i = 0; i < columns.size(); i++) {
-            String colName = columns.get(i).getName();
-            if (config.isCaseInsensitiveHeaders()) {
-                headerMap.put(colName.toLowerCase(), firstCol + i);
-            } else {
-                headerMap.put(colName, firstCol + i);
-            }
-        }
+    private static Object getTableRowAsRecord(XSSFTable table, Sheet sheet, Row row, int rowIdx,
+                                              XlsxConfig config, RecordType recordType) {
+        AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+        int firstRow = area.getFirstCell().getRow();
+        int lastRow = area.getLastCell().getRow();
+        int firstCol = area.getFirstCell().getCol();
+        int lastCol = area.getLastCell().getCol();
 
-        // Get field mappings
-        Map<Integer, FieldMapping> columnToField = new HashMap<>();
-        List<FieldMapping> absentFields = new ArrayList<>();
-        RecordParsingUtils.buildFieldMappings(recordType, headerMap, columnToField, absentFields);
+        Map<String, Integer> headerMap = RecordParsingUtils.buildHeaderMapFromColumns(
+                columnNames(table), firstCol, config.isCaseInsensitiveHeaders());
+        RecordParsingUtils.RecordBinding binding =
+                RecordParsingUtils.buildRecordBinding(recordType, headerMap, sheet.getSheetName(), config);
 
-        // Build extra column mappings for open records
-        Map<Integer, String> extraColumns = new HashMap<>();
-        boolean isOpenRecord = RecordParsingUtils.isOpenRecord(recordType);
-        Type restFieldType = null;
-        if (isOpenRecord) {
-            RecordParsingUtils.buildExtraColumnMappings(headerMap, columnToField, extraColumns);
-            restFieldType = recordType.getRestFieldType();
-        }
+        CellRangeAddress tableArea = new CellRangeAddress(firstRow, lastRow, firstCol, lastCol);
+        RecordParsingUtils.ParseContext context = new RecordParsingUtils.ParseContext(
+                sheet, tableArea, config, recordType, null, new AtomicBoolean(false));
 
-        // Validate absent fields
-        RecordParsingUtils.validateAbsentFields(absentFields, sheet.getSheetName(), config);
-
-        BMap<BString, Object> record = ValueCreator.createRecordValue(recordType);
-
-        // Parse defined fields
-        for (Map.Entry<Integer, FieldMapping> entry : columnToField.entrySet()) {
-            int colIdx = entry.getKey();
-            FieldMapping mapping = entry.getValue();
-
-            Cell cell = row != null ? row.getCell(colIdx) : null;
-            Object value;
-            try {
-                value = CellConverter.convert(cell, mapping.type, config);
-            } catch (TypeConversionException e) {
-                int rowIdx = row != null ? row.getRowNum() : -1;
-                String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                        e.getMessage(), cellAddress, rowIdx, colIdx));
-            }
-
-            if (value != null) {
-                record.put(StringUtils.fromString(mapping.fieldName), value);
-            } else {
-                if (config.isNilAsOptionalField() && mapping.isOptional) {
-                    continue;
-                }
-                if (RecordParsingUtils.isNilableType(mapping.type) || mapping.isOptional) {
-                    record.put(StringUtils.fromString(mapping.fieldName), null);
-                } else {
-                    int rowIdx = row != null ? row.getRowNum() : -1;
-                    String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                    throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                            "Required field '" + mapping.fieldName + "' cannot be null (blank cell)",
-                            cellAddress, rowIdx, colIdx));
-                }
-            }
-        }
-
-        // Parse extra columns for open records
-        if (restFieldType != null && !extraColumns.isEmpty()) {
-            for (Map.Entry<Integer, String> entry : extraColumns.entrySet()) {
-                int colIdx = entry.getKey();
-                String headerName = entry.getValue();
-
-                Cell cell = row != null ? row.getCell(colIdx) : null;
-                Object value;
-                try {
-                    value = CellConverter.convert(cell, restFieldType, config);
-                } catch (TypeConversionException e) {
-                    int rowIdx = row != null ? row.getRowNum() : -1;
-                    String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                    throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                            e.getMessage(), cellAddress, rowIdx, colIdx));
-                }
-
-                if (value != null) {
-                    record.put(StringUtils.fromString(headerName), value);
-                } else if (!config.isNilAsOptionalField()) {
-                    record.put(StringUtils.fromString(headerName), null);
-                }
-            }
-        }
-
-        // Handle absent fields
-        RecordParsingUtils.handleAbsentFields(record, absentFields, config);
-
-        return record;
+        return RecordParsingUtils.parseRowToRecord(row, rowIdx, binding.columnToField, binding.absentFields,
+                binding.extraColumns, binding.restFieldType, context);
     }
 
     /**

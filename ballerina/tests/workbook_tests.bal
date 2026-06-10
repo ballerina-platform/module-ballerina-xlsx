@@ -297,7 +297,7 @@ function testSheetPutRows() returns error? {
     check sheet.putRows(data);
 
     // Read back
-    RowReadOptions opts = {headerRowIndex: 0, dataStartRowIndex: 0};
+    ParseOptions opts = {headerRowIndex: 0, dataStartRowIndex: 0};
     string[][] result = check sheet.getRows(opts);
     test:assertEquals(result.length(), 3, "Should have 3 rows");
     assertStringArrayEquals(result, data, "PutRows then getRows");
@@ -507,7 +507,7 @@ function testSheetGetRowsWithHeaderOption() returns error? {
     Sheet sheet = check wb.getSheet(0);
 
     // complex_headers.xlsx: row 0=title, row 1=metadata, row 2=headers, row 3+=data
-    RowReadOptions opts = {
+    ParseOptions opts = {
         headerRowIndex: 2,
         dataStartRowIndex: 3
     };
@@ -528,7 +528,7 @@ function testSheetGetRowsWithFormulaModeText() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "formulas.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
-    RowReadOptions opts = {
+    ParseOptions opts = {
         formulaMode: TEXT
     };
     string[][] rows = check sheet.getRows(opts);

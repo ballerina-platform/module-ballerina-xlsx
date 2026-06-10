@@ -410,6 +410,34 @@ function setupFailSafeTestData() returns error? {
     check writeSheet(testData, testFilePath);
 }
 
+// Setup function to create a TABLE fixture with invalid rows
+function setupFailSafeTableTestData() returns error? {
+    string testFilePath = FAIL_SAFE_TEST_DIR + "failsafe_table.xlsx";
+
+    if check file:test(testFilePath, file:EXISTS) {
+        check file:remove(testFilePath);
+    }
+
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    string[][] testData = [
+        ["name", "age", "department"],
+        ["John", "30", "Engineering"],    // Valid
+        ["Jane", "invalid", "Marketing"], // Invalid age
+        ["Carol", "28", "Sales"],         // Valid
+        ["Bob", "abc", "HR"]              // Invalid age
+    ];
+    check sheet.putRows(testData);
+    _ = check sheet.createTable("FailSafeTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 4,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+    check wb.saveAs(testFilePath);
+    check wb.close();
+}
+
 // Cleanup function to remove error log file
 function cleanupFailSafeLogFile() returns error? {
     if check file:test(FAIL_SAFE_ERROR_LOG, file:EXISTS) {
@@ -431,7 +459,7 @@ function testSheetGetRowsWithFailSafe() returns error? {
     Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
-    RowReadOptions opts = {
+    ParseOptions opts = {
         failSafe: {
             enableConsoleLogs: false
         }
@@ -464,7 +492,7 @@ function testSheetGetRowsWithFailSafeFileLogging() returns error? {
     Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
-    RowReadOptions opts = {
+    ParseOptions opts = {
         failSafe: {
             enableConsoleLogs: false,
             fileOutputMode: {
@@ -503,6 +531,52 @@ function testSheetGetRowsWithoutFailSafeFails() returns error? {
 
     test:assertTrue(result is TypeConversionError,
         "Sheet.getRows without failSafe should return TypeConversionError");
+
+    check wb.close();
+}
+
+// =============================================================================
+// TABLE API FAIL-SAFE TESTS
+// =============================================================================
+// Fail-safe must work on table reads too, not only parseSheet / Sheet.getRows.
+
+@test:Config {
+    groups: ["failsafe", "table"],
+    before: setupFailSafeTableTestData,
+    after: cleanupFailSafeLogFile
+}
+function testTableGetRowsWithFailSafe() returns error? {
+    if check file:test(FAIL_SAFE_ERROR_LOG, file:EXISTS) {
+        check file:remove(FAIL_SAFE_ERROR_LOG);
+    }
+
+    Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_table.xlsx");
+    Table tbl = check wb.getTable("FailSafeTable");
+
+    ParseOptions opts = {
+        failSafe: {
+            enableConsoleLogs: false,
+            fileOutputMode: {
+                filePath: FAIL_SAFE_ERROR_LOG,
+                contentType: RAW_AND_METADATA,
+                fileWriteOption: OVERWRITE
+            }
+        }
+    };
+
+    // With fail-safe, the two non-numeric age rows must be skipped, not abort the read.
+    FailSafeEmployee[] employees = check tbl.getRows(opts);
+
+    test:assertEquals(employees.length(), 2,
+        "Table.getRows with failSafe should skip the 2 invalid rows");
+    test:assertEquals(employees[0].name, "John", "First surviving row should be John");
+    test:assertEquals(employees[1].name, "Carol", "Second surviving row should be Carol");
+
+    // The skipped rows must be logged.
+    test:assertTrue(check file:test(FAIL_SAFE_ERROR_LOG, file:EXISTS),
+        "Error log should be created for Table.getRows with failSafe");
+    string logContent = check io:fileReadString(FAIL_SAFE_ERROR_LOG);
+    test:assertTrue(logContent.includes("\"message\""), "Log should contain the message JSON key");
 
     check wb.close();
 }
@@ -558,7 +632,7 @@ function testSheetBlankCellRequiredFieldWithFailSafe() returns error? {
     Workbook wb = check fromFile(testFile);
     Sheet sheet = check wb.getSheet(0);
 
-    RowReadOptions opts = {
+    ParseOptions opts = {
         failSafe: {
             enableConsoleLogs: false
         }
@@ -579,6 +653,7 @@ function testSheetBlankCellRequiredFieldWithFailSafe() returns error? {
 function cleanupFailSafeTestData() returns error? {
     string[] filesToRemove = [
         "failsafe_test.xlsx",
+        "failsafe_table.xlsx",
         "blank_failsafe_test.xlsx",
         "sheet_blank_failsafe_test.xlsx",
         "failsafe_errors.log"

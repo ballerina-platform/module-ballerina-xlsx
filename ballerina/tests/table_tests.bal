@@ -91,12 +91,35 @@ function setupTableTestData() returns error? {
 
     check wb.saveAs(TEST_DATA_DIR + "tables_test.xlsx");
     check wb.close();
+
+    // -------------------------------------------------------------------------
+    // case_table.xlsx - Table with LOWERCASE headers (name/age/department), read
+    // with a record whose fields are capitalised (TableEmployee: Name/Age/Department).
+    // Exercises caseInsensitiveHeaders on the table read path.
+    // -------------------------------------------------------------------------
+    Workbook wbCase = new;
+    Sheet caseSheet = check wbCase.createSheet("Data");
+    string[][] caseData = [
+        ["name", "age", "department"],
+        ["Alice", "30", "Engineering"],
+        ["Bob", "25", "Marketing"]
+    ];
+    check caseSheet.putRows(caseData);
+    _ = check caseSheet.createTable("CaseTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+    check wbCase.saveAs(TEST_DATA_DIR + "case_table.xlsx");
+    check wbCase.close();
 }
 
 @test:AfterSuite
 function cleanupTableTestData() returns error? {
     string[] filesToRemove = [
         "tables_test.xlsx",
+        "case_table.xlsx",
         "temp_table_write.xlsx",
         "temp_table_create.xlsx",
         "temp_table_write_notfound.xlsx",
@@ -158,6 +181,24 @@ function testParseTableNotFound() returns error? {
     if result is TableNotFoundError {
         test:assertTrue(result.message().includes("NonExistentTable"), "Error should mention table name");
     }
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testParseTableCaseInsensitiveHeaders() returns error? {
+    // CaseTable has lowercase headers (name/age/department); TableEmployee fields are
+    // capitalised (Name/Age/Department). With caseInsensitiveHeaders they must match.
+    ParseOptions opts = {
+        caseInsensitiveHeaders: true
+    };
+
+    TableEmployee[] employees = check parseTable(TEST_DATA_DIR + "case_table.xlsx", "CaseTable", opts);
+
+    test:assertEquals(employees.length(), 2, "Should have 2 employees");
+    test:assertEquals(employees[0].Name, "Alice", "First employee name");
+    test:assertEquals(employees[0].Age, 30, "First employee age");
+    test:assertEquals(employees[1].Name, "Bob", "Second employee name");
 }
 
 @test:Config {
@@ -844,7 +885,7 @@ function testTableGetRowsWithRowCount() returns error? {
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Get rows with rowCount limit
-    RowReadOptions opts = {
+    ParseOptions opts = {
         rowCount: 1
     };
     TableEmployee[] employees = check empTable.getRows(opts);
@@ -1045,10 +1086,10 @@ function testCreateTableFromDataAtNonZeroStartColumn() returns error? {
     test:assertEquals(range.lastColumnIndex, 4);
 
     Sheet s2 = check wb2.getSheet(0);
-    anydata headerNameCell = check s2.getCell(2, 3);
+    CellValue? headerNameCell = check s2.getCell(2, 3);
     test:assertEquals(headerNameCell, "name",
             "Header 'name' must be at row 2 col 3, matching the requested table offset");
-    anydata firstNameCell = check s2.getCell(3, 3);
+    CellValue? firstNameCell = check s2.getCell(3, 3);
     test:assertEquals(firstNameCell, "Alice",
             "Data value 'Alice' must be at row 3 col 3, not column 0");
     check wb2.close();
