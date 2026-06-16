@@ -1,7 +1,7 @@
 _Owners_: @YasanPunch \
 _Reviewers_: @niveathika \
 _Created_: 2026/05/02 \
-_Updated_: 2026/05/24 \
+_Updated_: 2026/06/10 \
 _Edition_: Swan Lake
 
 # Specification: Ballerina XLSX Module
@@ -23,7 +23,7 @@ If you have any feedback or suggestions about the module, start a discussion via
 3. [Configurations](#3-configurations)
    - 3.1. [ParseOptions](#31-parseoptions)
    - 3.2. [RowParseOptions and ColumnParseOptions](#32-rowparseoptions-and-columnparseoptions)
-   - 3.3. [RowWriteOptions](#33-rowwriteoptions)
+   - 3.3. [Write options](#33-write-options)
    - 3.4. [FormulaMode](#34-formulamode)
    - 3.5. [FailSafeOptions](#35-failsafeoptions)
 4. [Annotations](#4-annotations)
@@ -72,14 +72,17 @@ The v0.9 release deliberately defers several features. The following are **not**
 - **Formula authoring on write.** Strings starting with `=` are written verbatim as text, not as formula cells. There is no `Formula` wrapper type.
 - **Formula re-evaluation.** `FormulaMode.CACHED` returns the last cached value as-is. There is no `EVALUATE`, `RECALCULATE`, or `PRESERVE` mode.
 - **Streaming.** No row-streaming API for files larger than memory.
-- **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe. Formulas, formatting, charts, comments, named ranges, and other sheets are not preserved by a `parseSheet → writeSheet` cycle. (`parseTable → writeTable` preserves the surrounding workbook because it writes into an existing table; only the table's data range is overwritten.) For richer preservation, use the Workbook API and edit cells in place.
+- **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe *for the sheet being written*: formulas, formatting, charts, comments, and Excel Tables on the target sheet are not preserved by a `parseSheet → writeSheet` cycle. Other sheets in the file **are** preserved — `writeSheet` opens the existing workbook and only replaces (or appends to) the named sheet. (`parseTable → writeTable` likewise preserves the surrounding workbook; only the table's data range is overwritten.) For richer preservation of the target sheet itself, use the Workbook API and edit cells in place.
 - **XLS (legacy 97-2003) format**, password-protected files, named ranges, cell styling, and range operations.
 
 What's *included* in v0.9 that you might expect to be deferred:
 
 - **Date / time / date-time binding** to `time:Civil` / `time:Date` / `time:TimeOfDay` (target-type-driven; ISO `string` fallback). See §10.8 for code examples.
-- **Large-integer write protection**: integers with `|n| > 2^53` are written as text cells containing the exact digit string, so the data round-trips losslessly. See §10.9.
 - **Excel Tables via tier 1**: `parseTable` and `writeTable` for one-shot table-by-name flows.
+
+One behaviour to be aware of:
+
+- **Large integers lose precision silently on write.** Integer values are written as numeric cells; values with `|n| > 2^53` lose precision silently — the same behaviour as Apache POI, openpyxl, and Excel itself. Declare the field as `string` to preserve exact digits. See §10.9.
 
 ---
 
@@ -89,18 +92,18 @@ What's *included* in v0.9 that you might expect to be deferred:
 
 ```ballerina
 # A single row in a sheet — the atomic data unit.
-public type Row map<CellValue?> | string[];
+public type Row map<CellValue> | string[];
 
-# A populated XLSX cell value. Where a cell may be blank, the nilable `CellValue?` is used.
+# An XLSX cell value, including the empty cell (`()` for a blank cell).
 public type CellValue string|int|float|decimal|boolean
-                    | time:Date|time:Civil|time:TimeOfDay;
+                    | time:Date|time:Civil|time:TimeOfDay|();
 ```
 
 `Row` is the atomic single-row type. A row can be:
-- A **`map<CellValue?>`** — keys are column headers; values are cell values (`()` for a blank cell). A typed **record** also binds when every field is `CellValue?`-typed; name its fields to match the headers, or use `@xlsx:Name`. To capture columns beyond the declared fields, give the record a `CellValue?` rest descriptor (`record {| ...; CellValue?...; |}`).
+- A **`map<CellValue>`** — keys are column headers; values are cell values (`()` for a blank cell, since the empty cell is a member of `CellValue`). A typed **record** also binds when every field type is a subtype of `CellValue`; name its fields to match the headers, or use `@xlsx:Name`. To capture columns beyond the declared fields, give the record a `CellValue` rest descriptor (`record {| ...; CellValue...; |}`).
 - A **`string[]`** — raw cell text in column order.
 
-The map's value type is `CellValue?` (not `anydata`) so the row contract matches what a cell can hold: a target field of an unsupported type (`xml`, `byte[]`, a nested record) is rejected at compile time rather than failing at runtime.
+The map's value type is `CellValue` (not `anydata`) so the row contract matches what a cell can hold: a target field of an unsupported type (`xml`, `byte[]`, a nested record) is rejected at compile time rather than failing at runtime.
 
 `parseSheet` takes the row shape as its target `typedesc<Row> t = <>` and returns `t[]`. `Row[]` is the input type for `writeSheet` / `writeTable`. Contextual typing at the call site infers the row shape:
 
@@ -108,16 +111,15 @@ The map's value type is `CellValue?` (not `anydata`) so the row contract matches
 type Order record {| int id; decimal amount; |};
 Order[] orders     = check xlsx:parseSheet("orders.xlsx");    // t = Order; returns Order[]
 string[][] raw     = check xlsx:parseSheet("orders.xlsx");    // t = string[]; returns string[][]
-map<CellValue?>[] m = check xlsx:parseSheet("orders.xlsx");   // t = map<CellValue?>; returns map<CellValue?>[]
+map<CellValue>[] m = check xlsx:parseSheet("orders.xlsx");    // t = map<CellValue>; returns map<CellValue>[]
 ```
 
 **Untyped / broad reads.** When the target does not pin a specific scalar type — a
-`map<CellValue?>` value, a `CellValue?` rest field, `Sheet.getCell`, `Sheet.getColumn`
-under a `CellValue?` bound, and `Table.getTotalRow` — each cell binds to its natural
-`CellValue`: a whole number → `int`, a fractional number → `decimal`, a boolean →
-`boolean`, a string → `string`, a date / time / date-time cell → an ISO 8601 `string`
-(the fallback when no `time:*` target drives the binding; the time component is
-preserved), and a blank cell → `()`.
+`map<CellValue>` value, a `CellValue` rest field, `Sheet.getCell`, `Sheet.getColumn`,
+and `Table.getTotalRow` — each cell binds to its natural `CellValue`: a whole number →
+`int`, a fractional number → `decimal`, a boolean → `boolean`, a string → `string`, a
+date / time / date-time cell → an ISO 8601 `string` (the fallback when no `time:*`
+target drives the binding; the time component is preserved), and a blank cell → `()`.
 
 ### 2.2 CellRange
 
@@ -198,16 +200,38 @@ public type ColumnParseOptions record {|
 |};
 ```
 
-### 3.3 RowWriteOptions
+### 3.3 Write options
 
-Used by `writeSheet`, `writeTable`, `Sheet.putRows`, `Sheet.setRow`, `Table.putRows`. `sheetName` is a positional parameter on `writeSheet` (not part of `RowWriteOptions`); see `writeSheet` for the default.
+Write operations are configured by records modelled on what each operation honours; `sheetName` is a positional parameter on `writeSheet`, not an option.
 
 ```ballerina
-public type RowWriteOptions record {|
-    boolean writeHeaders = true;
-    int startRowIndex = 0;
+# Base for sheet writes that lay out rows from a starting position —
+# `writeSheet` (via `SheetWriteOptions`) and `Sheet.putRows`.
+public type WriteOptions record {|
+    boolean writeHeaders = true;   # write a header row (records/maps); ignored for string[][]
+    int startRowIndex = 0;         # 0-based row to start writing at
 |};
+
+# writeSheet only.
+public type SheetWriteOptions record {|
+    *WriteOptions;
+    SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;
+|};
+
+# Sheet.setRow only — locates the header row a record/map row aligns against.
+public type RowWriteOptions record {|
+    int headerRowIndex = 0;
+|};
+
+# How writeSheet treats the target sheet when the file already contains it.
+public enum SheetWriteMode {
+    FAIL_IF_EXISTS,   # error if the sheet exists (default — no accidental overwrite)
+    REPLACE,          # drop and recreate the sheet, preserving siblings
+    APPEND            # add rows below the existing data, aligned to the header
+}
 ```
+
+`writeTable` and `Table.putRows` take **no** write options — the table's own header row and data range are authoritative.
 
 ### 3.4 FormulaMode
 
@@ -317,7 +341,7 @@ Reads the specified sheet from an XLSX file and binds rows to the target type in
 | `path` | (required) | Path to the XLSX file. |
 | `sheet` | `0` | Sheet selector — sheet name (`string`) or 0-based index (`int`). |
 | `options` | `{}` | `ParseOptions` (see [3.1](#31-parseoptions)). |
-| `t` | inferred | Target row type — a `Row` member (record, `map<CellValue?>`, or `string[]`). Function returns `t[]`. See [2.1](#21-row-and-cellvalue). |
+| `t` | inferred | Target row type — a `Row` member (record, `map<CellValue>`, or `string[]`). Function returns `t[]`. See [2.1](#21-row-and-cellvalue). |
 
 Examples:
 
@@ -339,35 +363,43 @@ Employee[] data = check xlsx:parseSheet("report.xlsx", 1,
 public isolated function writeSheet(Row[] data,
         string path,
         string sheetName = "Sheet1",
-        *RowWriteOptions options)
+        *SheetWriteOptions options)
     returns Error?;
 ```
 
-Writes data to an XLSX file, overwriting any existing file. The write is atomic — on failure, the original file is preserved.
+Writes data to a sheet in an XLSX file. If the file already exists it is opened and **only the named sheet is affected** — every sibling sheet, their tables, and formulas are preserved; if the file does not exist, it is created with the single sheet. The write is atomic — on failure, the original file is untouched.
+
+By default (`sheetWriteMode = FAIL_IF_EXISTS`) the write fails if the named sheet already exists, so no data is overwritten by accident. Writing into an existing sheet is opted into explicitly:
+
+| `sheetWriteMode` | Behaviour when the target sheet already exists |
+|---|---|
+| `FAIL_IF_EXISTS` (default) | Error — nothing is written. |
+| `REPLACE` | The sheet is dropped and recreated at the same tab position (its own formatting and any table on it are lost); siblings are kept. |
+| `APPEND` | Rows are added below the existing data, aligned to the existing header by column name (record/map) or positionally (`string[][]`). `startRowIndex` is ignored, and a record/map write needs an existing header row. |
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `data` | (required) | Rows to write — `Row[]`. |
-| `path` | (required) | Output file path. |
-| `sheetName` | `"Sheet1"` | Name of the sheet to create. |
-| `*options` | (defaults) | `RowWriteOptions` spread as named arguments (see [3.3](#33-rowwriteoptions)). |
+| `path` | (required) | XLSX file path — opened if it exists, created otherwise. |
+| `sheetName` | `"Sheet1"` | Name of the target sheet. |
+| `*options` | (defaults) | `SheetWriteOptions` spread as named arguments — `sheetWriteMode`, `writeHeaders`, `startRowIndex` (see [3.3](#33-write-options)). |
 
 Examples:
 
 ```ballerina
 Employee[] employees = [{name: "John", age: 30}, {name: "Jane", age: 25}];
 
-// Simplest form (default sheet name "Sheet1").
+// Create a new file (default sheet name "Sheet1").
 check xlsx:writeSheet(employees, "out.xlsx");
 
-// Explicit sheet name (positional).
-check xlsx:writeSheet(employees, "out.xlsx", "Staff");
+// Replace the "Staff" sheet, keeping every other sheet in the file.
+check xlsx:writeSheet(employees, "report.xlsx", "Staff", sheetWriteMode = REPLACE);
 
-// Sheet name + row-level options as named arguments.
-check xlsx:writeSheet(employees, "out.xlsx", "Staff", writeHeaders = true);
+// Append rows under the existing data in "Staff".
+check xlsx:writeSheet(employees, "report.xlsx", "Staff", sheetWriteMode = APPEND);
 ```
 
-**Tier 1 is data-only.** A `parseSheet → writeSheet` cycle does not preserve formulas, formatting, comments, other sheets, charts, named ranges, or Excel Tables. Use the Workbook API for any of those.
+**The target sheet is a data-only pipe.** Within the sheet being written, a `parseSheet → writeSheet` cycle does not preserve formulas, formatting, comments, charts, or Excel Tables — but other sheets in the file are untouched. Writing into an existing file loads the whole workbook into memory; prefer a fresh path for one-shot exports.
 
 ### 5.3 parseTable
 
@@ -386,7 +418,7 @@ Reads from an Excel Table (ListObject) by name. Tables are unique by name across
 | `path` | (required) | Path to the XLSX file. |
 | `tableName` | (required) | Name of the table. Raises `TableNotFoundError` if no matching table exists in any sheet. |
 | `options` | `{}` | `ParseOptions`. `headerRowIndex` and `dataStartRowIndex` are ignored — the table's own range defines these. All other fields (`formulaMode`, `enableConstraintValidation`, `caseInsensitiveHeaders`, `allowDataProjection`, `failSafe`) apply normally. |
-| `t` | inferred | Target row type — a `Row` member (record, `map<CellValue?>`, or `string[]`). Function returns `t[]`. |
+| `t` | inferred | Target row type — a `Row` member (record, `map<CellValue>`, or `string[]`). Function returns `t[]`. |
 
 Example:
 
@@ -400,19 +432,19 @@ Sale[] sales = check xlsx:parseTable("sales.xlsx", "SalesTable");
 ```ballerina
 public isolated function writeTable(Row[] data,
         string path,
-        string tableName,
-        *RowWriteOptions options)
+        string tableName)
     returns Error?;
 ```
 
 Writes data to an existing Excel Table, auto-expanding the table's range if the data exceeds the current data range. The surrounding workbook (other sheets, named ranges, charts, formulas in unaffected cells) is preserved — only the cells inside the target table's data range are overwritten. The write is atomic.
+
+`writeTable` takes no write options — the table's own header row and data range are authoritative.
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `data` | (required) | Rows to write — `Row[]`. |
 | `path` | (required) | Path to the XLSX file containing the table. |
 | `tableName` | (required) | Name of the table to write into. Raises `TableNotFoundError` if no matching table exists. |
-| `*options` | (defaults) | `RowWriteOptions` spread as named arguments. `writeHeaders` and `startRowIndex` are no-ops for `writeTable` — the table's headers and data range are determined by the table itself. |
 
 Example:
 
@@ -481,8 +513,10 @@ Both writes are atomic — temp file in the same directory + atomic rename. A fa
 
 ## 7. Sheet API
 
+`Sheet` is an object type — instances are obtained from a `Workbook` (`getSheet`, `createSheet`); it cannot be constructed directly with `new`.
+
 ```ballerina
-public isolated class Sheet {
+public type Sheet isolated object {
     # Identity and dimensions
     public isolated function getName() returns string|Error;
     public isolated function getUsedRange() returns string|Error;                            # A1 notation, e.g., "A1:D50"
@@ -496,18 +530,18 @@ public isolated class Sheet {
     public isolated function getRow(int index, RowParseOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
     public isolated function getColumn(string|int columnRef, ColumnParseOptions options = {},
-            typedesc<CellValue?> t = <>) returns t[]|Error;
-    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue?> t = <>)
+            typedesc<CellValue> t = <>) returns t[]|Error;
+    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue> t = <>)
             returns t|Error;
 
     # Row writes
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Row[] data, *WriteOptions options) returns Error?;
     public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)
             returns Error?;
-    public isolated function setColumn(string|int columnRef, CellValue?[] data) returns Error?;
-    public isolated function setCell(int rowIndex, int columnIndex, CellValue? value)
+    public isolated function setColumn(string|int columnRef, CellValue[] data) returns Error?;
+    public isolated function setCell(int rowIndex, int columnIndex, CellValue value)
             returns Error?;
-    public isolated function setCellByAddress(string cellAddress, CellValue? value)
+    public isolated function setCellByAddress(string cellAddress, CellValue value)
             returns Error?;                                                         # A1 notation
 
     # Sheet management
@@ -522,11 +556,11 @@ public isolated class Sheet {
     public isolated function createTableFromData(string name, Row[] data,
             int startRowIndex = 0, int startColumnIndex = 0) returns Table|Error;
     public isolated function deleteTable(string name) returns Error?;
-}
+};
 ```
 
 Notes:
-- `Sheet.getCell` binds the cell to the target type `t` (default `CellValue?`). The default yields the cell's natural value (a date/time cell becomes an ISO `string`); pinning a `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell is `()` for a nilable target, or an error for a non-nilable one.
+- `Sheet.getCell` binds the cell to the target type `t` (default `CellValue`). The default yields the cell's natural value (a date/time cell becomes an ISO `string`); pinning a `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell is `()` for a target that admits it (the default `CellValue` does), or an error for a non-nilable scalar target.
 - `Sheet.getColumn` accepts a column reference as either a header name (`string`) or a 0-based index (`int`); `caseInsensitiveHeaders` applies to the header lookup.
 - `Sheet.deleteRow(index)` removes the row and shifts subsequent rows up by one to preserve dense indexing.
 
@@ -534,12 +568,14 @@ Notes:
 
 ## 8. Table API
 
+`Table` is an object type — instances are obtained from a `Workbook` or `Sheet` (see below); it cannot be constructed directly with `new`.
+
 ```ballerina
-public isolated class Table {
+public type Table isolated object {
     # Identity
-    public isolated function getName() returns string;
-    public isolated function getDisplayName() returns string;
-    public isolated function getSheetName() returns string;
+    public isolated function getName() returns string|Error;
+    public isolated function getDisplayName() returns string|Error;
+    public isolated function getSheetName() returns string|Error;
 
     # Range and dimensions
     public isolated function getRange() returns string|Error;            # full table, A1 notation
@@ -555,16 +591,16 @@ public isolated class Table {
             returns t[]|Error;
     public isolated function getRow(int index, RowParseOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;   # auto-expands the table
+    public isolated function putRows(Row[] data) returns Error?;   # auto-expands the table
 
     # Total row
     public isolated function hasTotalRow() returns boolean|Error;
-    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>) returns t|Error;
+    public isolated function getTotalRow(typedesc<map<CellValue>> t = <>) returns t|Error;
 
     # Modification
     public isolated function rename(string newName) returns Error?;
     public isolated function resize(CellRange|string newRange) returns Error?;
-}
+};
 ```
 
 Tables are obtained from `Workbook.getTable(name)`, `Workbook.getAllTables()`, `Sheet.getTable(name)`, `Sheet.getTables()`, `Sheet.createTable(...)`, or `Sheet.createTableFromData(...)`. Table names are unique across the entire workbook.
@@ -598,6 +634,8 @@ public type ErrorDetails record {|
 Semantics:
 - **Structural errors** (`ParseError`, `FileNotFoundError`, `SheetNotFoundError`, `TableNotFoundError`, `TableOverlapError`, `InvalidTableRangeError`) fail immediately, regardless of `failSafe`.
 - **Row-level errors** (`TypeConversionError`, `ConstraintValidationError`) fail immediately by default; with `failSafe` set, the offending row is logged and skipped.
+
+**Index conventions:** option fields (`headerRowIndex`, `dataStartRowIndex`, `startRowIndex`) and `CellRange` are **0-based**; `ErrorDetails.rowNumber`/`columnNumber` and `Location` are **1-based**, matching the Excel UI. Code that feeds error locations back into option values must convert between the two.
 
 ---
 
@@ -722,7 +760,7 @@ public function main() returns error? {
     Employee[] employees = check empTable.getRows();
 
     if check empTable.hasTotalRow() {
-        map<xlsx:CellValue?> totals = check empTable.getTotalRow();
+        map<xlsx:CellValue> totals = check empTable.getTotalRow();
         // ... inspect totals ...
     }
 
@@ -763,6 +801,8 @@ public function main() returns error? {
     check wb.close();
 }
 ```
+
+**Memory note:** the bytes path sustains roughly 1.5–2.5× the DOM heap for the workbook's lifetime (the underlying parser inflates every zip entry up front), while the file path runs at ~1.0×. For large workbooks, write the downloaded payload to a temp file and open it with `xlsx:fromFile` instead.
 
 ### 10.7 Fail-safe error handling
 
@@ -836,28 +876,30 @@ RawTxn[] raw = check xlsx:parseSheet("transactions.xlsx");
 
 ### 10.9 Large integer IDs
 
-Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles. v0.9 writes them as text cells with the exact digit string preserved.
+Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles, which is how Excel stores numeric cells. v0.9 writes all integers as numeric cells — values beyond `2^53` **lose precision silently**, matching what Apache POI, openpyxl, and Excel itself do.
+
+To preserve 16+ digit identifiers (account numbers, order IDs, transaction references) exactly, declare the field as `string`:
 
 ```ballerina
 import ballerina/xlsx;
 
 type Order record {|
-    int orderId;              // e.g., 4929187654321098765 — 19 digits
+    string orderId;           // e.g., "4929187654321098765" — 19 digits, preserved exactly
     string customer;
     decimal amount;
 |};
 
 public function main() returns error? {
     Order[] orders = [
-        {orderId: 4929187654321098765, customer: "Acme", amount: 99.99d}
+        {orderId: "4929187654321098765", customer: "Acme", amount: 99.99d}
     ];
 
     // The orderId is written as a text cell. The digits round-trip exactly.
     check xlsx:writeSheet(orders, "orders.xlsx");
 
     Order[] readBack = check xlsx:parseSheet("orders.xlsx");
-    // readBack[0].orderId == 4929187654321098765 — preserved
+    // readBack[0].orderId == "4929187654321098765" — preserved
 }
 ```
 
-In Excel the affected cells appear as text (left-aligned, no numeric formatting). If you need Excel to treat the column as numeric for display purposes, declare the field as `string` in your record to make the intent explicit; v0.9 doesn't auto-format the cell back as numeric.
+With an `int` field instead, the same value would silently round (e.g., to `4929187654321098752`) — the cell stays numeric, exactly as if the number had been typed into Excel by hand. In Excel the `string`-field cells appear as text (left-aligned, no numeric formatting).

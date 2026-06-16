@@ -244,6 +244,31 @@ public final class WorkbookHandle {
     }
 
     /**
+     * Open a workbook for in-place editing, creating a new empty one if the path is absent.
+     *
+     * Unlike {@link #openWorkbookFromPath}, this is BObject-free and is *not*
+     * registered for phantom-reference cleanup — the caller owns the returned workbook and
+     * must close it (try-with-resources). A missing file is not an error: a new empty
+     * {@link XSSFWorkbook} is returned. An existing-but-unreadable file throws
+     * {@link IOException}, which the caller maps to a parse error. The stream is read fully
+     * by POI and closed before return, so the returned workbook holds no lock on the file —
+     * safe to atomically rewrite the same path.
+     *
+     * @param path destination path
+     * @return an open Workbook — the existing contents if the file exists, else empty
+     * @throws IOException if an existing file cannot be read as XLSX (corrupt or encrypted)
+     */
+    static Workbook openWorkbookForEdit(String path) throws IOException {
+        Path filePath = Paths.get(path);
+        if (!Files.exists(filePath)) {
+            return new XSSFWorkbook();
+        }
+        try (FileInputStream fis = new FileInputStream(filePath.toFile())) {
+            return WorkbookFactory.create(fis);
+        }
+    }
+
+    /**
      * Create a new empty workbook on the given Ballerina Workbook object.
      *
      * @param workbookObj Ballerina Workbook object

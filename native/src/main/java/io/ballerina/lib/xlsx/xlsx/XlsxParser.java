@@ -177,7 +177,7 @@ public final class XlsxParser {
             return parseToRecordArray(env, sheet, config, (RecordType) describingType);
         }
 
-        // map<CellValue?> - array of maps
+        // map<CellValue> - array of maps
         if (typeTag == TypeTags.MAP_TAG) {
             return parseToMapArray(env, sheet, config, (MapType) describingType);
         }
@@ -260,7 +260,7 @@ public final class XlsxParser {
     }
 
     /**
-     * Parse sheet to map<CellValue?>[].
+     * Parse sheet to map<CellValue>[].
      * Returns BArray on success, or BError on failure.
      */
     private static Object parseToMapArray(Environment env, Sheet sheet, XlsxConfig config, MapType mapType) {

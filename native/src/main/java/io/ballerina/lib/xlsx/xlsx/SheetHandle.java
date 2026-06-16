@@ -210,7 +210,7 @@ public final class SheetHandle {
                 return getRowsAsRecords(env, sheet, config, (RecordType) describingType);
             }
 
-            // map<CellValue?> → map<CellValue?>[]
+            // map<CellValue> → map<CellValue>[]
             if (typeTag == TypeTags.MAP_TAG) {
                 return getRowsAsMaps(env, sheet, config, (MapType) describingType);
             }
@@ -434,7 +434,7 @@ public final class SheetHandle {
     }
 
     /**
-     * Get rows as map<CellValue?>[].
+     * Get rows as map<CellValue>[].
      */
     private static Object getRowsAsMaps(Environment env, Sheet sheet, XlsxConfig config, MapType mapType) {
         CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
@@ -554,7 +554,7 @@ public final class SheetHandle {
      * Read a single cell value, bound to the target type.
      *
      * <p>The target type drives binding exactly as elsewhere: a broad target (the default
-     * {@code CellValue?}) yields the cell's natural value (whole number → int, fractional →
+     * {@code CellValue}) yields the cell's natural value (whole number → int, fractional →
      * decimal, date/time → ISO string), while a pinned {@code time:Civil} / {@code time:Date}
      * / {@code time:TimeOfDay} / scalar yields that type. A blank cell binds to {@code ()} for
      * a nilable target, or surfaces a typed error for a non-nilable one (same rule as a
@@ -683,7 +683,7 @@ public final class SheetHandle {
                 return null;
             }
             return DiagnosticLog.error(
-                    "setRow data must be string[], record, or map<CellValue?>");
+                    "setRow data must be string[], record, or map<CellValue>");
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {

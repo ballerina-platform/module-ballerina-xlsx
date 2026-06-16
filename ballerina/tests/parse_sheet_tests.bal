@@ -192,7 +192,7 @@ function testParseToTypedRecordWithVariousTypes() returns error? {
     groups: ["parseSheet", "types"]
 }
 function testParseToMapArray() returns error? {
-    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
+    map<CellValue>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records (excluding header)");
     test:assertEquals(data[0]["Name"], "John", "First record Name should be 'John'");
@@ -509,7 +509,7 @@ function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
     groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldTrue() returns error? {
-    // Test nilAsOptionalField for map<CellValue?>[] - nil values should be skipped
+    // Test nilAsOptionalField for map<CellValue>[] - nil values should be skipped
     ParseOptions opts = {
         allowDataProjection: {
             nilAsOptionalField: true,
@@ -532,10 +532,10 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
     check wb.saveAs(nilMapFile);
     check wb.close();
 
-    map<CellValue?>[] data = check parseSheet(nilMapFile, 0, opts);
+    map<CellValue>[] data = check parseSheet(nilMapFile, 0, opts);
 
     test:assertEquals(data.length(), 2, "Should have 2 data rows");
-    map<CellValue?> jane = data[1];
+    map<CellValue> jane = data[1];
     test:assertFalse(jane.hasKey("department"),
             "Blank cell's key must be absent when nilAsOptionalField is true");
 
@@ -546,7 +546,7 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
     groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldFalse() returns error? {
-    // Test nilAsOptionalField=false for map<CellValue?>[] - nil values should be included
+    // Test nilAsOptionalField=false for map<CellValue>[] - nil values should be included
     ParseOptions opts = {
         allowDataProjection: {
             nilAsOptionalField: false,
@@ -569,12 +569,12 @@ function testParseMapWithNilAsOptionalFieldFalse() returns error? {
     check wb.saveAs(nilMapFile);
     check wb.close();
 
-    map<CellValue?>[] data = check parseSheet(nilMapFile, 0, opts);
+    map<CellValue>[] data = check parseSheet(nilMapFile, 0, opts);
 
     test:assertEquals(data.length(), 2, "Should have 2 data rows");
-    map<CellValue?> jane = data[1];
+    map<CellValue> jane = data[1];
     test:assertTrue(jane.hasKey("department"), "Blank cell's key must be present in the map");
-    test:assertTrue(jane["department"] is (), "Blank cell must bind to () in map<CellValue?>");
+    test:assertTrue(jane["department"] is (), "Blank cell must bind to () in map<CellValue>");
 
     check file:remove(nilMapFile);
 }
@@ -919,7 +919,7 @@ function testParseHeaderlessToMap() returns error? {
     ParseOptions opts = {
         headerRowIndex: ()
     };
-    map<CellValue?>[] result = check parseSheet(testFile, 0, opts);
+    map<CellValue>[] result = check parseSheet(testFile, 0, opts);
 
     test:assertEquals(result.length(), 2, "Should have 2 rows");
     test:assertEquals(result[0]["col0"], "Alice", "First row col0 should be 'Alice'");
@@ -1083,16 +1083,16 @@ function testParseClosedRecordIgnoresExtraColumns() returns error? {
 }
 
 // =============================================================================
-// Natural-type binding for untyped / broad reads (map<CellValue?>, rest fields)
+// Natural-type binding for untyped / broad reads (map<CellValue>, rest fields)
 // =============================================================================
 
 @test:Config {
     groups: ["parseSheet", "types"]
 }
 function testParseNaturalTypedCellsIntoMap() returns error? {
-    // natural_types.xlsx holds genuinely typed cells. Reading into map<CellValue?>[]
+    // natural_types.xlsx holds genuinely typed cells. Reading into map<CellValue>[]
     // must bind each value to its natural Ballerina type, not collapse to strings.
-    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
+    map<CellValue>[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
 
     test:assertEquals(data.length(), 1, "Should have 1 data row");
     test:assertEquals(data[0]["intCol"], 42, "Whole number should bind to int");
@@ -1124,7 +1124,7 @@ function testParseNaturalTypedCellsIntoRecord() returns error? {
 }
 function testParseNaturalTypedCellsIntoRestField() returns error? {
     // intCol/boolCol are declared fields; the remaining typed columns fall to the
-    // CellValue? rest field and must keep their natural types.
+    // CellValue rest field and must keep their natural types.
     PartialNaturalRow[] rows = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
 
     test:assertEquals(rows.length(), 1);

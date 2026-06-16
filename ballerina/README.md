@@ -34,7 +34,7 @@ You can also target a specific sheet by name or index, or fall back to a flexibl
 
 ```ballerina
 Employee[] sales = check xlsx:parseSheet("report.xlsx", "Sales");
-map<xlsx:CellValue?>[] rows = check xlsx:parseSheet("unknown.xlsx");
+map<xlsx:CellValue>[] rows = check xlsx:parseSheet("unknown.xlsx");
 string[][] raw = check xlsx:parseSheet("anything.xlsx");
 ```
 
@@ -47,6 +47,16 @@ Employee[] employees = [
 ];
 
 check xlsx:writeSheet(employees, "output.xlsx", "Employees");
+```
+
+Writing to an existing file preserves every other sheet, table, and formula — only the named sheet is affected. By default the write **fails if that sheet already exists**, so data is never overwritten by accident; pass `sheetWriteMode` to opt in:
+
+```ballerina
+// Replace the sheet's contents, keeping the rest of the workbook.
+check xlsx:writeSheet(employees, "report.xlsx", "Employees", sheetWriteMode = xlsx:REPLACE);
+
+// Append rows below the existing data.
+check xlsx:writeSheet(employees, "report.xlsx", "Employees", sheetWriteMode = xlsx:APPEND);
 ```
 
 > **Note:** The write is atomic — on failure the original file is preserved, never partially overwritten.
@@ -129,7 +139,7 @@ xlsx:Table empTable = check wb.getTable("EmployeeTable");
 
 Employee[] employees = check empTable.getRows();
 if check empTable.hasTotalRow() {
-    map<xlsx:CellValue?> totals = check empTable.getTotalRow();
+    map<xlsx:CellValue> totals = check empTable.getTotalRow();
     // ...
 }
 check empTable.putRows([...employees, ...newEmployees]);

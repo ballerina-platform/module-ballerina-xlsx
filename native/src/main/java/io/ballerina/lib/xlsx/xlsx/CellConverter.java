@@ -108,7 +108,7 @@ public final class CellConverter {
         }
 
         // A "broad" target (anydata, or a union with more than one non-nil member such as
-        // CellValue?) does not pin a single scalar type — bind to the cell's natural value.
+        // CellValue) does not pin a single scalar type — bind to the cell's natural value.
         if (isBroadTarget(targetType)) {
             return convertToCellValue(cell, config);
         }
@@ -177,7 +177,7 @@ public final class CellConverter {
     /**
      * Whether a target type fails to pin a single scalar Ballerina type, so a cell should
      * bind to its natural value via {@link #convertToCellValue}. True for {@code anydata}
-     * and for a union with more than one non-nil member (e.g. {@code CellValue?}, whether
+     * and for a union with more than one non-nil member (e.g. {@code CellValue}, whether
      * the runtime represents it flattened or as {@code CellValue | ()}). A union with a
      * single non-nil member that is itself a plain type (e.g. {@code int?},
      * {@code time:Civil?}) is NOT broad — it resolves to that member via the typed path.
@@ -204,12 +204,13 @@ public final class CellConverter {
             }
             nonNilCount++;
             if (nonNilCount > 1) {
-                return true;  // multiple non-nil members (e.g. a flattened CellValue?)
+                return true;  // multiple non-nil members (e.g. a flattened CellValue)
             }
             singleNonNil = resolvedMember;
         }
-        // One non-nil member: broad only if it is itself a union/anydata, which is how a
-        // named-union nilable such as `CellValue?` (= `CellValue | ()`) can appear.
+        // One non-nil member: broad only if it is itself a union/anydata — e.g. a nilable
+        // alias of a union type (`MyUnion?`). (`CellValue` itself folds in `()`, so it
+        // surfaces as multiple non-nil members above, not through this branch.)
         if (nonNilCount == 1) {
             int innerTag = singleNonNil.getTag();
             return innerTag == TypeTags.UNION_TAG || innerTag == TypeTags.ANYDATA_TAG;

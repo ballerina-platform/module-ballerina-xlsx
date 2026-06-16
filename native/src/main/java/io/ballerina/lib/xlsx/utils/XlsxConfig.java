@@ -51,6 +51,7 @@ public class XlsxConfig {
     private static final BString WRITE_HEADERS = StringUtils.fromString("writeHeaders");
     private static final BString START_ROW_INDEX = StringUtils.fromString("startRowIndex");
     private static final BString START_COLUMN_INDEX = StringUtils.fromString("startColumnIndex");
+    public static final BString WRITE_SHEET_MODE = StringUtils.fromString("sheetWriteMode");
 
     // Formula mode values
     private static final String FORMULA_MODE_CACHED = "CACHED";
@@ -83,6 +84,8 @@ public class XlsxConfig {
     private boolean writeHeaders = true;
     private int startRowIndex = 0;
     private int startColumnIndex = 0;
+    // One of the Ballerina SheetWriteMode enum members; default matches SheetWriteOptions.
+    private String sheetWriteMode = "FAIL_IF_EXISTS";
 
     /**
      * Create config from Ballerina parse options map.
@@ -210,6 +213,18 @@ public class XlsxConfig {
             config.startColumnIndex = ((Long) startColumnIndexVal).intValue();
         }
 
+        Object sheetWriteModeVal = options.get(WRITE_SHEET_MODE);
+        if (sheetWriteModeVal != null) {
+            config.sheetWriteMode = sheetWriteModeVal.toString();
+        }
+
+        // headerRowIndex is carried by single-row write options (setRow) to locate the
+        // header row for record/map column alignment.
+        Object headerRowIndexVal = options.get(HEADER_ROW_INDEX);
+        if (headerRowIndexVal != null) {
+            config.headerRowIndex = ((Long) headerRowIndexVal).intValue();
+        }
+
         return config;
     }
 
@@ -303,6 +318,10 @@ public class XlsxConfig {
 
     public int getStartColumnIndex() {
         return startColumnIndex;
+    }
+
+    public String getSheetWriteMode() {
+        return sheetWriteMode;
     }
 
     // Fail-safe getters

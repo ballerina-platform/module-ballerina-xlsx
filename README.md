@@ -48,6 +48,8 @@ Employee[] employees = [
 check xlsx:writeSheet(employees, "output.xlsx", "Employees");
 ```
 
+Writing to an existing file preserves every other sheet — only the named sheet is affected. The write fails by default if that sheet already exists; pass `sheetWriteMode = xlsx:REPLACE` to overwrite it, or `xlsx:APPEND` to add rows below the existing data. The write is atomic — on failure the original file is preserved.
+
 #### Map non-matching headers with `@xlsx:Name`
 
 ```ballerina
@@ -97,7 +99,7 @@ xlsx:Table empTable = check wb.getTable("EmployeeTable");
 
 Employee[] employees = check empTable.getRows();
 if check empTable.hasTotalRow() {
-    map<xlsx:CellValue?> totals = check empTable.getTotalRow();
+    map<xlsx:CellValue> totals = check empTable.getTotalRow();
     // ...
 }
 

@@ -20,6 +20,7 @@ package io.ballerina.lib.xlsx.xlsx;
 
 import io.ballerina.lib.xlsx.utils.AnnotationUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
+import io.ballerina.lib.xlsx.utils.UsedRangeDetector;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.Field;
@@ -35,7 +36,7 @@ import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.util.CellRangeAddress;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -63,27 +64,85 @@ public final class XlsxWriter {
      */
     public static Object writeToFile(String filePath, BArray data, BMap<BString, Object> options) {
         XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+        java.nio.file.Path dest = java.nio.file.Paths.get(filePath);
+        boolean existedBefore = java.nio.file.Files.exists(dest);
 
-        try (Workbook workbook = new XSSFWorkbook()) {
-            Sheet sheet = workbook.createSheet(config.getWriteSheetName());
+        // Open the existing workbook so sibling sheets are preserved, or create a new one.
+        try (Workbook workbook = WorkbookHandle.openWorkbookForEdit(filePath)) {
+            String sheetName = config.getWriteSheetName();
+            WorkbookHandle.validateSheetName(sheetName);
 
             int startRow = config.getStartRowIndex();
             int startCol = config.getStartColumnIndex();
+            Integer dataStartRowOverride = null;
+            int existingIdx = WorkbookHandle.findSheetIndexCaseInsensitive(workbook, sheetName);
+            String mode = config.getSheetWriteMode();
+            Sheet sheet;
+
+            // Mode strings mirror the Ballerina SheetWriteMode enum members.
+            if ("REPLACE".equals(mode)) {
+                if (existingIdx == -1) {
+                    sheet = workbook.createSheet(sheetName);
+                } else {
+                    // Drop and recreate at the same tab position so sibling order is kept.
+                    workbook.removeSheetAt(existingIdx);
+                    sheet = workbook.createSheet(sheetName);
+                    workbook.setSheetOrder(sheetName, existingIdx);
+                }
+            } else if ("APPEND".equals(mode)) {
+                if (existingIdx == -1) {
+                    sheet = workbook.createSheet(sheetName);  // nothing to append to → fresh write
+                } else {
+                    sheet = workbook.getSheetAt(existingIdx);
+                    CellRangeAddress used = UsedRangeDetector.detectUsedRange(sheet);
+                    if (used != null) {
+                        int appendRow = used.getLastRow() + 1;
+                        Object first = data.size() > 0 ? data.get(0) : null;
+                        if (first instanceof BArray) {
+                            // string[][] appends positionally below the last data row.
+                            startRow = appendRow;
+                        } else if (first instanceof BMap) {
+                            // record/map: align to the existing header row (at startRow) and place
+                            // data at the append row. Refuse rather than silently shift columns
+                            // when there is no header to align against.
+                            if (existingHeaderMap(sheet, startRow) == null) {
+                                return DiagnosticLog.error("Cannot APPEND a record or map to sheet '"
+                                        + sheetName + "': no header row found at index " + startRow);
+                            }
+                            dataStartRowOverride = appendRow;
+                        }
+                    }
+                    // used == null (empty sheet) → fall through to a fresh write.
+                }
+            } else {
+                // FAIL_IF_EXISTS (default).
+                if (existingIdx != -1) {
+                    return DiagnosticLog.error("Sheet '" + sheetName + "' already exists in '" + filePath
+                            + "'. Use sheetWriteMode REPLACE or APPEND to write into an existing sheet.");
+                }
+                sheet = workbook.createSheet(sheetName);
+            }
+
             StyleCache styleCache = new StyleCache(workbook);
             Object dispatchResult = dispatchWrite(sheet, data, config, startRow, startCol, styleCache,
-                    "XLSX export");
+                    "XLSX export", dataStartRowOverride);
             if (dispatchResult != null) {
                 return dispatchResult; // error from dispatch
             }
 
             // Atomic save: serialize → temp file → atomic rename. If any step fails,
             // the destination file (if it existed) is untouched.
-            WorkbookHandle.writeAtomically(java.nio.file.Paths.get(filePath), workbook);
+            WorkbookHandle.writeAtomically(dest, workbook);
             return null; // Success
 
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (IOException e) {
+            // openWorkbookForEdit throws IOException only for an existing-but-unreadable file.
+            if (existedBefore) {
+                return DiagnosticLog.parseError(
+                        "Failed to open existing workbook for writing: " + e.getMessage());
+            }
             return DiagnosticLog.error("Failed to write XLSX file: " + e.getMessage(), e);
         } catch (Exception e) {
             return DiagnosticLog.error("Error writing XLSX: " + e.getMessage(), e);
@@ -104,7 +163,8 @@ public final class XlsxWriter {
      * map writer. An empty array is a no-op.</p>
      */
     static Object dispatchWrite(Sheet sheet, BArray data, XlsxConfig config, int startRow,
-                                 int startCol, StyleCache styleCache, String contextLabel) {
+                                 int startCol, StyleCache styleCache, String contextLabel,
+                                 Integer dataStartRowOverride) {
         // Unwrap any type reference on the array itself (e.g., when contextually typed as `Data`,
         // data.getType() returns a BTypeReferenceType, not the underlying ArrayType).
         Type dataType = TypeUtils.getReferredType(data.getType());
@@ -117,11 +177,12 @@ public final class XlsxWriter {
             return null;
         }
         if (elementTag == TypeTags.RECORD_TYPE_TAG) {
-            writeRecordData(sheet, data, (RecordType) resolvedElementType, config, startRow, startCol, styleCache);
+            writeRecordData(sheet, data, (RecordType) resolvedElementType, config, startRow, startCol,
+                    styleCache, dataStartRowOverride);
             return null;
         }
         if (elementTag == TypeTags.MAP_TAG) {
-            writeMapData(sheet, data, config, startRow, startCol, styleCache);
+            writeMapData(sheet, data, config, startRow, startCol, styleCache, dataStartRowOverride);
             return null;
         }
         if (elementTag == TypeTags.UNION_TAG) {
@@ -137,9 +198,10 @@ public final class XlsxWriter {
             if (first instanceof BMap) {
                 Type firstType = TypeUtils.getReferredType(TypeUtils.getType(first));
                 if (firstType.getTag() == TypeTags.RECORD_TYPE_TAG) {
-                    writeRecordData(sheet, data, (RecordType) firstType, config, startRow, startCol, styleCache);
+                    writeRecordData(sheet, data, (RecordType) firstType, config, startRow, startCol,
+                            styleCache, dataStartRowOverride);
                 } else {
-                    writeMapData(sheet, data, config, startRow, startCol, styleCache);
+                    writeMapData(sheet, data, config, startRow, startCol, styleCache, dataStartRowOverride);
                 }
                 return null;
             }
@@ -203,7 +265,7 @@ public final class XlsxWriter {
      */
     private static void writeRecordData(Sheet sheet, BArray data, RecordType recordType,
                                          XlsxConfig config, int startRow, int startCol,
-                                         StyleCache styleCache) {
+                                         StyleCache styleCache, Integer dataStartRowOverride) {
         if (data.size() == 0) {
             return;
         }
@@ -233,8 +295,9 @@ public final class XlsxWriter {
                 resolvedCols[j] = col;
             }
 
-            // Data starts on the row after the existing header row
-            int dataStartRow = startRow + 1;
+            // Data starts on the row after the existing header row, unless an explicit data-start
+            // row was supplied (APPEND places rows below the existing data, not over it).
+            int dataStartRow = (dataStartRowOverride != null) ? dataStartRowOverride : startRow + 1;
 
             for (int i = 0; i < data.size(); i++) {
                 Object item = data.get(i);
@@ -298,7 +361,7 @@ public final class XlsxWriter {
      * write using the union of all keys as headers.</p>
      */
     private static void writeMapData(Sheet sheet, BArray data, XlsxConfig config, int startRow,
-                                      int startCol, StyleCache styleCache) {
+                                      int startCol, StyleCache styleCache, Integer dataStartRowOverride) {
         if (data.size() == 0) {
             return;
         }
@@ -307,7 +370,7 @@ public final class XlsxWriter {
 
         if (existingHeaders != null) {
             // Header-position write: resolve each map key against existing headers
-            int dataStartRow = startRow + 1;
+            int dataStartRow = (dataStartRowOverride != null) ? dataStartRowOverride : startRow + 1;
 
             for (int i = 0; i < data.size(); i++) {
                 @SuppressWarnings("unchecked")
@@ -381,7 +444,7 @@ public final class XlsxWriter {
             int startRow = config.getStartRowIndex();
             int startCol = config.getStartColumnIndex();
             StyleCache styleCache = new StyleCache(sheet.getWorkbook());
-            return dispatchWrite(sheet, data, config, startRow, startCol, styleCache, "sheet write");
+            return dispatchWrite(sheet, data, config, startRow, startCol, styleCache, "sheet write", null);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {

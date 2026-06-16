@@ -251,7 +251,7 @@ function setupTestData() returns error? {
     // natural_types.xlsx - Genuinely typed cells (numeric / boolean / date /
     // date-time) written via the Workbook API, so each cell carries a real Excel
     // type rather than text. Used to verify that untyped / broad reads
-    // (map<CellValue?>, getCell, getColumn, rest fields) bind to the natural
+    // (map<CellValue>, getCell, getColumn, rest fields) bind to the natural
     // Ballerina type — string-only fixtures cannot exercise this.
     // -------------------------------------------------------------------------
     time:Date naturalDate = {year: 2026, month: 5, day: 28};

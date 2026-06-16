@@ -28,7 +28,7 @@ import ballerina/jballerina.java;
 # Supports parsing to:
 # - `string[][]` - Raw string array
 # - `record{}[]` - Array of records (with header-to-field mapping)
-# - `map<CellValue?>[]` - Array of maps (keys are column headers)
+# - `map<CellValue>[]` - Array of maps (keys are column headers)
 #
 # ```ballerina
 # // Parse first sheet as records
@@ -51,36 +51,41 @@ public isolated function parseSheet(string path, string|int sheet = 0, ParseOpti
     'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
-# Write Ballerina data to an XLSX file.
+# Write Ballerina data to a sheet in an XLSX file.
 #
-# This is the recommended way to write XLSX files. Creates a single-sheet
-# XLSX file from the provided data.
+# If the file already exists it is opened and only the named sheet is affected — every sibling sheet, their tables, and formulas are
+# preserved. If the file does not exist, it is created with the single sheet. By default the
+# write fails when the named sheet already exists (`FAIL_IF_EXISTS`); set `sheetWriteMode` to
+# `REPLACE` the sheet's contents or `APPEND` rows to it.
 #
 # Supports writing from:
-# - `string[][]` - Raw string array (first row can be headers)
-# - `record{}[]` - Array of records (field names become headers)
-# - `map<CellValue?>[]` - Array of maps (keys become headers)
+# - `string[][]` - Raw string array (first row written as-is)
+# - `record{}[]` - Array of records (field names, or `@xlsx:Name`, become headers)
+# - `map<CellValue>[]` - Array of maps (keys become headers)
 #
 # ```ballerina
 # Employee[] employees = [{name: "John", age: 30}];
 #
-# // Write to file (default sheet name "Sheet1")
+# // Create a new file (default sheet name "Sheet1")
 # check xlsx:writeSheet(employees, "output.xlsx");
 #
-# // Write with an explicit sheet name
-# check xlsx:writeSheet(employees, "report.xlsx", "Employees");
+# // Replace the "Employees" sheet, keeping every other sheet in the file
+# check xlsx:writeSheet(employees, "report.xlsx", "Employees", sheetWriteMode = REPLACE);
 #
-# // Write with sheet name + additional row options
-# check xlsx:writeSheet(employees, "report.xlsx", "Employees", writeHeaders = false);
+# // Append rows under the existing data in "Employees"
+# check xlsx:writeSheet(employees, "report.xlsx", "Employees", sheetWriteMode = APPEND);
 # ```
 #
+# Writing into an existing file loads the whole workbook into memory; prefer a fresh path
+# when you only need a one-shot export.
+#
 # + data - Data to write
-# + path - Path to the output XLSX file
-# + sheetName - Name of the sheet to create (default: "Sheet1")
-# + options - Row-level write options (writeHeaders, startRowIndex)
-# + return - Error if write fails
+# + path - Path to the XLSX file
+# + sheetName - Name of the target sheet (default: "Sheet1")
+# + options - Write options (`sheetWriteMode`, `writeHeaders`, `startRowIndex`)
+# + return - Error if the write fails, or if the sheet already exists under `FAIL_IF_EXISTS`
 public isolated function writeSheet(Row[] data, string path, string sheetName = "Sheet1",
-        *RowWriteOptions options) returns Error? = @java:Method {
+        *SheetWriteOptions options) returns Error? = @java:Method {
     'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
@@ -96,7 +101,7 @@ public isolated function writeSheet(Row[] data, string path, string sheetName = 
 # Supports parsing to:
 # - `string[][]` - Raw string array
 # - `record{}[]` - Array of records (table headers map to fields)
-# - `map<CellValue?>[]` - Array of maps (keys are column headers)
+# - `map<CellValue>[]` - Array of maps (keys are column headers)
 #
 # ```ballerina
 # // Parse table as records
@@ -131,10 +136,9 @@ public isolated function parseTable(string path, string tableName, ParseOptions 
 # + data - Data to write
 # + path - Path to the XLSX file containing the table
 # + tableName - Name of the table to write to
-# + options - Row-level write options (writeHeaders, startRowIndex)
 # + return - TableNotFoundError if table doesn't exist, or other Error
-public isolated function writeTable(Row[] data, string path, string tableName,
-        *RowWriteOptions options) returns Error? = @java:Method {
+public isolated function writeTable(Row[] data, string path, string tableName)
+        returns Error? = @java:Method {
     'class: "io.ballerina.lib.xlsx.Native"
 } external;
 

@@ -235,23 +235,23 @@ type HeaderlessRecord record {|
 // EXTRA-COLUMN CAPTURE TEST TYPES
 // =============================================================================
 
-// Record that only defines some fields, with a CellValue? rest descriptor so columns
+// Record that only defines some fields, with a CellValue rest descriptor so columns
 // beyond the declared fields are captured into the rest field. The rest type must be
-// CellValue? (not the open-record `anydata` default) to satisfy the `Row` bound.
+// CellValue (not the open-record `anydata` default) to satisfy the `Row` bound.
 type OpenEmployee record {|
     string name;
     int age;
     // No 'department' field defined - extra columns populate the rest field
-    CellValue?...;
+    CellValue...;
 |};
 
 // Declares only some of natural_types.xlsx's columns; the remaining typed columns
-// (decimalCol, dateCol, datetimeCol) fall to the CellValue? rest field, which must
+// (decimalCol, dateCol, datetimeCol) fall to the CellValue rest field, which must
 // keep their natural Ballerina types rather than collapsing to strings.
 type PartialNaturalRow record {|
     int intCol;
     boolean boolCol;
-    CellValue?...;
+    CellValue...;
 |};
 
 // Maps the genuinely-typed scalar columns of natural_types.xlsx (int, decimal,

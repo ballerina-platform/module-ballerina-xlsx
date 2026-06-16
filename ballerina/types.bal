@@ -24,6 +24,26 @@ public enum FormulaMode {
     TEXT
 }
 
+# Behaviour of `writeSheet` when the target file already contains the named sheet.
+#
+# The rest of the workbook is preserved in every mode — sibling sheets, their tables, and
+# formulas are never touched. The mode governs only the named target sheet. When the file
+# does not exist, it is created with a single sheet regardless of mode.
+public enum SheetWriteMode {
+    # Fail with an error if the target sheet already exists; otherwise create it and write. (Default.)
+    FAIL_IF_EXISTS,
+
+    # Replace the target sheet's contents, preserving all sibling sheets. If the target
+    # sheet exists it is dropped and recreated at the same tab position — its own formatting
+    # and any table defined on it are lost.
+    REPLACE,
+
+    # Append data rows below the existing data in the target sheet, aligned to the existing
+    # header row by column name; the header row is not rewritten. `startRowIndex` is ignored
+    # in this mode, and a record/map write requires an existing header row to align against.
+    APPEND
+}
+
 # Annotation to map a record field to a specific Excel column name.
 # Use this when the Excel column header doesn't match the Ballerina field name.
 #
@@ -125,38 +145,62 @@ public type ColumnParseOptions record {|
     int? rowCount = ();
 |};
 
-# Options for writing rows to a sheet.
-public type RowWriteOptions record {|
-    # Whether to write headers (default: true)
+# Options shared by sheet write operations that lay out rows from a starting position —
+# `writeSheet` (via `SheetWriteOptions`) and `Sheet.putRows`.
+public type WriteOptions record {|
+    # Whether to write a header row (default: true). Headers are derived from record field
+    # names (honouring `@xlsx:Name`) or map keys. Ignored for `string[][]` input, whose
+    # first row is written as-is.
     boolean writeHeaders = true;
-    # Row number to start writing (0-based, default: 0)
+    # Row to start writing at (0-based, default: 0). For a record/map write into a sheet that
+    # already has a header row at this position, values align to the existing columns by name.
     int startRowIndex = 0;
 |};
 
+# Options for `writeSheet`.
+public type SheetWriteOptions record {|
+    *WriteOptions;
+    # How the target sheet is treated when the file already contains it (default: `REPLACE`).
+    # Sibling sheets are preserved in every mode.
+    SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;
+|};
+
+# Options for writing a single row — `Sheet.setRow`.
+#
+# A single-row write targets an explicit row index, so it carries neither `writeHeaders` nor
+# `startRowIndex`. For record or map data it needs to know where the header row lives in order
+# to align values to columns by name.
+public type RowWriteOptions record {|
+    # Row containing the column headers used to align a record/map row to columns (0-based,
+    # default: 0). Ignored for `string[]` data, which is written positionally.
+    int headerRowIndex = 0;
+|};
+
 # A single row in a sheet — the atomic data unit. A row is one of two shapes:
-# - `map<CellValue?>` - Dynamic map (keys are column headers; values are cell values,
-#   with `()` for a blank cell). A typed record also binds when every field is
-#   `CellValue?`-typed; use `@xlsx:Name` for field names that differ from the column
-#   headers. To absorb columns beyond the declared fields, give the record a
-#   `CellValue?` rest descriptor — `record {| ...; CellValue?...; |}`.
+# - `map<CellValue>` - Dynamic map (keys are column headers; values are cell values,
+#   with `()` for a blank cell — the empty cell is a member of `CellValue`). A typed
+#   record also binds when every field type is a subtype of `CellValue`; use `@xlsx:Name`
+#   for field names that differ from the column headers. To absorb columns beyond the
+#   declared fields, give the record a `CellValue` rest descriptor —
+#   `record {| ...; CellValue...; |}`.
 # - `string[]` - Raw cell text in column order
 #
-# The map's value type is `CellValue?` (not `anydata`) so the row contract matches what
+# The map's value type is `CellValue` (not `anydata`) so the row contract matches what
 # a cell can actually hold: a target field of an unsupported type (e.g. `xml`, `byte[]`,
 # a nested record) is rejected at compile time rather than failing at runtime.
-public type Row map<CellValue?> | string[];
+public type Row map<CellValue> | string[];
 
-# A populated XLSX cell value.
+# An XLSX cell value, including the empty cell.
 #
-# A cell in an XLSX file can hold a string, a number (int / float / decimal), a
-# boolean, or a date/time. This union encodes that contract honestly at the type
-# level — users can't ask for unsupported types like `xml` or `byte[]` from a cell
-# and get a runtime error; the type system rejects it at compile time.
+# A populated cell holds a string, a number (int / float / decimal), a boolean, or a
+# date/time; a blank cell is `()`. This union encodes that contract honestly at the type
+# level — users can't ask for unsupported types like `xml` or `byte[]` from a cell and
+# get a runtime error; the type system rejects it at compile time.
 #
-# `CellValue` is the non-nil value type. Where a cell may be blank, the nilable
-# form `CellValue?` is used — `Sheet.getCell`, `Sheet.getColumn`, the cell setters,
-# and `Table.getTotalRow` — with `()` representing an empty cell.
-public type CellValue string|int|float|decimal|boolean|time:Date|time:Civil|time:TimeOfDay;
+# Because the empty cell is a member of the union, a blank cell binds to `()` directly:
+# the scalar-cell APIs (`Sheet.getCell`, `Sheet.getColumn`, the cell setters, and
+# `Table.getTotalRow`) use `CellValue` without a trailing `?`.
+public type CellValue string|int|float|decimal|boolean|time:Date|time:Civil|time:TimeOfDay|();
 
 // =============================================================================
 // Cell Range Type

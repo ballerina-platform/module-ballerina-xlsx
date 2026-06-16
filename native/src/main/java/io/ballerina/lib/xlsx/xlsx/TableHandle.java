@@ -331,8 +331,8 @@ public final class TableHandle {
      * has the XSSF objects from {@code WorkbookFactory.create} and never vends
      * a Table BObject.
      *
-     * <p>Shared dispatch with {@link #getRows(Environment, BObject, BMap, BTypedesc)} —
-     * both call into {@link #parseTableInternal} below.</p>
+     * Shared dispatch with {@link #getRows(Environment, BObject, BMap, BTypedesc)} —
+     * both call into {@link #parseTableInternal} below.
      */
     public static Object parseFromXSSFTable(Environment env, XSSFTable table, XSSFSheet sheet,
                                              BMap<BString, Object> options, BTypedesc targetType) {
@@ -374,7 +374,7 @@ public final class TableHandle {
             return getTableRowsAsRecords(env, table, sheet, config, (RecordType) describingType);
         }
 
-        // map<CellValue?> → map<CellValue?>[]
+        // map<CellValue> → map<CellValue>[]
         if (typeTag == TypeTags.MAP_TAG) {
             return getTableRowsAsMaps(env, table, sheet, config, (MapType) describingType);
         }
@@ -463,14 +463,13 @@ public final class TableHandle {
      *
      * @param tableObj Ballerina Table object
      * @param data     Data to write
-     * @param options  Write options
      * @return null on success, error on failure
      */
-    public static Object putRows(BObject tableObj, BArray data, BMap<BString, Object> options) {
+    public static Object putRows(BObject tableObj, BArray data) {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
-            return writeTableInternal(table, sheet, data, options);
+            return writeTableInternal(table, sheet, data);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -483,13 +482,12 @@ public final class TableHandle {
      * Table handle. Used by {@code Native.writeTable} which has the XSSF objects
      * from {@code WorkbookFactory.create} and never vends a Table BObject.
      *
-     * <p>Shared dispatch with {@link #putRows(BObject, BArray, BMap)} — both call
-     * into {@link #writeTableInternal} below.</p>
+     * Shared dispatch with {@link #putRows(BObject, BArray)} — both call
+     * into {@link #writeTableInternal} below.
      */
-    public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data,
-                                           BMap<BString, Object> options) {
+    public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data) {
         try {
-            return writeTableInternal(table, sheet, data, options);
+            return writeTableInternal(table, sheet, data);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -501,8 +499,7 @@ public final class TableHandle {
      * Shared write dispatch. Resizes the table if the incoming data exceeds the
      * current data-row capacity, then writes each row via {@link #writeRowData}.
      */
-    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data,
-                                              BMap<BString, Object> options) {
+    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
         int firstRow = area.getFirstCell().getRow();
         int lastRow = area.getLastCell().getRow();
@@ -535,7 +532,6 @@ public final class TableHandle {
         }
 
         // Write the data
-        XlsxConfig config = XlsxConfig.fromWriteOptions(options);
         StyleCache styleCache = new StyleCache(sheet.getWorkbook());
 
         // Resolve column index by table header name. Record/map rows route values to
@@ -586,7 +582,7 @@ public final class TableHandle {
      * Get the total row values.
      *
      * @param tableObj   Ballerina Table object
-     * @param targetType Descriptor for the result map type ({@code map<CellValue?>})
+     * @param targetType Descriptor for the result map type ({@code map<CellValue>})
      * @return Map of column names to total values
      */
     public static Object getTotalRow(BObject tableObj, BTypedesc targetType) {
@@ -605,7 +601,7 @@ public final class TableHandle {
             Row totalsRow = sheet.getRow(totalsRowIdx);
             List<XSSFTableColumn> columns = table.getColumns();
 
-            // Bind the result to the declared map type (map<CellValue?>) so its runtime
+            // Bind the result to the declared map type (map<CellValue>) so its runtime
             // type matches the Ballerina contract rather than the wider map<anydata>.
             MapType mapType = (MapType) TypeUtils.getReferredType(targetType.getDescribingType());
             BMap<BString, Object> totals = ValueCreator.createMapValue(mapType);
@@ -634,13 +630,13 @@ public final class TableHandle {
     /**
      * Add a total row to a table and write a literal numeric total into one column.
      *
-     * <p>Package-private — reachable only from test code via a private
+     * Package-private — reachable only from test code via a private
      * {@code @java:Method} external in {@code test_utils.bal}. The public Ballerina
      * API does not author total rows (they require formula/aggregation authoring,
      * which is out of scope); this helper exists so fixtures can contain a real
      * total row for testing the {@code getTotalRow} read path. A literal value is
      * written rather than a {@code SUM} aggregation because POI does not evaluate
-     * formulas, so a cached aggregation would read back as 0.</p>
+     * formulas, so a cached aggregation would read back as 0.
      *
      * @param tableObj   Ballerina Table object
      * @param totalColIndex 0-based column offset (within the table) to receive the total
@@ -888,7 +884,7 @@ public final class TableHandle {
     }
 
     /**
-     * Get table rows as map&lt;CellValue?&gt;[] via the shared per-row binder. Map keys are the
+     * Get table rows as map&lt;CellValue&gt;[] via the shared per-row binder. Map keys are the
      * table's column names. Honours fail-safe when configured (env threaded through).
      */
     private static Object getTableRowsAsMaps(Environment env, XSSFTable table, Sheet sheet, XlsxConfig config,
@@ -976,14 +972,14 @@ public final class TableHandle {
     /**
      * Write row data to a POI Row, aligning each value to its target column.
      *
-     * <p>Records: iterate fields in declaration order, resolve each header via {@code @xlsx:Name}
+     * Records: iterate fields in declaration order, resolve each header via {@code @xlsx:Name}
      * (falling back to the field name), look up the column in {@code headerToCol}. Maps:
      * iterate keys and look them up. Arrays: positional placement at {@code startCol + i}
-     * (arrays have no header semantics).</p>
+     * (arrays have no header semantics).
      *
-     * <p>An unknown header for a record field or map key surfaces a typed
+     * An unknown header for a record field or map key surfaces a typed
      * {@link BallerinaErrorException} so the caller sees a clear "no matching column" error
-     * rather than a silent misalignment.</p>
+     * rather than a silent misalignment.
      */
     private static void writeRowData(Row row, int startCol, Object rowData,
                                       Map<String, Integer> headerToCol,

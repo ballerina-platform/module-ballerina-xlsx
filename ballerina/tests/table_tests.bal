@@ -164,7 +164,7 @@ function testParseTableToStringArray() returns error? {
     groups: ["table"]
 }
 function testParseTableToMaps() returns error? {
-    map<CellValue?>[] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
+    map<CellValue>[] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
 
     test:assertEquals(data.length(), 3, "Should have 3 maps");
     test:assertEquals(data[0]["Name"], "Alice", "First employee name");
@@ -684,7 +684,7 @@ function testTableGetTotalsRowError() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    map<CellValue?>|Error result = empTable.getTotalRow();
+    map<CellValue>|Error result = empTable.getTotalRow();
     test:assertTrue(result is Error, "Should return error when table has no totals row");
     if result is Error {
         test:assertTrue(result.message().includes("does not have a total row"),
@@ -699,7 +699,7 @@ function testTableGetTotalsRowError() returns error? {
 }
 function testTableGetTotalRow() returns error? {
     // Build a table, author a total row via the test-only helper, then read it back.
-    // The total-row map must come back typed as map<CellValue?> with the total bound
+    // The total-row map must come back typed as map<CellValue> with the total bound
     // to its natural Ballerina type (a whole number → int).
     string totalsFile = TEST_DATA_DIR + "temp_table_totals.xlsx";
     Workbook wb = new;
@@ -726,12 +726,12 @@ function testTableGetTotalRow() returns error? {
 
     test:assertTrue(check reopenedTable.hasTotalRow(), "Table should have a total row");
 
-    map<CellValue?> totals = check reopenedTable.getTotalRow();
-    // The returned map must be a genuine map<CellValue?>, not the wider map<anydata> the
+    map<CellValue> totals = check reopenedTable.getTotalRow();
+    // The returned map must be a genuine map<CellValue>, not the wider map<anydata> the
     // native builds internally — this guards the typedesc-based inherent-type fix.
-    test:assertTrue(totals is map<CellValue?>,
-            "Total row must be a genuine map<CellValue?>, not map<anydata>");
-    CellValue? amountTotal = totals["Amount"];
+    test:assertTrue(totals is map<CellValue>,
+            "Total row must be a genuine map<CellValue>, not map<anydata>");
+    CellValue amountTotal = totals["Amount"];
     test:assertEquals(amountTotal, 350, "Total should bind to its natural type (int 350)");
     test:assertTrue(amountTotal is int, "Whole-number total must bind to int, not decimal/string");
 
@@ -1086,10 +1086,10 @@ function testCreateTableFromDataAtNonZeroStartColumn() returns error? {
     test:assertEquals(range.lastColumnIndex, 4);
 
     Sheet s2 = check wb2.getSheet(0);
-    CellValue? headerNameCell = check s2.getCell(2, 3);
+    CellValue headerNameCell = check s2.getCell(2, 3);
     test:assertEquals(headerNameCell, "name",
             "Header 'name' must be at row 2 col 3, matching the requested table offset");
-    CellValue? firstNameCell = check s2.getCell(3, 3);
+    CellValue firstNameCell = check s2.getCell(3, 3);
     test:assertEquals(firstNameCell, "Alice",
             "Data value 'Alice' must be at row 3 col 3, not column 0");
     check wb2.close();

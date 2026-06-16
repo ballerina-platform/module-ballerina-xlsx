@@ -151,9 +151,8 @@ public type Table isolated object {
     # ```
     #
     # + data - Data to write (records or arrays)
-    # + options - Write options
     # + return - Error if write fails
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Row[] data) returns Error?;
 
     # Check if the table has a total row.
     #
@@ -168,15 +167,15 @@ public type Table isolated object {
     #
     # ```ballerina
     # if check table.hasTotalRow() {
-    #     map<xlsx:CellValue?> totals = check table.getTotalRow();
+    #     map<xlsx:CellValue> totals = check table.getTotalRow();
     #     io:println("Total salary: ", totals["Salary"]);
     # }
     # ```
     #
-    # + t - Result map type descriptor; leave at the default `map<CellValue?>` (the intended
+    # + t - Result map type descriptor; leave at the default `map<CellValue>` (the intended
     #       target). A narrower target (e.g. `map<int>`) only succeeds if every total cell fits it.
     # + return - Map of column names to total values, or error if no total row
-    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>) returns t|Error;
+    public isolated function getTotalRow(typedesc<map<CellValue>> t = <>) returns t|Error;
 
     # Rename the table.
     #
@@ -251,7 +250,7 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error? = @java:Method {
+    public isolated function putRows(Row[] data) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
@@ -259,7 +258,7 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>)
+    public isolated function getTotalRow(typedesc<map<CellValue>> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;

@@ -129,9 +129,9 @@ public type Sheet isolated object {
     # ```
     #
     # + data - Data to write
-    # + options - Write options
+    # + options - Write options (`writeHeaders`, `startRowIndex`)
     # + return - Error if write fails
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
+    public isolated function putRows(Row[] data, *WriteOptions options) returns Error?;
 
     # Get a column of values by header name or 0-based index.
     #
@@ -142,28 +142,28 @@ public type Sheet isolated object {
     #
     # + columnRef - Column header name (string) or 0-based index (int)
     # + options - Read options
-    # + t - Target cell type descriptor (`CellValue?`; nilable for columns with blank cells); returns `t[]`
+    # + t - Target cell type descriptor (`CellValue`, which includes `()` for blank cells); returns `t[]`
     # + return - Column values or error
     public isolated function getColumn(string|int columnRef, ColumnParseOptions options = {},
-            typedesc<CellValue?> t = <>) returns t[]|Error;
+            typedesc<CellValue> t = <>) returns t[]|Error;
 
     # Read a single cell value, bound to the target type.
     #
-    # Like `getColumn`, the target type drives the binding: the default `CellValue?` yields the
+    # Like `getColumn`, the target type drives the binding: the default `CellValue` yields the
     # cell's natural value (a date/time cell becomes an ISO `string`), while pinning a
     # `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell
     # binds to `()` for a nilable target, or returns an error for a non-nilable one.
     #
     # ```ballerina
-    # xlsx:CellValue? value = check sheet.getCell(0, 2);   // natural value (ISO string for dates)
+    # xlsx:CellValue value = check sheet.getCell(0, 2);   // natural value (ISO string for dates)
     # time:Civil ts = check sheet.getCell(1, 4);           // typed date-time
     # ```
     #
     # + rowIndex - 0-based row index (absolute)
     # + columnIndex - 0-based column index (absolute)
-    # + t - Target cell type descriptor (`CellValue?`); defaults to the cell's natural value
+    # + t - Target cell type descriptor (`CellValue`); defaults to the cell's natural value
     # + return - Cell value, `nil` for a blank cell (nilable target), or error
-    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue?> t = <>)
+    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue> t = <>)
             returns t|Error;
 
     # Write a single row at the specified row index.
@@ -178,8 +178,8 @@ public type Sheet isolated object {
     # ```
     #
     # + rowIndex - 0-based row index (absolute)
-    # + data - Row data (`string[]`, record, or `map<CellValue?>`)
-    # + options - Write options
+    # + data - Row data (`string[]`, record, or `map<CellValue>`)
+    # + options - Single-row write options (`headerRowIndex` locates the header row for record/map alignment)
     # + return - Error if write fails
     public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)
             returns Error?;
@@ -197,7 +197,7 @@ public type Sheet isolated object {
     # + columnRef - Column header name (string) or 0-based index (int)
     # + data - Column values
     # + return - Error if write fails
-    public isolated function setColumn(string|int columnRef, CellValue?[] data)
+    public isolated function setColumn(string|int columnRef, CellValue[] data)
             returns Error?;
 
     # Write a single cell value by 0-based row and column index.
@@ -211,7 +211,7 @@ public type Sheet isolated object {
     # + columnIndex - 0-based column index
     # + value - Cell value
     # + return - Error if write fails
-    public isolated function setCell(int rowIndex, int columnIndex, CellValue? value)
+    public isolated function setCell(int rowIndex, int columnIndex, CellValue value)
             returns Error?;
 
     # Write a single cell value by A1-notation address.
@@ -224,7 +224,7 @@ public type Sheet isolated object {
     # + cellAddress - Cell address in A1 notation (e.g., `"A1"`, `"B12"`)
     # + value - Cell value
     # + return - Error if the address is invalid or write fails
-    public isolated function setCellByAddress(string cellAddress, CellValue? value)
+    public isolated function setCellByAddress(string cellAddress, CellValue value)
             returns Error?;
 
     # Delete a row from the sheet.
@@ -366,16 +366,16 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error? = @java:Method {
+    public isolated function putRows(Row[] data, *WriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
     public isolated function getColumn(string|int columnRef, ColumnParseOptions options = {},
-            typedesc<CellValue?> t = <>) returns t[]|Error = @java:Method {
+            typedesc<CellValue> t = <>) returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue?> t = <>)
+    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
@@ -385,17 +385,17 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function setColumn(string|int columnRef, CellValue?[] data)
+    public isolated function setColumn(string|int columnRef, CellValue[] data)
             returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function setCell(int rowIndex, int columnIndex, CellValue? value)
+    public isolated function setCell(int rowIndex, int columnIndex, CellValue value)
             returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function setCellByAddress(string cellAddress, CellValue? value)
+    public isolated function setCellByAddress(string cellAddress, CellValue value)
             returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;

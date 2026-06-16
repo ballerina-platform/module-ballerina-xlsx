@@ -98,15 +98,15 @@ function testSheetGetColumnNilableWithBlank() returns error? {
 
 @test:Config {groups: ["sheet"]}
 function testSheetGetColumnBroadCellValue() returns error? {
-    // A CellValue?[] (broad) target must preserve natural types, not collapse to strings.
+    // A CellValue[] (broad) target must preserve natural types, not collapse to strings.
     Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
     Sheet sheet = check wb.getSheet(0);
-    CellValue?[] ints = check sheet.getColumn("intCol");
+    CellValue[] ints = check sheet.getColumn("intCol");
     test:assertEquals(ints.length(), 1, "natural_types has one data row");
-    test:assertEquals(ints, [42], "Numeric column under CellValue? bound → int");
-    CellValue?[] decimals = check sheet.getColumn("decimalCol");
+    test:assertEquals(ints, [42], "Numeric column under CellValue bound → int");
+    CellValue[] decimals = check sheet.getColumn("decimalCol");
     test:assertEquals(decimals.length(), 1, "natural_types has one data row");
-    test:assertEquals(decimals, [3.14d], "Fractional column under CellValue? bound → decimal");
+    test:assertEquals(decimals, [3.14d], "Fractional column under CellValue bound → decimal");
     check wb.close();
 }
 
@@ -135,13 +135,13 @@ function testSheetGetCellNaturalTypes() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
     Sheet sheet = check wb.getSheet(0);
     // Row 1 holds the typed data cells (row 0 is the header row).
-    CellValue? intCell = check sheet.getCell(1, 0);
+    CellValue intCell = check sheet.getCell(1, 0);
     test:assertEquals(intCell, 42, "Whole number → int");
-    CellValue? decimalCell = check sheet.getCell(1, 1);
+    CellValue decimalCell = check sheet.getCell(1, 1);
     test:assertEquals(decimalCell, 3.14d, "Fractional → decimal");
-    CellValue? boolCell = check sheet.getCell(1, 2);
+    CellValue boolCell = check sheet.getCell(1, 2);
     test:assertEquals(boolCell, true, "Boolean → boolean");
-    CellValue? dateCell = check sheet.getCell(1, 3);
+    CellValue dateCell = check sheet.getCell(1, 3);
     test:assertEquals(dateCell, "2026-05-28", "Date → ISO string");
     check wb.close();
 }
@@ -151,10 +151,10 @@ function testSheetGetCell() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
     Sheet sheet = check wb.getSheet(0);
     // Row 0 is the header row; cell (0,0) = "name"
-    CellValue? header00 = check sheet.getCell(0, 0);
+    CellValue header00 = check sheet.getCell(0, 0);
     test:assertEquals(header00, "name");
     // Row 1, col 0 = first employee's name
-    CellValue? cell10 = check sheet.getCell(1, 0);
+    CellValue cell10 = check sheet.getCell(1, 0);
     test:assertEquals(cell10, "John Doe");
     check wb.close();
 }
@@ -164,7 +164,7 @@ function testSheetGetCellDateTime() returns error? {
     // A datetime cell must bind to its ISO string form with the time component preserved.
     Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
     Sheet sheet = check wb.getSheet(0);
-    CellValue? datetimeCell = check sheet.getCell(1, 4);
+    CellValue datetimeCell = check sheet.getCell(1, 4);
     test:assertEquals(datetimeCell, "2026-05-28 14:30:00", "Datetime → ISO string with time");
     check wb.close();
 }
@@ -175,7 +175,7 @@ function testSheetGetCellBlankIsNil() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["A", "B"], ["1", "2"]]);
-    CellValue? blank = check sheet.getCell(5, 5);
+    CellValue blank = check sheet.getCell(5, 5);
     test:assertEquals(blank, (), "Blank cell should return ()");
     check wb.close();
 }
@@ -216,8 +216,8 @@ function testSheetSetCell() returns error? {
     Sheet sheet = check wb.createSheet("Data");
     check sheet.setCell(0, 0, "Header");
     check sheet.setCell(1, 2, 42);
-    CellValue? v00 = check sheet.getCell(0, 0);
-    CellValue? v12 = check sheet.getCell(1, 2);
+    CellValue v00 = check sheet.getCell(0, 0);
+    CellValue v12 = check sheet.getCell(1, 2);
     test:assertEquals(v00, "Header");
     // A whole-number cell binds to its natural type: int.
     test:assertEquals(v12, 42);
@@ -232,11 +232,11 @@ function testSheetSetCellTypedValues() returns error? {
     check sheet.setCell(0, 1, true);
     time:Date d = {year: 2026, month: 5, day: 28};
     check sheet.setCell(0, 2, d);
-    CellValue? c00 = check sheet.getCell(0, 0);
+    CellValue c00 = check sheet.getCell(0, 0);
     test:assertEquals(c00, 3.14d, "Decimal → decimal");
-    CellValue? c01 = check sheet.getCell(0, 1);
+    CellValue c01 = check sheet.getCell(0, 1);
     test:assertEquals(c01, true, "Boolean → boolean");
-    CellValue? c02 = check sheet.getCell(0, 2);
+    CellValue c02 = check sheet.getCell(0, 2);
     test:assertEquals(c02, "2026-05-28", "Date → ISO string");
     check wb.close();
 }
@@ -247,8 +247,8 @@ function testSheetSetCellByAddress() returns error? {
     Sheet sheet = check wb.createSheet("Data");
     check sheet.setCellByAddress("A1", "Header");
     check sheet.setCellByAddress("D5", 42.5d);
-    CellValue? a1 = check sheet.getCell(0, 0);
-    CellValue? d5 = check sheet.getCell(4, 3);
+    CellValue a1 = check sheet.getCell(0, 0);
+    CellValue d5 = check sheet.getCell(4, 3);
     test:assertEquals(a1, "Header");
     test:assertEquals(d5, 42.5d);
     check wb.close();
@@ -468,7 +468,7 @@ function testPutRowsRecordInlineLiteral() returns error? {
 function testPutRowsMapInlineLiteral() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
-    map<CellValue?>[] rows = [
+    map<CellValue>[] rows = [
         {"Name": "Alice", "Age": 30},
         {"Name": "Bob", "Age": 25}
     ];
@@ -487,7 +487,7 @@ function testSetRowMapInlineLiteral() returns error? {
     Workbook wb = new;
     Sheet sheet = check wb.createSheet("Data");
     check sheet.putRows([["Name", "Age"], ["Alice", "1"]]);
-    map<CellValue?> replacement = {"Name": "Charlie", "Age": 99};
+    map<CellValue> replacement = {"Name": "Charlie", "Age": 99};
     check sheet.setRow(1, replacement);
     string[][] reread = check sheet.getRows();
     test:assertEquals(reread[0], ["Name", "Age"], "Header row should remain intact after setRow");
