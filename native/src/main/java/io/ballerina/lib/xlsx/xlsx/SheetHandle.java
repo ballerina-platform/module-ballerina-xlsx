@@ -22,7 +22,6 @@ import io.ballerina.lib.xlsx.utils.AnnotationUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
-import io.ballerina.lib.xlsx.utils.RecordParsingUtils.FieldMapping;
 import io.ballerina.lib.xlsx.utils.UsedRangeDetector;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
@@ -30,7 +29,6 @@ import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.MapType;
-import io.ballerina.runtime.api.types.PredefinedTypes;
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.types.TypeTags;
@@ -53,7 +51,6 @@ import org.apache.poi.xssf.usermodel.XSSFTable;
 import org.apache.poi.xssf.usermodel.XSSFTableColumn;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -192,6 +189,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
 
             // Under the typedesc<Row> signature, the describing type IS the row element type
             // (the function returns `t[]`). Dispatch directly on the row shape.
@@ -247,6 +245,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
 
             CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
 
@@ -281,7 +280,7 @@ public final class SheetHandle {
 
             // record{} - single row as record
             if (typeTag == TypeTags.RECORD_TYPE_TAG) {
-                return getRowAsRecord(sheet, row, usedRange, config, (RecordType) resolvedType);
+                return getRowAsRecord(sheet, row, actualRowIndex, usedRange, config, (RecordType) resolvedType);
             }
 
             // Row (the public union) — default to string[].
@@ -319,115 +318,38 @@ public final class SheetHandle {
     }
 
     /**
-     * Get a single row as record.
+     * Get a single row as a record via the shared per-row binder.
+     *
+     * <p>Single-row reads are fail-fast: a fail-safe context would skip the one row the
+     * caller asked for, leaving nothing to return. Passing {@code env = null} makes the
+     * binder surface a typed error on a bad cell or failed constraint instead of skipping.
+     * Constraint validation still applies (records always validate when enabled).</p>
+     *
+     * @return BMap on success, or a typed BError on a conversion / constraint / projection failure
      */
-    private static BMap<BString, Object> getRowAsRecord(Sheet sheet, Row row, CellRangeAddress usedRange,
-                                                         XlsxConfig config, RecordType recordType) {
-        // Build header-to-column mapping
+    private static Object getRowAsRecord(Sheet sheet, Row row, int rowIdx, CellRangeAddress usedRange,
+                                         XlsxConfig config, RecordType recordType) {
         Map<String, Integer> headerMap;
-
         if (config.hasHeaders()) {
-            // Header-based parsing: read headers from specified row
             Integer headerRowIndex = config.getHeaderRowIndex();
             Row headerRow = sheet.getRow(headerRowIndex);
-
             if (headerRow == null) {
                 throw new BallerinaErrorException(
                         DiagnosticLog.parseError("Header row " + headerRowIndex + " is empty"));
             }
-
             headerMap = RecordParsingUtils.buildHeaderMap(headerRow, usedRange, config.isCaseInsensitiveHeaders());
         } else {
-            // Header-less parsing: generate column names as col0, col1, col2, ...
             headerMap = RecordParsingUtils.buildHeaderMapFromIndices(usedRange, config.isCaseInsensitiveHeaders());
         }
 
-        // Get field mappings and track fields without matching columns
-        Map<Integer, FieldMapping> columnToField = new HashMap<>();
-        List<FieldMapping> absentFields = new ArrayList<>();
-        RecordParsingUtils.buildFieldMappings(recordType, headerMap, columnToField, absentFields);
+        RecordParsingUtils.RecordBinding binding =
+                RecordParsingUtils.buildRecordBinding(recordType, headerMap, sheet.getSheetName(), config);
 
-        // Build extra column mappings for open records
-        Map<Integer, String> extraColumns = new HashMap<>();
-        boolean isOpenRecord = RecordParsingUtils.isOpenRecord(recordType);
-        Type restFieldType = null;
-        if (isOpenRecord) {
-            RecordParsingUtils.buildExtraColumnMappings(headerMap, columnToField, extraColumns);
-            restFieldType = recordType.getRestFieldType();
-        }
+        RecordParsingUtils.ParseContext context = new RecordParsingUtils.ParseContext(
+                sheet, usedRange, config, recordType, null, new AtomicBoolean(false));
 
-        // Validate absent fields based on data projection settings
-        RecordParsingUtils.validateAbsentFields(absentFields, sheet.getSheetName(), config);
-
-        // Create record from row
-        BMap<BString, Object> record = ValueCreator.createRecordValue(recordType);
-
-        // Parse defined fields
-        for (Map.Entry<Integer, FieldMapping> entry : columnToField.entrySet()) {
-            int colIdx = entry.getKey();
-            FieldMapping mapping = entry.getValue();
-
-            Cell cell = row != null ? row.getCell(colIdx) : null;
-            Object value;
-            try {
-                value = CellConverter.convert(cell, mapping.type, config);
-            } catch (TypeConversionException e) {
-                int rowIdx = row != null ? row.getRowNum() : -1;
-                String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                        e.getMessage(), cellAddress, rowIdx, colIdx));
-            }
-
-            if (value != null) {
-                record.put(StringUtils.fromString(mapping.fieldName), value);
-            } else {
-                // Value is nil - handle based on projection settings
-                if (config.isNilAsOptionalField() && mapping.isOptional) {
-                    continue;
-                }
-                if (RecordParsingUtils.isNilableType(mapping.type) || mapping.isOptional) {
-                    record.put(StringUtils.fromString(mapping.fieldName), null);
-                } else {
-                    // Blank cell for required non-nilable field is an error
-                    int rowIdx = row != null ? row.getRowNum() : -1;
-                    String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                    throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                            "Required field '" + mapping.fieldName + "' cannot be null (blank cell)",
-                            cellAddress, rowIdx, colIdx));
-                }
-            }
-        }
-
-        // Parse extra columns for open records
-        if (restFieldType != null && !extraColumns.isEmpty()) {
-            for (Map.Entry<Integer, String> entry : extraColumns.entrySet()) {
-                int colIdx = entry.getKey();
-                String headerName = entry.getValue();
-
-                Cell cell = row != null ? row.getCell(colIdx) : null;
-                Object value;
-                try {
-                    value = CellConverter.convert(cell, restFieldType, config);
-                } catch (TypeConversionException e) {
-                    int rowIdx = row != null ? row.getRowNum() : -1;
-                    String cellAddress = RecordParsingUtils.getCellAddress(colIdx, rowIdx);
-                    throw new BallerinaErrorException(DiagnosticLog.typeConversionError(
-                            e.getMessage(), cellAddress, rowIdx, colIdx));
-                }
-
-                if (value != null) {
-                    record.put(StringUtils.fromString(headerName), value);
-                } else if (!config.isNilAsOptionalField()) {
-                    // Include nil values unless nilAsOptionalField is true
-                    record.put(StringUtils.fromString(headerName), null);
-                }
-            }
-        }
-
-        // Handle absent fields
-        RecordParsingUtils.handleAbsentFields(record, absentFields, config);
-
-        return record;
+        return RecordParsingUtils.parseRowToRecord(row, rowIdx, binding.columnToField, binding.absentFields,
+                binding.extraColumns, binding.restFieldType, context);
     }
 
     /**
@@ -543,6 +465,16 @@ public final class SheetHandle {
                         + "': sheet has no header row at index " + headerRowIdx));
             }
             Integer col = headers.get(headerName);
+            if (col == null && config.isCaseInsensitiveHeaders()) {
+                // Honour caseInsensitiveHeaders for column lookup too: existingHeaderMap is
+                // case-sensitive, so fall back to a case-insensitive scan.
+                for (Map.Entry<String, Integer> entry : headers.entrySet()) {
+                    if (entry.getKey().equalsIgnoreCase(headerName)) {
+                        col = entry.getValue();
+                        break;
+                    }
+                }
+            }
             if (col == null) {
                 throw new BallerinaErrorException(DiagnosticLog.error(
                         "Column header '" + headerName + "' not found in sheet"));
@@ -574,6 +506,7 @@ public final class SheetHandle {
         try {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromParseOptions(options);
+            RecordParsingUtils.validateReadConfig(config);
             int colIdx = resolveColumnRef(sheet, columnRef, config);
 
             // Under typedesc<anydata>, the describing type IS the cell element type
@@ -618,27 +551,42 @@ public final class SheetHandle {
     }
 
     /**
-     * Read a single cell value.
+     * Read a single cell value, bound to the target type.
+     *
+     * <p>The target type drives binding exactly as elsewhere: a broad target (the default
+     * {@code CellValue?}) yields the cell's natural value (whole number → int, fractional →
+     * decimal, date/time → ISO string), while a pinned {@code time:Civil} / {@code time:Date}
+     * / {@code time:TimeOfDay} / scalar yields that type. A blank cell binds to {@code ()} for
+     * a nilable target, or surfaces a typed error for a non-nilable one (same rule as a
+     * required non-nilable record field over a blank cell).</p>
      */
-    public static Object getCell(BObject sheetObj, long rowIdx, long colIdx) {
+    public static Object getCell(BObject sheetObj, long rowIdx, long colIdx, BTypedesc targetType) {
         try {
             Sheet sheet = getSheet(sheetObj);
+            Type elementType = TypeUtils.getReferredType(targetType.getDescribingType());
             Row row = sheet.getRow((int) rowIdx);
-            if (row == null) {
-                return null;
-            }
-            Cell cell = row.getCell((int) colIdx);
+            Cell cell = row != null ? row.getCell((int) colIdx) : null;
+
             if (cell == null) {
-                return null;
+                // Blank cell: nil for a nilable target, otherwise a typed error.
+                if (RecordParsingUtils.isNilableType(elementType)) {
+                    return null;
+                }
+                String cellAddress = RecordParsingUtils.getCellAddress((int) colIdx, (int) rowIdx);
+                return DiagnosticLog.typeConversionError(
+                        "Blank cell cannot bind to non-nilable type", cellAddress, (int) rowIdx, (int) colIdx);
             }
+
             XlsxConfig config = XlsxConfig.fromParseOptions(ValueCreator.createMapValue());
             try {
-                return CellConverter.convert(cell, PredefinedTypes.TYPE_ANYDATA, config);
+                return CellConverter.convert(cell, elementType, config);
             } catch (TypeConversionException e) {
                 String cellAddress = RecordParsingUtils.getCellAddress((int) colIdx, (int) rowIdx);
                 return DiagnosticLog.typeConversionError(e.getMessage(), cellAddress,
                         (int) rowIdx, (int) colIdx);
             }
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error getting cell: " + e.getMessage(), e);
         }

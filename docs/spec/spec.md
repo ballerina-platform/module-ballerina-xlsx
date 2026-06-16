@@ -22,7 +22,7 @@ If you have any feedback or suggestions about the module, start a discussion via
    - 2.2. [CellRange](#22-cellrange)
 3. [Configurations](#3-configurations)
    - 3.1. [ParseOptions](#31-parseoptions)
-   - 3.2. [RowReadOptions](#32-rowreadoptions)
+   - 3.2. [RowParseOptions and ColumnParseOptions](#32-rowparseoptions-and-columnparseoptions)
    - 3.3. [RowWriteOptions](#33-rowwriteoptions)
    - 3.4. [FormulaMode](#34-formulamode)
    - 3.5. [FailSafeOptions](#35-failsafeoptions)
@@ -139,16 +139,22 @@ Used by `Sheet.getUsedCellRange()`, `Sheet.createTable(name, range, headers)`, `
 
 ### 3.1 ParseOptions
 
-Used by `parseSheet`.
+Read options share a `CommonParseOptions` base (included via `*CommonParseOptions;`) and add
+fields by result shape. `ParseOptions` is the **bulk-read** type — used by `parseSheet`,
+`parseTable`, `Sheet.getRows`, and `Table.getRows`.
 
 ```ballerina
-public type ParseOptions record {|
+public type CommonParseOptions record {|
     int? headerRowIndex = 0;
     int dataStartRowIndex?;
-    int? rowCount = ();
     FormulaMode formulaMode = CACHED;
-    boolean enableConstraintValidation = true;
     boolean caseInsensitiveHeaders = false;
+|};
+
+public type ParseOptions record {|
+    *CommonParseOptions;
+    int? rowCount = ();
+    boolean enableConstraintValidation = true;
     record {|
         boolean nilAsOptionalField = false;
         boolean absentAsNilableType = false;
@@ -159,32 +165,36 @@ public type ParseOptions record {|
 
 | Field | Default | Meaning |
 |---|---|---|
-| `headerRowIndex` | `0` | 0-based row index of the header row. Set to `()` for headerless sheets — columns are exposed as `col0`, `col1`, … |
+| `headerRowIndex` | `0` | 0-based row index of the header row. Set to `()` for headerless sheets — columns are exposed as `col0`, `col1`, … **Ignored when reading into `string[][]`**: raw mode is lossless, so the header row is returned as data — use `dataStartRowIndex` to skip leading rows. |
 | `dataStartRowIndex` | unset | 0-based row index where data starts. Defaults to `headerRowIndex + 1` (or `0` when headerless). |
 | `rowCount` | `()` | Maximum number of data rows to read. `()` reads all. |
-| `formulaMode` | `CACHED` | How to handle formula cells. See [3.5](#35-formulamode). |
+| `formulaMode` | `CACHED` | How to handle formula cells. See [3.4](#34-formulamode). |
 | `enableConstraintValidation` | `true` | When `true`, parsed records are validated against any `@constraint` annotations. |
 | `caseInsensitiveHeaders` | `false` | When `true`, header `"Name"` matches record field `name` or `NAME`. |
 | `allowDataProjection` | `{}` | Default `{}` enables lenient mode (extra sheet columns ignored). Set to `false` for strict mode (all record fields must have matching columns). `nilAsOptionalField` treats nil cells as field absence; `absentAsNilableType` allows missing columns for nilable/optional fields. |
-| `failSafe` | unset | When set, row-level errors (type conversion, constraint validation) are logged and skipped instead of failing the parse. See [3.6](#36-failsafeoptions). |
+| `failSafe` | unset | When set, row-level errors (type conversion, constraint validation) are logged and skipped instead of failing the parse. See [3.5](#35-failsafeoptions). |
 
-### 3.2 RowReadOptions
+### 3.2 RowParseOptions and ColumnParseOptions
 
-Used by `Sheet.getRows`, `Sheet.getRow`, `Sheet.getColumn`, `Table.getRows`, `Table.getRow`. Same fields as `ParseOptions`.
+Single-row reads (`Sheet.getRow`, `Table.getRow`) take `RowParseOptions`; single-column reads
+(`Sheet.getColumn`) take `ColumnParseOptions`. Both build on `CommonParseOptions`. A single-row
+read is **fail-fast** (it has no `failSafe` — skipping the only requested row would leave nothing
+to return), and a column read yields scalar cell values rather than records (so constraint
+validation, data projection, and fail-safe do not apply).
 
 ```ballerina
-public type RowReadOptions record {|
-    int? headerRowIndex = 0;
-    int dataStartRowIndex?;
-    int? rowCount = ();
-    FormulaMode formulaMode = CACHED;
+public type RowParseOptions record {|
+    *CommonParseOptions;
     boolean enableConstraintValidation = true;
-    boolean caseInsensitiveHeaders = false;
     record {|
         boolean nilAsOptionalField = false;
         boolean absentAsNilableType = false;
     |}|false allowDataProjection = {};
-    FailSafeOptions failSafe?;
+|};
+
+public type ColumnParseOptions record {|
+    *CommonParseOptions;
+    int? rowCount = ();
 |};
 ```
 
@@ -252,7 +262,7 @@ public type LogOutput record {|
 |};
 ```
 
-When `failSafe` is set on `ParseOptions` / `RowReadOptions`, row-level errors (`TypeConversionError`, `ConstraintValidationError`) are logged and the offending row is skipped. Structural errors still fail immediately.
+`failSafe` lives on `ParseOptions` only — it applies to bulk reads (`parseSheet`, `parseTable`, `Sheet.getRows`, `Table.getRows`). When set, row-level errors (`TypeConversionError`, `ConstraintValidationError`) are logged and the offending row is skipped. Single-row reads (`Sheet.getRow`, `Table.getRow`) are fail-fast and have no `failSafe`. Structural errors always fail immediately.
 
 ---
 
@@ -481,13 +491,14 @@ public isolated class Sheet {
     public isolated function getColumnCount() returns int|Error;
 
     # Row reads
-    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
-    public isolated function getRow(int index, RowReadOptions options = {},
+    public isolated function getRow(int index, RowParseOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
-    public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
+    public isolated function getColumn(string|int columnRef, ColumnParseOptions options = {},
             typedesc<CellValue?> t = <>) returns t[]|Error;
-    public isolated function getCell(int rowIndex, int columnIndex) returns CellValue?|Error;
+    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue?> t = <>)
+            returns t|Error;
 
     # Row writes
     public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
@@ -515,8 +526,8 @@ public isolated class Sheet {
 ```
 
 Notes:
-- `Sheet.getCell` returns `CellValue?` — the cell's value, or `nil` for a blank cell. Callers narrow as needed.
-- `Sheet.getColumn` accepts a column reference as either a header name (`string`) or a 0-based index (`int`).
+- `Sheet.getCell` binds the cell to the target type `t` (default `CellValue?`). The default yields the cell's natural value (a date/time cell becomes an ISO `string`); pinning a `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell is `()` for a nilable target, or an error for a non-nilable one.
+- `Sheet.getColumn` accepts a column reference as either a header name (`string`) or a 0-based index (`int`); `caseInsensitiveHeaders` applies to the header lookup.
 - `Sheet.deleteRow(index)` removes the row and shifts subsequent rows up by one to preserve dense indexing.
 
 ---
@@ -540,9 +551,9 @@ public isolated class Table {
 
     # Headers and data
     public isolated function getHeaders() returns string[]|Error;
-    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
-    public isolated function getRow(int index, RowReadOptions options = {},
+    public isolated function getRow(int index, RowParseOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
     public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;   # auto-expands the table
 

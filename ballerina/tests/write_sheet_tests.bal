@@ -66,12 +66,23 @@ function testWriteRecords() returns error? {
 
     // Verify headers exist (order may vary)
     string[] headers = parsed[0];
-    test:assertTrue(headers.indexOf("name") != () || headers.indexOf("Name") != (),
-        "Should have 'name' header");
-    test:assertTrue(headers.indexOf("age") != () || headers.indexOf("Age") != (),
-        "Should have 'age' header");
-    test:assertTrue(headers.indexOf("active") != () || headers.indexOf("Active") != (),
-        "Should have 'active' header");
+    int? nameCol = headers.indexOf("name");
+    int? ageCol = headers.indexOf("age");
+    int? activeCol = headers.indexOf("active");
+    test:assertTrue(nameCol != (), "Should have 'name' header");
+    test:assertTrue(ageCol != (), "Should have 'age' header");
+    test:assertTrue(activeCol != (), "Should have 'active' header");
+
+    // Verify the actual data values land in the columns their headers indicate.
+    int nc = <int>nameCol;
+    int ac = <int>ageCol;
+    int actc = <int>activeCol;
+    test:assertEquals(parsed[1][nc], "Alice", "Row 1 name should be Alice");
+    test:assertEquals(parsed[1][ac], "28", "Row 1 age should be 28");
+    test:assertEquals(parsed[1][actc], "true", "Row 1 active should be true");
+    test:assertEquals(parsed[2][nc], "Bob", "Row 2 name should be Bob");
+    test:assertEquals(parsed[2][ac], "35", "Row 2 age should be 35");
+    test:assertEquals(parsed[2][actc], "false", "Row 2 active should be false");
 
     // Cleanup
     check removeTempFile(tempFile);
@@ -88,12 +99,20 @@ function testWriteWithoutHeaders() returns error? {
     string tempFile = getTempFilePath("write_no_headers");
     check writeSheet(people, tempFile, writeHeaders = false);
 
-    // Parse back - should only have data row, no headers
-    string[][] parsed = check parseSheet(tempFile);
+    // Parse back with no header row so the single written row is read as data.
+    string[][] parsed = check parseSheet(tempFile, 0, {headerRowIndex: ()});
     test:assertEquals(parsed.length(), 1, "Should have only 1 row (no headers)");
 
-    // First row should be data, not header names
-    test:assertTrue(parsed[0].indexOf("Alice") != (), "First row should contain data 'Alice'");
+    // Row 0 must be the data values, with no header row preceding them.
+    string[] row0 = parsed[0];
+    test:assertTrue(row0.indexOf("Alice") != (), "Row 0 should contain data 'Alice'");
+    test:assertTrue(row0.indexOf("28") != (), "Row 0 should contain data '28'");
+    test:assertTrue(row0.indexOf("true") != (), "Row 0 should contain data 'true'");
+
+    // No header names should have been written.
+    test:assertTrue(row0.indexOf("name") == (), "No 'name' header should be written");
+    test:assertTrue(row0.indexOf("age") == (), "No 'age' header should be written");
+    test:assertTrue(row0.indexOf("active") == (), "No 'active' header should be written");
 
     // Cleanup
     check removeTempFile(tempFile);
@@ -131,14 +150,28 @@ function testWriteWithStartRow() returns error? {
     string tempFile = getTempFilePath("write_start_row");
     check writeSheet(data, tempFile, startRowIndex = 2);
 
-    // Parse back - data should start at row 2 (0-based), so rows 0,1 are empty
-    // But parse will only see the used range starting from row 2
-    string[][] parsed = check parseSheet(tempFile);
+    // Open via Workbook to inspect absolute cell positions: the leading rows
+    // (0 and 1) must be blank, proving startRowIndex was honored.
+    Workbook wb = check fromFile(tempFile);
+    Sheet sheet = check wb.getSheet(0);
 
-    // The data we wrote should be there
-    test:assertEquals(parsed.length(), 2, "Should have 2 rows");
-    test:assertEquals(parsed[0][0], "Header1", "First row should be Header1");
-    test:assertEquals(parsed[1][0], "Data1", "Second row should be Data1");
+    CellValue? leading0 = check sheet.getCell(0, 0);
+    CellValue? leading1 = check sheet.getCell(1, 0);
+    test:assertEquals(leading0, (), "Row 0 should be blank (data starts at row 2)");
+    test:assertEquals(leading1, (), "Row 1 should be blank (data starts at row 2)");
+
+    // The data we wrote lands at row 2 onward.
+    CellValue? header = check sheet.getCell(2, 0);
+    CellValue? dataCell = check sheet.getCell(3, 0);
+    test:assertEquals(header, "Header1", "Row 2 should hold Header1");
+    test:assertEquals(dataCell, "Data1", "Row 3 should hold Data1");
+
+    CellRange? range = check sheet.getUsedCellRange();
+    test:assertTrue(range != (), "Used range should exist");
+    if range != () {
+        test:assertEquals(range.firstRowIndex, 2, "Used range should start at row 2");
+    }
+    check wb.close();
 
     // Cleanup
     check removeTempFile(tempFile);
@@ -315,9 +348,23 @@ function testWriteMapArray() returns error? {
 
     // Verify headers (map keys become headers)
     string[] headers = parsed[0];
-    test:assertTrue(headers.indexOf("Name") != (), "Should have 'Name' header");
-    test:assertTrue(headers.indexOf("Age") != (), "Should have 'Age' header");
-    test:assertTrue(headers.indexOf("City") != (), "Should have 'City' header");
+    int? nameCol = headers.indexOf("Name");
+    int? ageCol = headers.indexOf("Age");
+    int? cityCol = headers.indexOf("City");
+    test:assertTrue(nameCol != (), "Should have 'Name' header");
+    test:assertTrue(ageCol != (), "Should have 'Age' header");
+    test:assertTrue(cityCol != (), "Should have 'City' header");
+
+    // Verify the data values appear under their respective headers.
+    int nc = <int>nameCol;
+    int ac = <int>ageCol;
+    int cc = <int>cityCol;
+    test:assertEquals(parsed[1][nc], "Alice", "Row 1 Name should be Alice");
+    test:assertEquals(parsed[1][ac], "28", "Row 1 Age should be 28");
+    test:assertEquals(parsed[1][cc], "NYC", "Row 1 City should be NYC");
+    test:assertEquals(parsed[2][nc], "Bob", "Row 2 Name should be Bob");
+    test:assertEquals(parsed[2][ac], "35", "Row 2 Age should be 35");
+    test:assertEquals(parsed[2][cc], "LA", "Row 2 City should be LA");
 
     // Cleanup
     check removeTempFile(tempFile);
@@ -647,6 +694,10 @@ function testWriteSheetErrorsOnUnmatchedField() returns error? {
 
     Error? result = sheet.putRows(bad);
     test:assertTrue(result is Error, "Should error on field with no matching header");
+    if result is Error {
+        test:assertTrue(result.message().includes("no matching column"),
+            "Error should mention no matching column");
+    }
 
     check wb.close();
     check removeTempFile(tempFile);

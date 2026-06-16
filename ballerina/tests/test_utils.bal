@@ -31,8 +31,8 @@ function setDate1904Native(Workbook wb, boolean flag) returns Error? = @java:Met
     'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;
 
-function setFormulaCellNative(Workbook wb, string sheetName, int row, int col, string formula)
-        returns Error? = @java:Method {
+function setFormulaCellNative(Workbook wb, string sheetName, int row, int col, string formula,
+        float cachedValue) returns Error? = @java:Method {
     'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
 } external;
 
@@ -112,7 +112,9 @@ function setupTestData() returns error? {
     // formulas.xlsx - Cells with real formula cells in column C.
     // Built via the test-only setFormulaCellNative helper because the public
     // write path treats "="-prefixed strings as text (no formula authoring).
-    // The cached formula result defaults to "0" because POI doesn't evaluate.
+    // Each formula carries the cached result an Excel-authored file would hold
+    // (=A2+B2 → 30, =A3+B3 → 40), so CACHED mode is exercised against a genuine
+    // value rather than POI's unevaluated default.
     // -------------------------------------------------------------------------
     Workbook wbFormula = new;
     Sheet sheetFormula = check wbFormula.createSheet("Formulas");
@@ -121,10 +123,10 @@ function setupTestData() returns error? {
     check sheetFormula.setCell(0, 2, "Sum");
     check sheetFormula.setCell(1, 0, 10);
     check sheetFormula.setCell(1, 1, 20);
-    check setFormulaCellNative(wbFormula, "Formulas", 1, 2, "A2+B2");
+    check setFormulaCellNative(wbFormula, "Formulas", 1, 2, "A2+B2", 30.0);
     check sheetFormula.setCell(2, 0, 15);
     check sheetFormula.setCell(2, 1, 25);
-    check setFormulaCellNative(wbFormula, "Formulas", 2, 2, "A3+B3");
+    check setFormulaCellNative(wbFormula, "Formulas", 2, 2, "A3+B3", 40.0);
     check wbFormula.saveAs(TEST_DATA_DIR + "formulas.xlsx");
     check wbFormula.close();
 
@@ -299,45 +301,6 @@ function cleanupTestData() returns error? {
             check file:remove(filePath);
         }
     }
-}
-
-// =============================================================================
-// ERROR MESSAGE GENERATORS
-// =============================================================================
-// These functions generate expected error messages for negative test assertions.
-
-# Generate expected error message for missing sheet.
-#
-# + sheetName - The sheet name that was not found
-# + return - Expected error message string
-function generateErrorForMissingSheet(string sheetName) returns string {
-    return "Sheet '" + sheetName + "' not found";
-}
-
-# Generate expected error message for type conversion failure.
-#
-# + value - The value that could not be converted
-# + targetType - The target type for conversion
-# + return - Expected error message string
-function generateErrorForTypeConversion(string value, string targetType) returns string {
-    return "Cannot convert '" + value + "' to " + targetType;
-}
-
-# Generate expected error message for file not found.
-#
-# + filePath - The file path that was not found
-# + return - Expected error message string
-function generateErrorForFileNotFound(string filePath) returns string {
-    return "Failed to read file: " + filePath;
-}
-
-# Generate expected error message for sheet index out of range.
-#
-# + index - The invalid index
-# + maxIndex - The maximum valid index
-# + return - Expected error message string
-function generateErrorForSheetIndexOutOfRange(int index, int maxIndex) returns string {
-    return "Sheet index " + index.toString() + " out of range (0-" + maxIndex.toString() + ")";
 }
 
 // =============================================================================

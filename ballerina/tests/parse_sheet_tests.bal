@@ -119,13 +119,9 @@ function testParseFormulaCachedMode() returns error? {
     };
     string[][] rows = check parseSheet(TEST_DATA_DIR + "formulas.xlsx", 0, opts);
 
-    // In CACHED mode, formula cells return their cached calculated values.
-    // For formulas written via POI without evaluation, the default cached value is "0".
-    // In real-world usage with Excel-created files, this would return the actual calculated result.
-    test:assertEquals(rows.length(), 3, "Should have 3 rows");
-    test:assertEquals(rows[0][2], "Sum", "Header should be 'Sum'");
-    test:assertEquals(rows[1][2], "0", "Unevaluated formula should return default cached value '0'");
-    test:assertEquals(rows[2][2], "0", "Unevaluated formula should return default cached value '0'");
+    // CACHED mode returns each formula cell's stored result. The fixture carries the
+    // values an Excel-authored file would hold (=A2+B2 → 30, =A3+B3 → 40).
+    assertStringArrayEquals(rows, EXPECTED_FORMULA_CACHED, "formula cached mode");
 }
 
 @test:Config {
@@ -137,11 +133,8 @@ function testParseFormulaTextMode() returns error? {
     };
     string[][] rows = check parseSheet(TEST_DATA_DIR + "formulas.xlsx", 0, opts);
 
-    // In TEXT mode, formula cells return the formula string with "=" prefix
-    test:assertEquals(rows.length(), 3, "Should have 3 rows");
-    test:assertEquals(rows[0][2], "Sum", "Header should be 'Sum'");
-    test:assertEquals(rows[1][2], "=A2+B2", "Should return exact formula text");
-    test:assertEquals(rows[2][2], "=A3+B3", "Should return exact formula text");
+    // In TEXT mode, formula cells return the formula string with the "=" prefix.
+    assertStringArrayEquals(rows, EXPECTED_FORMULA_TEXT, "formula text mode");
 }
 
 // =============================================================================
@@ -391,6 +384,15 @@ function testParseDataWithEmptyRowsInMiddle() returns error? {
     test:assertTrue(foundFirst, "Should find 'First' row");
     test:assertTrue(foundSecond, "Should find 'Second' row");
     test:assertTrue(foundThird, "Should find 'Third' row");
+
+    // Row order and the interleaved empty rows must be preserved exactly:
+    // header(0), First(1), empty(2), Second(3), empty(4), Third(5).
+    test:assertEquals(rows.length(), 6, "All 6 rows (header + 3 data + 2 empty) must come through");
+    test:assertEquals(rows[1][0], "First", "Data row 'First' must be at index 1");
+    test:assertEquals(rows[2][0], "", "Empty row must be preserved at index 2");
+    test:assertEquals(rows[3][0], "Second", "Data row 'Second' must be at index 3");
+    test:assertEquals(rows[4][0], "", "Empty row must be preserved at index 4");
+    test:assertEquals(rows[5][0], "Third", "Data row 'Third' must be at index 5");
 }
 
 // =============================================================================
@@ -492,16 +494,15 @@ function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
         allowDataProjection: false
     };
 
-    // Use RecordWithOptionalFields which maps to Name, Age, City (all present)
-    // Note: Field names are case-insensitive for matching
-    RecordWithOptionalFields[]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
+    // RecordWithOptionalFields uses @Name annotations mapping to "Name", "Age",
+    // "City" — exactly the headers in simple.xlsx. With every field matched, strict
+    // mode (allowDataProjection: false) must succeed and return all data rows.
+    RecordWithOptionalFields[] result = check parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
-    // This might fail if field name case doesn't match
-    // If it fails, it's expected behavior for strict mode
-    if result is RecordWithOptionalFields[] {
-        test:assertEquals(result.length(), 3, "Should have 3 records when fields match");
-    }
-    // If error, strict mode is working (case sensitivity might cause mismatch)
+    test:assertEquals(result.length(), 3, "Should have 3 records when every field matches a column");
+    test:assertEquals(result[0].name, "John", "First record name");
+    test:assertEquals(result[0].age, 30, "First record age");
+    test:assertEquals(result[0].city, "New York", "First record city");
 }
 
 @test:Config {
@@ -516,12 +517,29 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
         }
     };
 
-    // edge_empty_rows.xlsx has some empty cells which become nil
-    // With nilAsOptionalField=true, nil values should not be added to the map
-    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "edge_empty_rows.xlsx", 0, opts);
+    // Build a fixture with a GENUINELY blank cell (a skipped cell, not an empty
+    // string) so the read hits the BLANK → nil path. With nilAsOptionalField=true,
+    // that column's key must NOT be present in the map at all.
+    string nilMapFile = TEST_DATA_DIR + "temp_nil_skip_map.xlsx";
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "name");
+    check sheet.setCell(0, 1, "department");
+    check sheet.setCell(1, 0, "Alice");
+    check sheet.setCell(1, 1, "Engineering");
+    check sheet.setCell(2, 0, "Jane");
+    // Row 2, col 1 (department) intentionally left blank — a true gap, not "".
+    check wb.saveAs(nilMapFile);
+    check wb.close();
 
-    // Just verify parsing succeeds - actual behavior depends on data content
-    test:assertTrue(data.length() >= 0, "Should parse successfully");
+    map<CellValue?>[] data = check parseSheet(nilMapFile, 0, opts);
+
+    test:assertEquals(data.length(), 2, "Should have 2 data rows");
+    map<CellValue?> jane = data[1];
+    test:assertFalse(jane.hasKey("department"),
+            "Blank cell's key must be absent when nilAsOptionalField is true");
+
+    check file:remove(nilMapFile);
 }
 
 @test:Config {
@@ -624,7 +642,7 @@ function testCaseInsensitiveHeadersWithWorkbookAPI() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "case_headers.xlsx");
 
     Sheet sheet = check wb.getSheet("Sheet1");
-    RowReadOptions opts = {
+    ParseOptions opts = {
         caseInsensitiveHeaders: true
     };
 
@@ -801,18 +819,21 @@ function testHeaderRowBeyondSheetBounds() returns error? {
 @test:Config {
     groups: ["parseSheet", "options", "edge-cases"]
 }
-function testNegativeHeaderRowBeyondMinusOne() returns error? {
-    // Only -1 is valid for "no headers", other negatives should error or be handled
-    ParseOptions opts = {
-        headerRowIndex: -5
-    };
+function testNegativeHeaderRowErrors() returns error? {
+    // A negative headerRowIndex has no valid meaning — the "no headers" sentinel is `()`,
+    // not a negative number. Each negative value must surface as a ParseError rather than
+    // silently resolving to a negative (impossible) data-start row.
+    foreach int badIndex in [-1, -5] {
+        ParseOptions opts = {headerRowIndex: badIndex};
+        string[][]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
 
-    string[][]|Error result = parseSheet(TEST_DATA_DIR + "simple.xlsx", 0, opts);
-
-    // Should either normalize to valid value or return error
-    // The actual behavior depends on implementation
-    test:assertTrue(result is string[][] || result is ParseError,
-        "Should handle invalid negative headerRowIndex");
+        test:assertTrue(result is ParseError,
+                "headerRowIndex " + badIndex.toString() + " must return ParseError");
+        if result is ParseError {
+            test:assertTrue(result.message().includes("headerRowIndex"),
+                    "Error should name the offending option: " + result.message());
+        }
+    }
 }
 
 // =============================================================================
@@ -1036,15 +1057,29 @@ function testParseToOpenRecordWithMultipleExtraColumns() returns error? {
     groups: ["parseSheet", "openrecord"]
 }
 function testParseClosedRecordIgnoresExtraColumns() returns error? {
-    // Verify that closed records (Employee) do NOT get extra columns
-    // employees.xlsx has exactly the columns Employee expects
-    Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx");
+    // A closed record must DROP sheet columns beyond its declared fields rather than
+    // erroring. The fixture has five columns; closed Employee declares only three, so
+    // salary/location have no field to land in.
+    string testFile = TEST_DATA_DIR + "closed_extra_columns.xlsx";
+    string[][] data = [
+        ["name", "age", "department", "salary", "location"],
+        ["John Doe", "30", "Engineering", "50000", "NYC"],
+        ["Jane Smith", "28", "Marketing", "60000", "LA"]
+    ];
+    check writeSheet(data, testFile);
 
-    test:assertEquals(employees.length(), 3, "Should have 3 employees");
+    // Parsing succeeds despite the two extra columns; only the declared fields populate
+    // (the closed record cannot hold the extras).
+    Employee[] employees = check parseSheet(testFile);
+
+    test:assertEquals(employees.length(), 2, "Both data rows should parse despite extra columns");
     test:assertEquals(employees[0].name, "John Doe", "First employee name");
+    test:assertEquals(employees[0].age, 30, "First employee age");
     test:assertEquals(employees[0].department, "Engineering", "First employee department");
+    test:assertEquals(employees[1].name, "Jane Smith", "Second employee name");
+    test:assertEquals(employees[1].department, "Marketing", "Second employee department");
 
-    // Closed record should not have any extra fields - all fields are defined
+    check file:remove(testFile);
 }
 
 // =============================================================================
@@ -1066,6 +1101,22 @@ function testParseNaturalTypedCellsIntoMap() returns error? {
     test:assertEquals(data[0]["dateCol"], "2026-05-28", "Date cell should bind to ISO date string");
     test:assertEquals(data[0]["datetimeCol"], "2026-05-28 14:30:00",
             "Date-time cell should bind to ISO date-time string (time preserved)");
+}
+
+@test:Config {
+    groups: ["parseSheet", "types"]
+}
+function testParseNaturalTypedCellsIntoRecord() returns error? {
+    // natural_types.xlsx holds genuinely typed cells. Binding them into a strongly
+    // typed record must preserve each cell's natural Ballerina type — distinct from
+    // the string-cell tests, where the source cells are strings.
+    NaturalTypedRow[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
+
+    test:assertEquals(data.length(), 1, "Should have 1 data row");
+    test:assertTrue(data[0].intCol is int, "intCol should bind to int");
+    test:assertEquals(data[0].intCol, 42, "intCol should be 42");
+    test:assertEquals(data[0].decimalCol, 3.14d, "decimalCol should be 3.14");
+    test:assertEquals(data[0].boolCol, true, "boolCol should be true");
 }
 
 @test:Config {
@@ -1209,6 +1260,10 @@ function testInvalidBooleanStringErrors() returns error? {
     BoolRow[]|Error result = parseSheet(tempFile);
     test:assertTrue(result is TypeConversionError,
             "Invalid boolean string 'maybe' must surface as TypeConversionError");
+    if result is TypeConversionError {
+        test:assertTrue(result.message().includes("to boolean"),
+                "Error message should mention the boolean conversion: " + result.message());
+    }
 
     check removeTempFile(tempFile);
 }
@@ -1289,6 +1344,10 @@ function testFractionalStringToIntErrors() returns error? {
     IntRow[]|Error result = parseSheet(tempFile);
     test:assertTrue(result is TypeConversionError,
             "Fractional string '3.7' must surface as TypeConversionError for int target");
+    if result is TypeConversionError {
+        test:assertTrue(result.message().includes("to int (non-integer value)"),
+                "Error message should flag the non-integer value: " + result.message());
+    }
 
     check removeTempFile(tempFile);
 }
@@ -1306,6 +1365,10 @@ function testFractionalNumericToIntErrors() returns error? {
     IntRow[]|Error result = parseSheet(tempFile);
     test:assertTrue(result is TypeConversionError,
             "Fractional numeric 3.7 must surface as TypeConversionError for int target");
+    if result is TypeConversionError {
+        test:assertTrue(result.message().includes("to int (non-integer value)"),
+                "Error message should flag the non-integer value: " + result.message());
+    }
 
     check removeTempFile(tempFile);
 }

@@ -120,7 +120,7 @@ public type Table isolated object {
     # + options - Read options
     # + t - Target row type descriptor (record, map, or string[])
     # + return - Array of data rows or error
-    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
 
     # Get a single data row from the table by index.
@@ -137,7 +137,7 @@ public type Table isolated object {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error
-    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error;
 
     # Write rows to the table.
@@ -241,12 +241,12 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;

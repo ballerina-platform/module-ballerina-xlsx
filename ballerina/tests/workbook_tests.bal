@@ -297,7 +297,7 @@ function testSheetPutRows() returns error? {
     check sheet.putRows(data);
 
     // Read back
-    RowReadOptions opts = {headerRowIndex: 0, dataStartRowIndex: 0};
+    ParseOptions opts = {headerRowIndex: 0, dataStartRowIndex: 0};
     string[][] result = check sheet.getRows(opts);
     test:assertEquals(result.length(), 3, "Should have 3 rows");
     assertStringArrayEquals(result, data, "PutRows then getRows");
@@ -443,9 +443,11 @@ function testWorkbookOpenModifySave() returns error? {
     check wb.saveAs(tempFile);
     check wb.close();
 
-    // Verify modifications
+    // Verify modifications: the original row stays at 0 and the new row landed at 1.
     string[][] result = check parseSheet(tempFile);
-    test:assertTrue(result.length() >= 2, "Should have original + new data");
+    test:assertEquals(result.length(), 2, "Should have the original row plus the appended row");
+    test:assertEquals(result[0][0], "Original", "Original row must be preserved at row 0");
+    test:assertEquals(result[1][0], "New", "New row must be written at row 1");
 
     check removeTempFile(tempFile);
 }
@@ -505,7 +507,7 @@ function testSheetGetRowsWithHeaderOption() returns error? {
     Sheet sheet = check wb.getSheet(0);
 
     // complex_headers.xlsx: row 0=title, row 1=metadata, row 2=headers, row 3+=data
-    RowReadOptions opts = {
+    ParseOptions opts = {
         headerRowIndex: 2,
         dataStartRowIndex: 3
     };
@@ -526,7 +528,7 @@ function testSheetGetRowsWithFormulaModeText() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "formulas.xlsx");
     Sheet sheet = check wb.getSheet(0);
 
-    RowReadOptions opts = {
+    ParseOptions opts = {
         formulaMode: TEXT
     };
     string[][] rows = check sheet.getRows(opts);
@@ -849,6 +851,10 @@ function testUseSheetAfterCloseReturnsError() returns error? {
     check wb.close();
     string[][]|Error result = sheet.getRows();
     test:assertTrue(result is Error, "Sheet.getRows after Workbook.close should return Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("no longer valid"),
+            "Error should mention the handle is no longer valid");
+    }
 }
 
 @test:Config {
@@ -861,7 +867,26 @@ function testUseSheetAfterDeleteReturnsError() returns error? {
     check wb.deleteSheet("Doomed");
     string[][]|Error result = sheet.getRows();
     test:assertTrue(result is Error, "Sheet.getRows after deleteSheet should return Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("no longer valid"),
+            "Error should mention the handle is no longer valid");
+    }
     check wb.close();
+}
+
+@test:Config {
+    groups: ["workbook"]
+}
+function testUseWorkbookAfterCloseReturnsError() returns error? {
+    Workbook wb = check fromFile(TEST_DATA_DIR + "simple.xlsx");
+    check wb.close();
+
+    int|error result = trap wb.getSheetCount();
+    test:assertTrue(result is error, "Workbook method after close should error");
+    if result is error {
+        test:assertTrue(result.message().includes("Workbook handle is no longer valid"),
+            "Error should mention the workbook handle is no longer valid");
+    }
 }
 
 // =============================================================================
@@ -871,8 +896,12 @@ function testUseSheetAfterDeleteReturnsError() returns error? {
 @test:Config {groups: ["workbook"]}
 function testCreateSheetInvalidName() returns error? {
     Workbook wb = new;
-    Sheet|Error result = wb.createSheet("Has/Slash");
-    test:assertTrue(result is Error, "Forbidden char '/' must be rejected");
+    // Excel forbids these characters in sheet names: / \ ? * [ ] :
+    string[] forbidden = ["Has/Slash", "Has\\Back", "Has?Q", "Has*Star", "Has[Br", "Has]Br", "Has:Colon"];
+    foreach string name in forbidden {
+        Sheet|Error result = wb.createSheet(name);
+        test:assertTrue(result is Error, "Forbidden char in '" + name + "' must be rejected");
+    }
     check wb.close();
 }
 
@@ -942,4 +971,14 @@ function testNonXlsxFileReturnsParseError() returns error? {
             "Non-XLSX file must not be misclassified as FileNotFoundError");
 
     check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["workbook"]}
+function testFromBytesInvalidReturnsParseError() returns error? {
+    // Byte-array mirror of testNonXlsxFileReturnsParseError: unreadable content must
+    // surface as ParseError (consistent with fromFile), not a generic Error.
+    byte[] garbage = "this is not a valid xlsx file".toBytes();
+
+    Workbook|Error result = fromBytes(garbage);
+    test:assertTrue(result is ParseError, "Invalid XLSX bytes must surface as ParseError");
 }

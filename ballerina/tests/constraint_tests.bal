@@ -21,9 +21,9 @@ import ballerina/test;
 // =============================================================================
 // CONSTRAINT VALIDATION OPTION TESTS
 // =============================================================================
-// These tests verify that the enableConstraintValidation option is properly
-// handled. When the constraint module is not available (as in this test env),
-// validation is gracefully skipped.
+// These tests verify the enableConstraintValidation option. Validation runs by
+// default against any @constraint annotations: out-of-range rows are rejected
+// (or skipped under fail-safe), and disabling validation lets them through.
 
 // =============================================================================
 // TEST CONSTANTS
@@ -40,30 +40,32 @@ const string CONSTRAINT_TEST_DIR = "tests/resources/testdata/";
     before: setupConstraintTestData
 }
 function testConstraintValidationEnabledDefault() returns error? {
-    // Parse with constraint validation enabled (default)
-    // Should work even if constraint module is not available
-    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx");
+    // Validation is enabled by default. constraint_test.xlsx holds only in-range ages
+    // (30, 25, 45), so the default-on validator actually runs and all three rows pass.
+    ConstrainedEmployee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx");
 
-    // Should parse successfully
-    test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
+    test:assertEquals(employees.length(), 3, "All 3 in-range rows should pass default validation");
     test:assertEquals(employees[0].name, "John");
     test:assertEquals(employees[0].age, 30);
 }
 
 @test:Config {
     groups: ["constraint"],
-    before: setupConstraintTestData
+    before: setupConstraintViolationTestData
 }
 function testConstraintValidationExplicitlyEnabled() returns error? {
-    // Explicitly enable constraint validation
+    // Explicitly enable constraint validation against the violation fixture.
+    // Because validation actually runs, the out-of-range rows must make parsing
+    // fail rather than slip through — a no-op validator would pass this.
     ParseOptions opts = {
         enableConstraintValidation: true
     };
 
-    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
+    ConstrainedEmployee[]|Error result =
+            parseSheet(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
 
-    // Should parse successfully
-    test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
+    test:assertTrue(result is ConstraintValidationError,
+            "Enabled validation must reject the out-of-range rows");
 }
 
 @test:Config {
@@ -84,10 +86,11 @@ function testConstraintValidationDisabled() returns error? {
 
 @test:Config {
     groups: ["constraint"],
-    before: setupConstraintTestData
+    before: setupConstraintViolationTestData
 }
 function testConstraintValidationWithFailSafe() returns error? {
-    // Test that constraint validation works with fail-safe mode
+    // Constraint validation combined with fail-safe must SKIP the violating rows
+    // (age -5 and 150) rather than fail or pass everything through.
     ParseOptions opts = {
         enableConstraintValidation: true,
         failSafe: {
@@ -95,10 +98,12 @@ function testConstraintValidationWithFailSafe() returns error? {
         }
     };
 
-    Employee[] employees = check parseSheet(CONSTRAINT_TEST_DIR + "constraint_test.xlsx", 0, opts);
+    ConstrainedEmployee[] employees =
+            check parseSheet(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx", 0, opts);
 
-    // Should parse successfully
-    test:assertEquals(employees.length(), 3, "Should parse all 3 rows");
+    test:assertEquals(employees.length(), 2, "Only the two in-range rows must survive");
+    test:assertEquals(employees[0].name, "John", "First surviving row is John (age 30)");
+    test:assertEquals(employees[1].name, "Bob", "Second surviving row is Bob (age 45)");
 }
 
 // =============================================================================
@@ -125,6 +130,12 @@ function testConstraintViolationReturnsError() returns error? {
 
     test:assertTrue(result is ConstraintValidationError,
         "Should return ConstraintValidationError for invalid age");
+
+    if result is ConstraintValidationError {
+        // The error must pinpoint the offending row, not just signal a generic failure.
+        test:assertTrue(result.detail().rowNumber is int,
+                "ConstraintValidationError should carry the violating row number");
+    }
 }
 
 @test:Config {
@@ -162,6 +173,73 @@ function testConstraintViolationDisabledAllowsInvalidData() returns error? {
 
     // All rows should be returned including invalid ones
     test:assertEquals(employees.length(), 4, "Should return all rows when validation disabled");
+}
+
+// =============================================================================
+// CONSTRAINT VALIDATION ACROSS TABLE AND SINGLE-ROW READ PATHS
+// =============================================================================
+// Constraint validation must apply uniformly — not only on parseSheet/Sheet.getRows,
+// but also on the table read paths and Sheet.getRow.
+
+@test:Config {
+    groups: ["constraint", "table"],
+    before: setupConstraintTableTestData
+}
+function testParseTableConstraintValidationReturnsError() returns error? {
+    // parseTable must honour enableConstraintValidation just like parseSheet.
+    // The table holds out-of-range ages (-5, 150), so enabled validation must reject them.
+    ParseOptions opts = {
+        enableConstraintValidation: true
+    };
+
+    ConstrainedEmployee[]|Error result =
+            parseTable(CONSTRAINT_TEST_DIR + "constraint_table.xlsx", "ConstraintTable", opts);
+
+    test:assertTrue(result is ConstraintValidationError,
+            "parseTable with constraint validation must reject the out-of-range rows");
+}
+
+@test:Config {
+    groups: ["constraint", "table"],
+    before: setupConstraintTableTestData
+}
+function testTableGetRowsConstraintValidationReturnsError() returns error? {
+    // The object-API table read path (Table.getRows) must validate constraints too.
+    Workbook wb = check fromFile(CONSTRAINT_TEST_DIR + "constraint_table.xlsx");
+    Table tbl = check wb.getTable("ConstraintTable");
+
+    ParseOptions opts = {
+        enableConstraintValidation: true
+    };
+
+    ConstrainedEmployee[]|Error result = tbl.getRows(opts);
+
+    test:assertTrue(result is ConstraintValidationError,
+            "Table.getRows with constraint validation must reject the out-of-range rows");
+
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["constraint", "sheet"],
+    before: setupConstraintViolationTestData
+}
+function testSheetGetRowConstraintValidationReturnsError() returns error? {
+    // Sheet.getRow must validate constraints. Data-row index 1 is Jane (age -5),
+    // which violates the 18..120 bound.
+    Workbook wb = check fromFile(CONSTRAINT_TEST_DIR + "constraint_violation_test.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+
+    RowParseOptions opts = {
+        enableConstraintValidation: true
+    };
+
+    ConstrainedEmployee|Error result = sheet.getRow(1, opts);
+
+    test:assertTrue(result is ConstraintValidationError,
+            "Sheet.getRow with constraint validation must reject the out-of-range row");
+
+    check wb.close();
 }
 
 // Setup function for constraint violation test data
@@ -208,11 +286,40 @@ function setupConstraintTestData() returns error? {
     check writeSheet(testData, testFilePath);
 }
 
+// Setup function for a table fixture carrying constraint-violating rows
+function setupConstraintTableTestData() returns error? {
+    string testFilePath = CONSTRAINT_TEST_DIR + "constraint_table.xlsx";
+
+    if check file:test(testFilePath, file:EXISTS) {
+        check file:remove(testFilePath);
+    }
+
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    string[][] testData = [
+        ["name", "age", "department"],
+        ["John", "30", "Engineering"],   // Valid
+        ["Jane", "-5", "Marketing"],     // Invalid: age < 18
+        ["Bob", "45", "Sales"],          // Valid
+        ["Alice", "150", "HR"]           // Invalid: age > 120
+    ];
+    check sheet.putRows(testData);
+    _ = check sheet.createTable("ConstraintTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 4,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+    check wb.saveAs(testFilePath);
+    check wb.close();
+}
+
 @test:AfterSuite
 function cleanupConstraintTestData() returns error? {
     string[] filesToRemove = [
         "constraint_test.xlsx",
-        "constraint_violation_test.xlsx"
+        "constraint_violation_test.xlsx",
+        "constraint_table.xlsx"
     ];
 
     foreach string fileName in filesToRemove {

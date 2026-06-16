@@ -155,6 +155,8 @@ public final class XlsxParser {
      * Parse a sheet to the target type.
      */
     private static Object parseSheet(Environment env, Sheet sheet, XlsxConfig config, BTypedesc targetType) {
+        RecordParsingUtils.validateReadConfig(config);
+
         // Under the typedesc<Row> signature the describing type IS the row element type
         // (the function returns `t[]`, so Ballerina infers t = element). Dispatch directly
         // on the row shape — no need to unwrap an outer array first.

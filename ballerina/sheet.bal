@@ -86,7 +86,7 @@ public type Sheet isolated object {
     # + options - Read options
     # + t - Target row type descriptor (record, map, or string[])
     # + return - Array of rows or error
-    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
 
     # Get a single row from the sheet by index.
@@ -109,7 +109,7 @@ public type Sheet isolated object {
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error
-    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error;
 
     # Write rows to the sheet.
@@ -144,22 +144,27 @@ public type Sheet isolated object {
     # + options - Read options
     # + t - Target cell type descriptor (`CellValue?`; nilable for columns with blank cells); returns `t[]`
     # + return - Column values or error
-    public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
+    public isolated function getColumn(string|int columnRef, ColumnParseOptions options = {},
             typedesc<CellValue?> t = <>) returns t[]|Error;
 
-    # Read a single cell value.
+    # Read a single cell value, bound to the target type.
     #
-    # Returns the cell's value as a `CellValue` (string / number / boolean / date-time),
-    # or `nil` for a blank cell. Narrow as needed at the call site.
+    # Like `getColumn`, the target type drives the binding: the default `CellValue?` yields the
+    # cell's natural value (a date/time cell becomes an ISO `string`), while pinning a
+    # `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell
+    # binds to `()` for a nilable target, or returns an error for a non-nilable one.
     #
     # ```ballerina
-    # xlsx:CellValue? value = check sheet.getCell(0, 2);
+    # xlsx:CellValue? value = check sheet.getCell(0, 2);   // natural value (ISO string for dates)
+    # time:Civil ts = check sheet.getCell(1, 4);           // typed date-time
     # ```
     #
     # + rowIndex - 0-based row index (absolute)
     # + columnIndex - 0-based column index (absolute)
-    # + return - Cell value, `nil` for blank cells, or error
-    public isolated function getCell(int rowIndex, int columnIndex) returns CellValue?|Error;
+    # + t - Target cell type descriptor (`CellValue?`); defaults to the cell's natural value
+    # + return - Cell value, `nil` for a blank cell (nilable target), or error
+    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue?> t = <>)
+            returns t|Error;
 
     # Write a single row at the specified row index.
     #
@@ -297,7 +302,7 @@ public type Sheet isolated object {
     # Writes the data first, then creates a table around it. An Excel table always has a
     # header row: for records the field names (or `@xlsx:Name`) become the headers, for
     # maps the keys, and for `string[][]` the first row is taken as the header. There is no
-    # option to omit headers — skipping headers is a parse-side concern (`RowReadOptions.headerRowIndex`).
+    # option to omit headers — skipping headers is a parse-side concern (`ParseOptions.headerRowIndex`).
     #
     # ```ballerina
     # Employee[] employees = [...];
@@ -351,12 +356,12 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getRows(RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getRow(int index, RowReadOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
@@ -365,12 +370,13 @@ isolated class SheetImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getColumn(string|int columnRef, RowReadOptions options = {},
+    public isolated function getColumn(string|int columnRef, ColumnParseOptions options = {},
             typedesc<CellValue?> t = <>) returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
-    public isolated function getCell(int rowIndex, int columnIndex) returns CellValue?|Error = @java:Method {
+    public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue?> t = <>)
+            returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.SheetHandle"
     } external;
 
