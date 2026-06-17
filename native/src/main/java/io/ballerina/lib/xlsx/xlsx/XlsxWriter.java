@@ -441,14 +441,121 @@ public final class XlsxWriter {
         XlsxConfig config = XlsxConfig.fromWriteOptions(options);
 
         try {
-            int startRow = config.getStartRowIndex();
+            String mode = config.getSheetWriteMode();
             int startCol = config.getStartColumnIndex();
+            int n = data.size();
             StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+            CellRangeAddress used = UsedRangeDetector.detectUsedRange(sheet);
+            Integer explicit = config.hasStartRowIndex() ? config.getStartRowIndexOverride() : null;
+            boolean recordOrMap = n > 0 && data.get(0) instanceof BMap;
+
+            if ("APPEND".equals(mode)) {
+                int insertAt = (explicit != null) ? explicit
+                        : (used != null ? used.getLastRow() + 1 : 0);
+                // A mid-sheet insert shifts existing content down to make room; appending at the
+                // bottom (or into an empty sheet) needs no shift.
+                boolean midInsert = n > 0 && used != null && insertAt <= used.getLastRow();
+
+                // Refuse to shift a table: the cells would move but the table's ref would not follow.
+                if (midInsert) {
+                    String table = RowShifter.firstTableShiftedBy(sheet, insertAt, null);
+                    if (table != null) {
+                        return DiagnosticLog.tableShiftConflictError(table, sheet.getSheetName(), insertAt);
+                    }
+                }
+
+                if (recordOrMap && used != null) {
+                    int headerRow = used.getFirstRow();
+                    // Validate before mutating (the insert must stay below the header it aligns to).
+                    if (insertAt <= headerRow) {
+                        return DiagnosticLog.error("APPEND insert position " + insertAt
+                                + " must be below the header row " + headerRow);
+                    }
+                    if (existingHeaderMap(sheet, headerRow) == null) {
+                        return DiagnosticLog.error("Cannot APPEND a record or map: no header row "
+                                + "found at row " + headerRow);
+                    }
+                    if (midInsert) {
+                        RowShifter.makeRoom(sheet, insertAt, n);
+                    }
+                    // Align to the existing header (kept in place); write the data at the insert point.
+                    return dispatchWrite(sheet, data, config, headerRow, startCol, styleCache,
+                            "sheet write", insertAt);
+                }
+
+                // string[][], or an empty sheet → positional / fresh write at the insert point.
+                if (midInsert) {
+                    RowShifter.makeRoom(sheet, insertAt, n);
+                }
+                return dispatchWrite(sheet, data, config, insertAt, startCol, styleCache, "sheet write", null);
+            }
+
+            int startRow = (explicit != null) ? explicit : 0;
+
+            if ("FAIL_IF_EXISTS".equals(mode)) {
+                Object occupied = checkTargetEmpty(sheet, data, config, startRow, startCol, recordOrMap);
+                if (occupied != null) {
+                    return occupied;  // target not empty → write nothing
+                }
+            }
+            // REPLACE (and FAIL_IF_EXISTS once the target is confirmed empty): overwrite from startRow.
             return dispatchWrite(sheet, data, config, startRow, startCol, styleCache, "sheet write", null);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error writing to sheet: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * For FAIL_IF_EXISTS: confirm the rows the write will occupy are empty across the data's column
+     * span. Returns a typed error if any target cell holds real data, else {@code null}. Checking
+     * only the target columns lets unrelated populated columns elsewhere coexist.
+     */
+    private static Object checkTargetEmpty(Sheet sheet, BArray data, XlsxConfig config,
+                                           int startRow, int startCol, boolean recordOrMap) {
+        int n = data.size();
+        if (n == 0) {
+            return null;
+        }
+        int height;
+        int width;
+        if (recordOrMap) {
+            height = n + (config.isWriteHeaders() ? 1 : 0);
+            width = rowWidth(data.get(0));
+        } else {
+            height = n;
+            width = 0;
+            for (int i = 0; i < n; i++) {
+                width = Math.max(width, rowWidth(data.get(i)));
+            }
+        }
+        for (int r = startRow; r < startRow + height; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) {
+                continue;
+            }
+            for (int c = startCol; c < startCol + width; c++) {
+                if (UsedRangeDetector.hasRealData(row.getCell(c))) {
+                    return DiagnosticLog.error("Cannot write with FAIL_IF_EXISTS: row " + r
+                            + " is not empty in the target column range");
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Column span of a single row value — array length for {@code string[]}, entry count for a
+     * record or map.
+     */
+    private static int rowWidth(Object rowData) {
+        if (rowData instanceof BArray arr) {
+            return arr.size();
+        }
+        if (rowData instanceof BMap<?, ?> map) {
+            return map.size();
+        }
+        return 0;
     }
 }

@@ -144,18 +144,19 @@ public type Table isolated object {
     # Write rows to the table.
     #
     # By default (`REPLACE`) the table's data is replaced and the data range resized to fit
-    # exactly (it grows or shrinks, leaving no stale rows). `tableWriteMode = APPEND` adds the
-    # rows below the existing data. A resize that would overlap another table fails with a
-    # `TableOverlapError`.
+    # exactly (it grows or shrinks, leaving no stale rows). `tableWriteMode = APPEND` adds the rows
+    # below the existing data, or at `insertAt` (a 0-based data-row index) shifting the rest down.
+    # A resize that would overlap another table fails with a `TableOverlapError`.
     #
     # ```ballerina
     # Employee[] employees = [{name: "John", age: 30}, {name: "Jane", age: 25}];
     # check table.putRows(employees);
     # check table.putRows(moreRows, tableWriteMode = APPEND);
+    # check table.putRows(oneRow, tableWriteMode = APPEND, insertAt = 1);  // insert at data-row 1
     # ```
     #
     # + data - Data to write (records or arrays)
-    # + options - Table write options (`tableWriteMode`)
+    # + options - Table write options (`tableWriteMode`, `insertAt`)
     # + return - Error if write fails
     public isolated function putRows(Row[] data, *TableWriteOptions options) returns Error?;
 

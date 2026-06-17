@@ -301,6 +301,16 @@ function cleanupTestData() returns error? {
             check file:remove(filePath);
         }
     }
+
+    // Safety net: sweep any leftover transient files (temp_*). Per-test `removeTempFile` only runs
+    // when a test passes, so a failed assertion would otherwise strand its temp file on disk.
+    if check file:test(TEST_DATA_DIR, file:EXISTS) {
+        foreach file:MetaData entry in check file:readDir(TEST_DATA_DIR) {
+            if !entry.dir && entry.absPath.includes("/temp_") {
+                check file:remove(entry.absPath);
+            }
+        }
+    }
 }
 
 // =============================================================================

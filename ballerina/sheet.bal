@@ -115,22 +115,27 @@ public type Sheet isolated object {
 
     # Write rows to the sheet.
     #
+    # By default (`APPEND`) the rows are added at the bottom of the existing data, aligned to the
+    # existing header by column name for records/maps — nothing is overwritten. `sheetWriteMode`
+    # selects the disposition: `REPLACE` overwrites from `startRowIndex`, `FAIL_IF_EXISTS` writes
+    # only into empty rows (erroring otherwise). With `APPEND`, an explicit `startRowIndex` inserts
+    # at that row, shifting existing rows down.
+    #
     # Supports writing from:
     # - `string[][]` - Raw string array
     # - `record{}[]` - Array of records (field names become headers)
     #
     # ```ballerina
-    # // Write string array
-    # string[][] data = [["Name", "Age"], ["John", "30"]];
-    # check sheet.putRows(data);
-    #
-    # // Write records
+    # // Append below existing data (default)
     # Employee[] employees = [{name: "John", age: 30}];
     # check sheet.putRows(employees);
+    #
+    # // Overwrite the sheet from the top
+    # check sheet.putRows([["Name", "Age"], ["John", "30"]], sheetWriteMode = REPLACE);
     # ```
     #
     # + data - Data to write
-    # + options - Write options (`writeHeaders`, `startRowIndex`)
+    # + options - Write options (`writeHeaders`, `startRowIndex`, `sheetWriteMode`)
     # + return - Error if write fails
     public isolated function putRows(Row[] data, *WriteOptions options) returns Error?;
 
@@ -169,18 +174,19 @@ public type Sheet isolated object {
 
     # Write a single row at the specified row index.
     #
-    # When `data` is a record or map, the sheet must already have a header row
-    # at the position implied by `options.headerRowIndex`; values are placed
-    # into matching columns by header name.
+    # By default (`REPLACE`) the row at `rowIndex` is overwritten. `sheetWriteMode = APPEND` inserts
+    # a new row there, shifting existing rows down; `FAIL_IF_EXISTS` writes only if that row is empty.
+    # When `data` is a record or map, the sheet must already have a header row at the position
+    # implied by `options.headerRowIndex`; values are placed into matching columns by header name.
     #
     # ```ballerina
-    # check sheet.setRow(5, ["John", "30", "Engineering"]);
-    # check sheet.setRow(6, {name: "Jane", age: 28});
+    # check sheet.setRow(5, ["John", "30", "Engineering"]);            // overwrite row 5
+    # check sheet.setRow(6, {name: "Jane", age: 28}, sheetWriteMode = APPEND);  // insert at row 6
     # ```
     #
     # + rowIndex - 0-based row index (absolute)
     # + data - Row data (`string[]`, record, or `map<CellValue>`)
-    # + options - Single-row write options (`headerRowIndex` locates the header row for record/map alignment)
+    # + options - Single-row write options (`headerRowIndex` locates the header row for record/map alignment; `sheetWriteMode`)
     # + return - Error if write fails
     public isolated function setRow(int rowIndex, Row data, *RowWriteOptions options)
             returns Error?;

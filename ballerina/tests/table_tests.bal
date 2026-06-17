@@ -1400,3 +1400,101 @@ function testTableWriteResolvesColumnsByHeader() returns error? {
             "age field must land in the 'age' column, regardless of write key order");
     check file:remove(tempFile);
 }
+
+// =============================================================================
+// TABLE MID-POSITION INSERT (APPEND insertAt)
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsInsertAt() returns error? {
+    // APPEND with insertAt inserts inside the table, shifting existing rows down.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"], ["Cara", "40"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 3,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // Insert at data-row 1 (between Alice and Bob).
+    check t.putRows([["Zoe", "99"]], tableWriteMode = APPEND, insertAt = 1);
+
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 4, "Table grew by one row");
+    test:assertEquals(rows[0][0], "Alice", "Row before the insert preserved");
+    test:assertEquals(rows[1][0], "Zoe", "Inserted at data-row 1");
+    test:assertEquals(rows[2][0], "Bob", "Existing row shifted down");
+    test:assertEquals(rows[3][0], "Cara", "Trailing row shifted down");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtOutOfRange() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // currentDataRows = 1; insertAt = 5 is out of range.
+    Error? result = t.putRows([["X", "9"]], tableWriteMode = APPEND, insertAt = 5);
+    test:assertTrue(result is InvalidTableRangeError, "insertAt out of range must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtIgnoredForReplace() returns error? {
+    // insertAt is APPEND-only; with REPLACE it is ignored (the whole data region is replaced).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.putRows([["Solo", "1"]], tableWriteMode = REPLACE, insertAt = 1);
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 1, "REPLACE replaces the whole data region, ignoring insertAt");
+    test:assertEquals(rows[0][0], "Solo", "Data replaced");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtOverlapError() returns error? {
+    // A mid-insert that would shift a second table below must error.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["Name", "Age"],
+        ["Alice", "30"],
+        ["Bob", "25"],
+        ["", ""],
+        ["P", "Q"],
+        ["x", "y"]
+    ]);
+    Table t = check sheet.createTable("Upper", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Lower", {
+        firstRowIndex: 4,
+        lastRowIndex: 5,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = t.putRows([["Z", "9"]], tableWriteMode = APPEND, insertAt = 0);
+    test:assertTrue(result is TableOverlapError, "A mid-insert that shifts a second table must error");
+    check wb.close();
+}

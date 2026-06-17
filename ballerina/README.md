@@ -128,7 +128,7 @@ Employee[] employees = check xlsx:parseTable("sales.xlsx", "EmployeeTable");
 
 Employee[] newEmployees = [{name: "Alice", age: 31, department: "Eng"}];
 check xlsx:writeTable([...employees, ...newEmployees], "sales.xlsx", "EmployeeTable");
-// writeTable auto-expands the table to fit the data
+// writeTable resizes the table's data range to fit the data (grows or shrinks)
 ```
 
 For richer operations (totals row, rename, resize, or coordination with other workbook changes), go through the Workbook API:
@@ -191,9 +191,11 @@ bal run
 
 ## Examples
 
-The `xlsx` module provides practical examples illustrating usage in various scenarios. Explore these [examples](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/), ordered from the simplest Tier 1 read/write loop to in-memory byte pipelines.
+The `xlsx` module provides practical examples illustrating usage in various scenarios. Explore these [examples](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/), progressing from the simplest Tier 1 read/write loop through multi-sheet workbooks, validation, and in-memory byte pipelines to database and enrichment flows.
 
 1. [Process Employee Data](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/process-employee-data) — Tier 1 quickstart. Write employee records, read them back into typed records, filter, write the filtered subset. Demonstrates `parseSheet`, `writeSheet`, and `@xlsx:Name` column mapping.
 2. [Monthly Sales Report](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/monthly-sales-report) — Build a multi-sheet workbook with an embedded Excel Table and `time:Date` columns; reopen and query it through the Workbook + Table APIs.
 3. [Validated Bulk Import](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/validated-bulk-import) — Parse a partner file with `@constraint` validation and fail-safe error logging — clean rows flow downstream; rejected rows are logged with their raw values and reason.
 4. [In-Memory Pipeline](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/in-memory-pipeline) — Process XLSX bytes end-to-end without disk I/O. Demonstrates `xlsx:fromBytes` and `Workbook.toBytes()` — the shape an HTTP service or queue consumer would use.
+5. [Database to Excel](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/database-to-excel) — Read rows from a database (in-memory H2, no server to configure), map them onto a consumer's column layout with `@xlsx:Name`, build the workbook with the Workbook API, and serialise it to bytes with `Workbook.toBytes()`.
+6. [Standardize and Enrich](https://github.com/ballerina-platform/module-ballerina-xlsx/tree/main/examples/standardize-and-enrich) — Parse an Excel file's bytes with `xlsx:fromBytes`, map its layout onto a standard schema, enrich each row (region lookup, computed total, customer tier, `time:Date` stamp), and write the result with `writeSheet`.

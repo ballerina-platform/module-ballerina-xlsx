@@ -24,23 +24,25 @@ public enum FormulaMode {
     TEXT
 }
 
-# Behaviour of `writeSheet` when the target file already contains the named sheet.
+# How a sheet write treats content already present at the target.
 #
-# The rest of the workbook is preserved in every mode — sibling sheets, their tables, and
-# formulas are never touched. The mode governs only the named target sheet. When the file
-# does not exist, it is created with a single sheet regardless of mode.
+# Shared by `writeSheet` (target = the named sheet) and the row writers `Sheet.putRows` /
+# `Sheet.setRow` (target = the rows being written). The default differs per operation —
+# `FAIL_IF_EXISTS` for `writeSheet`, `APPEND` for `putRows`, `REPLACE` for `setRow`.
 public enum SheetWriteMode {
-    # Fail with an error if the target sheet already exists; otherwise create it and write. (Default.)
+    # Fail rather than touch existing content. `writeSheet` errors if the named sheet already
+    # exists; `putRows` / `setRow` error if the target rows are not empty.
     FAIL_IF_EXISTS,
 
-    # Replace the target sheet's contents, preserving all sibling sheets. If the target
-    # sheet exists it is dropped and recreated at the same tab position — its own formatting
-    # and any table defined on it are lost.
+    # Overwrite existing content in place. `writeSheet` drops and recreates the named sheet
+    # (siblings preserved; the sheet's own formatting and any table on it are lost);
+    # `putRows` / `setRow` overwrite the target rows.
     REPLACE,
 
-    # Append data rows below the existing data in the target sheet, aligned to the existing
-    # header row by column name; the header row is not rewritten. `startRowIndex` is ignored
-    # in this mode, and a record/map write requires an existing header row to align against.
+    # Add rows, preserving existing content by shifting it down to make room. `writeSheet`
+    # appends below the sheet's data; `putRows` / `setRow` insert at the target row, or append at
+    # the bottom when no explicit position is given. Record/map writes align to the existing
+    # header row by column name.
     APPEND
 }
 
@@ -215,9 +217,26 @@ public type TableRowParseOptions record {|
     DataProjection|false allowDataProjection = {};
 |};
 
-# Options shared by sheet write operations that lay out rows from a starting position —
-# `writeSheet` (via `SheetWriteOptions`) and `Sheet.putRows`.
+# Options for `Sheet.putRows`.
+#
+# `startRowIndex` is the target position; left unset (`()`) it resolves to the mode's natural
+# point — the bottom of the used range for `APPEND`, row 0 for `REPLACE` / `FAIL_IF_EXISTS`.
 public type WriteOptions record {|
+    # Whether to write a header row (default: true). Headers are derived from record field
+    # names (honouring `@xlsx:Name`) or map keys. Ignored for `string[][]` input, whose
+    # first row is written as-is.
+    boolean writeHeaders = true;
+    # Target row (0-based). Unset (`()`) = the mode's natural point: the bottom of the used range
+    # for `APPEND`, row 0 for `REPLACE` / `FAIL_IF_EXISTS`. With `APPEND` an explicit value inserts
+    # at that row (shifting existing rows down); with `REPLACE` it overwrites from that row.
+    int? startRowIndex = ();
+    # How the write treats existing content at the target (default: `APPEND` — add rows
+    # non-destructively, inserting and shifting rather than overwriting).
+    SheetWriteMode sheetWriteMode = APPEND;
+|};
+
+# Options for `writeSheet`.
+public type SheetWriteOptions record {|
     # Whether to write a header row (default: true). Headers are derived from record field
     # names (honouring `@xlsx:Name`) or map keys. Ignored for `string[][]` input, whose
     # first row is written as-is.
@@ -225,11 +244,6 @@ public type WriteOptions record {|
     # Row to start writing at (0-based, default: 0). For a record/map write into a sheet that
     # already has a header row at this position, values align to the existing columns by name.
     int startRowIndex = 0;
-|};
-
-# Options for `writeSheet`.
-public type SheetWriteOptions record {|
-    *WriteOptions;
     # How the target sheet is treated when the file already contains it (default: `FAIL_IF_EXISTS`).
     # Sibling sheets are preserved in every mode.
     SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;
@@ -237,19 +251,26 @@ public type SheetWriteOptions record {|
 
 # Options for writing a single row — `Sheet.setRow`.
 #
-# A single-row write targets an explicit row index, so it carries neither `writeHeaders` nor
-# `startRowIndex`. For record or map data it needs to know where the header row lives in order
-# to align values to columns by name.
+# A single-row write targets an explicit row index. For record or map data it needs to know
+# where the header row lives in order to align values to columns by name.
 public type RowWriteOptions record {|
     # Row containing the column headers used to align a record/map row to columns (0-based,
     # default: 0). Ignored for `string[]` data, which is written positionally.
     int headerRowIndex = 0;
+    # How the write treats existing content at the target row (default: `REPLACE` — overwrite the
+    # row). `APPEND` inserts a row there (shifting existing rows down); `FAIL_IF_EXISTS` errors if
+    # the target row is not empty.
+    SheetWriteMode sheetWriteMode = REPLACE;
 |};
 
 # Options for `writeTable` / `Table.putRows`.
 public type TableWriteOptions record {|
     # How the write treats the table's existing data (default: `REPLACE`).
     TableWriteMode tableWriteMode = REPLACE;
+    # For `APPEND`, the 0-based data-row index to insert at — existing rows from there down, the
+    # totals row, and any content below shift down to make room. Unset (`()`) appends at the bottom.
+    # Ignored by `REPLACE`, which replaces the whole data region.
+    int? insertAt = ();
 |};
 
 # A single row in a sheet — the atomic data unit. A row is one of two shapes:

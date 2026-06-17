@@ -496,6 +496,128 @@ function testSetRowMapInlineLiteral() returns error? {
     check wb.close();
 }
 
+// =============================================================================
+// putRows / setRow write modes (APPEND / REPLACE / FAIL_IF_EXISTS)
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendDefault() returns error? {
+    // Default mode is APPEND: a second putRows adds below the existing data, not over it.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    check sheet.putRows([["Bob", "25"]]);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 3, "APPEND adds below existing data");
+    test:assertEquals(rows[1][0], "Alice", "Existing row preserved");
+    test:assertEquals(rows[2][0], "Bob", "New row appended at the bottom");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsReplaceMode() returns error? {
+    // REPLACE overwrites from row 0 in place (sheets don't shrink — rows below stay).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A", "B"], ["1", "2"], ["3", "4"]]);
+    check sheet.putRows([["X", "Y"]], sheetWriteMode = REPLACE);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows[0], ["X", "Y"], "Row 0 overwritten");
+    test:assertEquals(rows[1], ["1", "2"], "Rows below are left in place (no shrink)");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendMidInsert() returns error? {
+    // APPEND with an explicit startRowIndex inserts there, shifting existing rows down.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["H1", "H2"], ["a", "b"], ["c", "d"]]);
+    check sheet.putRows([["X", "Y"]], startRowIndex = 1, sheetWriteMode = APPEND);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 4, "A row was inserted, not overwritten");
+    test:assertEquals(rows[1][0], "X", "Inserted at row 1");
+    test:assertEquals(rows[2][0], "a", "Existing row shifted down");
+    test:assertEquals(rows[3][0], "c", "Trailing row shifted down");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendRecordAlignsToHeader() returns error? {
+    // APPEND records below an existing header aligns by column name (field order independent).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    map<CellValue>[] more = [{"Age": 25, "Name": "Bob"}];
+    check sheet.putRows(more);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 3, "Record appended below the existing data");
+    test:assertEquals(rows[2][0], "Bob", "Name aligned to column 0 by header");
+    test:assertEquals(rows[2][1], "25", "Age aligned to column 1 by header");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendInsertAboveHeaderRefused() returns error? {
+    // A record/map APPEND insert at or above the header row corrupts alignment → refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    map<CellValue>[] more = [{"Name": "Bob", "Age": 25}];
+    Error? result = sheet.putRows(more, startRowIndex = 0, sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "Inserting a record at the header row must be refused");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExists() returns error? {
+    // FAIL_IF_EXISTS writes only into empty rows; an occupied target errors and writes nothing.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+
+    Error? hit = sheet.putRows([["X", "Y"]], startRowIndex = 0, sheetWriteMode = FAIL_IF_EXISTS);
+    test:assertTrue(hit is Error, "FAIL_IF_EXISTS over an occupied row must error");
+    string[][] afterHit = check sheet.getRows();
+    test:assertEquals(afterHit[0][0], "A", "Occupied row left untouched after a refused write");
+
+    check sheet.putRows([["X", "Y"]], startRowIndex = 5, sheetWriteMode = FAIL_IF_EXISTS);
+    string[][] afterMiss = check sheet.getRows();
+    test:assertEquals(afterMiss[5][0], "X", "FAIL_IF_EXISTS writes into an empty row");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSetRowAppendInserts() returns error? {
+    // setRow APPEND inserts a row at the index, shifting existing rows down.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A"], ["B"], ["C"]]);
+    check sheet.setRow(1, ["X"], sheetWriteMode = APPEND);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 4, "A row was inserted");
+    test:assertEquals(rows[1][0], "X", "Inserted at row 1");
+    test:assertEquals(rows[2][0], "B", "Existing row shifted down");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSetRowFailIfExists() returns error? {
+    // setRow FAIL_IF_EXISTS errors on an occupied row, writes into an empty one.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A"], ["B"]]);
+
+    Error? hit = sheet.setRow(0, ["X"], sheetWriteMode = FAIL_IF_EXISTS);
+    test:assertTrue(hit is Error, "FAIL_IF_EXISTS over an occupied row must error");
+
+    check sheet.setRow(5, ["Y"], sheetWriteMode = FAIL_IF_EXISTS);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows[0][0], "A", "Occupied row left untouched");
+    test:assertEquals(rows[5][0], "Y", "Empty row written");
+    check wb.close();
+}
+
 @test:Config {groups: ["sheet"]}
 function testSheetGetRowsWithDataTarget() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
@@ -545,5 +667,91 @@ function testSheetGetRowOutOfRange() returns error? {
     string[]|Error negative = sheet.getRow(-1);
     test:assertTrue(negative is Error, "Negative row index must return Error");
 
+    check wb.close();
+}
+
+// =============================================================================
+// Sheet inserts must not corrupt a table on the same sheet
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsInsertIntoTableRefused() returns error? {
+    // A mid-sheet APPEND whose rows belong to a table would shift the table's cells without its
+    // definition following — refuse with a TableOverlapError, leaving the table untouched.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = sheet.putRows([["X", "Y"]], startRowIndex = 1, sheetWriteMode = APPEND);
+    test:assertTrue(result is TableOverlapError,
+            "Inserting into a table's region via putRows must be refused");
+
+    Table t = check sheet.getTable("T");
+    test:assertEquals(check t.getRowCount(), 2, "Table data rows unchanged after a refused insert");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSetRowInsertIntoTableRefused() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = sheet.setRow(1, ["X", "Y"], sheetWriteMode = APPEND);
+    test:assertTrue(result is TableOverlapError,
+            "Inserting a row into a table's region via setRow must be refused");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendBelowTableSucceeds() returns error? {
+    // Appending below a table shifts nothing in the table, so it is allowed.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check sheet.putRows([["note", "x"]]);
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 3, "Append below the table succeeds");
+    test:assertEquals(rows[2][0], "note", "New row landed below the table");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsReplaceIntoTableRegionAllowed() returns error? {
+    // REPLACE overwrites in place (no shift), so it leaves the table's ref valid — allowed.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check sheet.putRows([["Carol", "40"]], startRowIndex = 1, sheetWriteMode = REPLACE);
+    Table t = check sheet.getTable("T");
+    test:assertEquals(check t.getRowCount(), 2, "Table dimensions unchanged by an in-place REPLACE");
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows[0][0], "Carol", "Row overwritten in place");
     check wb.close();
 }

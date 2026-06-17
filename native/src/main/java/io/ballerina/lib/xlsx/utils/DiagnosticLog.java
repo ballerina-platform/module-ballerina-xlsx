@@ -268,6 +268,21 @@ public final class DiagnosticLog {
     }
 
     /**
+     * Create a table-overlap error for a sheet row-insert that would shift (and so corrupt) a table.
+     *
+     * @param tableName Name of the table the insert would disrupt
+     * @param sheetName Sheet name where the conflict occurs
+     * @param row       0-based row index of the insert
+     * @return BError
+     */
+    public static BError tableShiftConflictError(String tableName, String sheetName, int row) {
+        String message = "Cannot insert at row " + row + ": it would disrupt table '" + tableName
+                + "' in sheet '" + sheetName + "' — use the Table API to modify the table";
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        return createTypedError(TABLE_OVERLAP_ERROR_TYPE, message, details);
+    }
+
+    /**
      * Create an invalid table range error.
      *
      * @param message   Error message describing the invalid range

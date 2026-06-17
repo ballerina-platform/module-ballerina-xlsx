@@ -471,7 +471,9 @@ public final class TableHandle {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
-            return writeTableInternal(table, sheet, data, isAppend(options));
+            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+            boolean append = "APPEND".equals(config.getTableWriteMode());
+            return writeTableInternal(table, sheet, data, append, config.getTableInsertAt());
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -490,16 +492,14 @@ public final class TableHandle {
     public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data,
                                           BMap<BString, Object> options) {
         try {
-            return writeTableInternal(table, sheet, data, isAppend(options));
+            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+            boolean append = "APPEND".equals(config.getTableWriteMode());
+            return writeTableInternal(table, sheet, data, append, config.getTableInsertAt());
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error writing to table: " + e.getMessage(), e);
         }
-    }
-
-    private static boolean isAppend(BMap<BString, Object> options) {
-        return "APPEND".equals(XlsxConfig.fromWriteOptions(options).getTableWriteMode());
     }
 
     /**
@@ -508,7 +508,8 @@ public final class TableHandle {
      * data (APPEND). The totals row and any content below the table ride along with the shift; a
      * resize that would shift another table is refused with a {@code TableOverlapError}.
      */
-    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data, boolean append) {
+    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data, boolean append,
+                                             Integer insertAtOverride) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
         int firstRow = area.getFirstCell().getRow();
         int lastRow = area.getLastCell().getRow();
@@ -521,31 +522,39 @@ public final class TableHandle {
         int currentDataRows = lastRow - firstRow - totalsRowCount;
         int n = (int) data.getLength();
 
-        // Resolve the new data-row count and where rows are written.
+        // Resolve the new data-row count, where rows are written, and where the shift happens.
         // REPLACE: the data becomes exactly n rows (>= 1, since Excel needs a data row; an empty
-        //          write clears the table to a single blank row). APPEND: n rows are added below
-        //          the existing data, which is left untouched.
+        //          write clears the table to a single blank row); grow/shrink at the bottom.
+        // APPEND: n rows are inserted at data-row `p` (default bottom), shifting the rows from there
+        //          down — existing rows are left untouched.
         int newDataRows;
         int writeStart;
+        int shiftAt;
         if (append) {
             if (n == 0) {
                 return null;  // nothing to append
             }
+            int p = (insertAtOverride != null) ? insertAtOverride : currentDataRows;
+            if (p < 0 || p > currentDataRows) {
+                return DiagnosticLog.invalidTableRangeError("insertAt " + p
+                        + " is out of range for a table with " + currentDataRows + " data rows");
+            }
             newDataRows = currentDataRows + n;
-            writeStart = dataFirstRow + currentDataRows;
+            writeStart = dataFirstRow + p;
+            shiftAt = dataFirstRow + p;
         } else {
             newDataRows = Math.max(n, 1);
             writeStart = dataFirstRow;
+            shiftAt = dataFirstRow + currentDataRows;
         }
 
-        int shiftAt = dataFirstRow + currentDataRows;  // one past the last current data row
         int delta = newDataRows - currentDataRows;     // > 0 grow, < 0 shrink, 0 same size
 
         // Overlap pre-check, before any mutation: a nonzero resize shifts the totals row and
         // everything below it; another table caught in that shift would have its cells moved but
         // its definition left stale, so refuse rather than corrupt it.
         if (delta != 0) {
-            String colliding = firstTableInShiftBand(sheet, table, shiftAt);
+            String colliding = RowShifter.firstTableShiftedBy(sheet, shiftAt, table.getName());
             if (colliding != null) {
                 return DiagnosticLog.tableResizeOverlapError(table.getName(), colliding, sheet.getSheetName());
             }
@@ -592,25 +601,6 @@ public final class TableHandle {
             blankRowCells(sheet, dataFirstRow, firstCol, lastCol);
         }
 
-        return null;
-    }
-
-    /**
-     * Name of the first other table on the sheet whose rows reach into {@code [shiftAt, ..]} — the
-     * band a resize would shift — or {@code null} if none. Such a table would have its cells moved
-     * without its definition following, so the write must be refused.
-     */
-    private static String firstTableInShiftBand(XSSFSheet sheet, XSSFTable current, int shiftAt) {
-        for (XSSFTable other : sheet.getTables()) {
-            if (current.getName().equals(other.getName())) {
-                continue;
-            }
-            AreaReference otherArea = new AreaReference(other.getArea().formatAsString(),
-                    SpreadsheetVersion.EXCEL2007);
-            if (otherArea.getLastCell().getRow() >= shiftAt) {
-                return other.getName();
-            }
-        }
         return null;
     }
 

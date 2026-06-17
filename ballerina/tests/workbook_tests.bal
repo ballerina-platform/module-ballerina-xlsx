@@ -769,11 +769,11 @@ function testOpenFileAndSaveOverwrites() returns error? {
     string[][] initialData = [["Original", "Data"]];
     check writeSheet(initialData, tempFile);
 
-    // Open and modify
+    // Open and modify — overwrite the existing row (putRows defaults to APPEND, so ask for REPLACE)
     Workbook wb = check fromFile(tempFile);
     Sheet sheet = check wb.getSheet(0);
     string[][] newData = [["Modified", "Content"]];
-    check sheet.putRows(newData);
+    check sheet.putRows(newData, sheetWriteMode = REPLACE);
 
     // save() should overwrite the original file
     check wb.save();

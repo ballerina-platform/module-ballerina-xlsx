@@ -130,8 +130,9 @@ public isolated function parseTable(string path, string tableName, TableParseOpt
 #
 # By default (`REPLACE`) the table's data is replaced with `data` and the data range is resized
 # to fit exactly — it grows or shrinks, leaving no stale rows. `tableWriteMode = APPEND` adds the
-# rows below the existing data instead. If a resize would overlap another table, the write fails
-# with a `TableOverlapError` and nothing is written.
+# rows below the existing data, or at `insertAt` (a 0-based data-row index) shifting the rest down.
+# If a resize would overlap another table, the write fails with a `TableOverlapError` and nothing
+# is written.
 #
 # ```ballerina
 # Employee[] employees = [...];
@@ -142,7 +143,7 @@ public isolated function parseTable(string path, string tableName, TableParseOpt
 # + data - Data to write
 # + path - Path to the XLSX file containing the table
 # + tableName - Name of the table to write to
-# + options - Table write options (`tableWriteMode`)
+# + options - Table write options (`tableWriteMode`, `insertAt`)
 # + return - `TableNotFoundError` if the table doesn't exist, `TableOverlapError` on a colliding resize, or other `Error`
 public isolated function writeTable(Row[] data, string path, string tableName,
         *TableWriteOptions options) returns Error? = @java:Method {

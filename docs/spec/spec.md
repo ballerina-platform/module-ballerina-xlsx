@@ -231,34 +231,38 @@ public type TableRowParseOptions record {|
 Write operations are configured by records modelled on what each operation honours; `sheetName` is a positional parameter on `writeSheet`, not an option.
 
 ```ballerina
-# Base for sheet writes that lay out rows from a starting position —
-# `writeSheet` (via `SheetWriteOptions`) and `Sheet.putRows`.
+# Sheet.putRows. startRowIndex is nullable: () resolves to the mode's natural point.
 public type WriteOptions record {|
-    boolean writeHeaders = true;   # write a header row (records/maps); ignored for string[][]
-    int startRowIndex = 0;         # 0-based row to start writing at
+    boolean writeHeaders = true;            # write a header row (records/maps); ignored for string[][]
+    int? startRowIndex = ();                # () = bottom for APPEND, row 0 for REPLACE/FAIL_IF_EXISTS
+    SheetWriteMode sheetWriteMode = APPEND;  # add rows non-destructively by default
 |};
 
-# writeSheet only.
+# writeSheet.
 public type SheetWriteOptions record {|
-    *WriteOptions;
-    SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;
+    boolean writeHeaders = true;
+    int startRowIndex = 0;                          # 0-based row to start writing at
+    SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;  # don't silently overwrite an existing sheet
 |};
 
-# Sheet.setRow only — locates the header row a record/map row aligns against.
+# Sheet.setRow — headerRowIndex locates the header a record/map row aligns against.
 public type RowWriteOptions record {|
     int headerRowIndex = 0;
+    SheetWriteMode sheetWriteMode = REPLACE;   # overwrite the target row by default
 |};
 
-# How writeSheet treats the target sheet when the file already contains it.
+# How a sheet write treats content already at the target. Shared by writeSheet (target = the
+# named sheet) and putRows / setRow (target = the rows being written); the default differs.
 public enum SheetWriteMode {
-    FAIL_IF_EXISTS,   # error if the sheet exists (default — no accidental overwrite)
-    REPLACE,          # drop and recreate the sheet, preserving siblings
-    APPEND            # add rows below the existing data, aligned to the header
+    FAIL_IF_EXISTS,   # fail rather than touch existing content (sheet exists / target rows occupied)
+    REPLACE,          # overwrite in place (writeSheet drops & recreates the sheet; row writers overwrite)
+    APPEND            # add rows, shifting existing content down (writeSheet appends below the data)
 }
 
 # writeTable / Table.putRows.
 public type TableWriteOptions record {|
     TableWriteMode tableWriteMode = REPLACE;
+    int? insertAt = ();   # APPEND only: 0-based data-row index to insert at (() = bottom; REPLACE ignores it)
 |};
 
 # How a table write treats the table's existing data. A table always has a data region,
@@ -475,7 +479,7 @@ public isolated function writeTable(Row[] data,
     returns Error?;
 ```
 
-Writes data to an existing Excel Table. By default (`tableWriteMode = REPLACE`) the table's data is replaced and the data range is **resized to fit the data exactly** — it grows or shrinks, so no stale rows survive inside the table (an empty array clears the table to a single blank data row). `tableWriteMode = APPEND` adds the rows below the existing data instead. The totals row, if any, and any content below the table are carried along by the resize; a resize that would shift **another** table fails with a `TableOverlapError` and writes nothing. The surrounding workbook (other sheets, named ranges, charts, formulas in unaffected cells) is preserved, and the write is atomic.
+Writes data to an existing Excel Table. By default (`tableWriteMode = REPLACE`) the table's data is replaced and the data range is **resized to fit the data exactly** — it grows or shrinks, so no stale rows survive inside the table (an empty array clears the table to a single blank data row). `tableWriteMode = APPEND` adds the rows below the existing data (or at `insertAt`, a 0-based data-row index) instead. The totals row, if any, and any content below the table are carried along by the resize; a resize that would shift **another** table fails with a `TableOverlapError` and writes nothing. The surrounding workbook (other sheets, named ranges, charts, formulas in unaffected cells) is preserved, and the write is atomic.
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -643,7 +647,7 @@ public type Table isolated object {
 
 Tables are obtained from `Workbook.getTable(name)`, `Workbook.getAllTables()`, `Sheet.getTable(name)`, `Sheet.getTables()`, `Sheet.createTable(...)`, or `Sheet.createTableFromData(...)`. Table names are unique across the entire workbook.
 
-`Table.putRows` resizes the underlying `XSSFTable` to fit the incoming data — growing or shrinking the data range under the default `REPLACE`, or adding rows below the existing data under `APPEND` (see [3.3](#33-write-options)). The totals row and any content below the table are carried along by the resize; a resize that would shift another table fails with a `TableOverlapError`.
+`Table.putRows` resizes the underlying `XSSFTable` to fit the incoming data — growing or shrinking the data range under the default `REPLACE`, or adding rows below the existing data (or at `insertAt`, a 0-based data-row index) under `APPEND` (see [3.3](#33-write-options)). The totals row and any content below the table are carried along by the resize; a resize that would shift another table fails with a `TableOverlapError`. Conversely, inserting *sheet* rows (`Sheet.putRows` / `setRow` with `APPEND`) into a table's region is refused with the same error — modify a table through the Table API rather than by shifting its rows from the sheet.
 
 ---
 

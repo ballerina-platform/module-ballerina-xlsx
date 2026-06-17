@@ -659,8 +659,10 @@ function testWriteSheetPreservesUnrelatedColumns() returns error? {
     projection[0] = {name: "Alice", city: "Boston"};
     projection[1] = {name: "Bob", city: "Seattle"};
 
-    // Write back via putRows
-    check sheet.putRows(projection);
+    // Write back via putRows — overwrite the data rows in place (REPLACE; putRows defaults to APPEND).
+    // REPLACE aligns to the existing header and touches only the projected columns, so the
+    // unrelated columns (age, formulaColumn) are preserved.
+    check sheet.putRows(projection, sheetWriteMode = REPLACE);
     check wb.saveAs(tempFile);
     check wb.close();
 

@@ -18,8 +18,12 @@
 
 package io.ballerina.lib.xlsx.xlsx;
 
+import org.apache.poi.ss.SpreadsheetVersion;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.AreaReference;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFTable;
 
 /**
  * Row insert/delete primitives that shift existing content to preserve it, rather than
@@ -68,5 +72,31 @@ final class RowShifter {
         if (atRow + k <= last) {
             sheet.shiftRows(atRow + k, last, -k);
         }
+    }
+
+    /**
+     * Name of the first table on the sheet whose rows reach into {@code [shiftAt, ..]} — the band a
+     * shift at {@code shiftAt} would move — or {@code null} if none (or the sheet is not an XSSF
+     * sheet). {@code skipTableName} is excluded from the scan: pass the table being resized, or
+     * {@code null} to consider every table.
+     *
+     * Such a table would have its cells moved without its definition ref following (POI does not
+     * track table extents across shifts), so the caller must refuse the shift.
+     */
+    static String firstTableShiftedBy(Sheet sheet, int shiftAt, String skipTableName) {
+        if (!(sheet instanceof XSSFSheet xssfSheet)) {
+            return null;
+        }
+        for (XSSFTable table : xssfSheet.getTables()) {
+            if (skipTableName != null && skipTableName.equals(table.getName())) {
+                continue;
+            }
+            AreaReference area = new AreaReference(table.getArea().formatAsString(),
+                    SpreadsheetVersion.EXCEL2007);
+            if (area.getLastCell().getRow() >= shiftAt) {
+                return table.getName();
+            }
+        }
+        return null;
     }
 }

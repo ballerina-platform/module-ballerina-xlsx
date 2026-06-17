@@ -606,6 +606,26 @@ public final class SheetHandle {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromWriteOptions(options);
             int targetRow = (int) rowIdx;
+            String mode = config.getSheetWriteMode();  // setRow default is REPLACE (overwrite the row)
+            if ("FAIL_IF_EXISTS".equals(mode)) {
+                if (rowHasRealData(sheet.getRow(targetRow))) {
+                    return DiagnosticLog.error(
+                            "Cannot setRow with FAIL_IF_EXISTS: row " + targetRow + " is not empty");
+                }
+            } else if ("APPEND".equals(mode)) {
+                int headerRowIdx = config.hasHeaders() ? config.getHeaderRowIndex() : 0;
+                // Inserting a record/map row at or above the header it aligns to corrupts the alignment.
+                if (rowData instanceof BMap && targetRow <= headerRowIdx) {
+                    return DiagnosticLog.error("setRow APPEND position " + targetRow
+                            + " must be below the header row " + headerRowIdx);
+                }
+                // Refuse to shift a table: the cells would move but the table's ref would not follow.
+                String shifted = RowShifter.firstTableShiftedBy(sheet, targetRow, null);
+                if (shifted != null) {
+                    return DiagnosticLog.tableShiftConflictError(shifted, sheet.getSheetName(), targetRow);
+                }
+                RowShifter.makeRoom(sheet, targetRow, 1);
+            }
             StyleCache styleCache = new StyleCache(sheet.getWorkbook());
             if (rowData instanceof BArray) {
                 BArray arr = (BArray) rowData;
@@ -689,6 +709,22 @@ public final class SheetHandle {
         } catch (Exception e) {
             return DiagnosticLog.error("Error setting row: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Whether a row holds any real data (used by the FAIL_IF_EXISTS occupancy guard).
+     */
+    private static boolean rowHasRealData(Row row) {
+        if (row == null) {
+            return false;
+        }
+        short last = row.getLastCellNum();
+        for (int c = 0; c < last; c++) {
+            if (UsedRangeDetector.hasRealData(row.getCell(c))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1050,6 +1086,8 @@ public final class SheetHandle {
             writeOptions.put(StringUtils.fromString("writeHeaders"), true);
             writeOptions.put(StringUtils.fromString("startRowIndex"), startRowIndex);
             writeOptions.put(StringUtils.fromString("startColumnIndex"), startColumnIndex);
+            // Lay the data out deterministically over the table's region (overwrite, no shift).
+            writeOptions.put(XlsxConfig.WRITE_SHEET_MODE, StringUtils.fromString("REPLACE"));
 
             Object writeResult = XlsxWriter.writeToSheet(xssfSheet, data, writeOptions);
             if (writeResult != null) {
