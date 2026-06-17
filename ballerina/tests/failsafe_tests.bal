@@ -553,7 +553,7 @@ function testTableGetRowsWithFailSafe() returns error? {
     Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_table.xlsx");
     Table tbl = check wb.getTable("FailSafeTable");
 
-    ParseOptions opts = {
+    TableParseOptions opts = {
         failSafe: {
             enableConsoleLogs: false,
             fileOutputMode: {

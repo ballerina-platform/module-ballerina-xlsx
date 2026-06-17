@@ -188,7 +188,7 @@ function testConstraintViolationDisabledAllowsInvalidData() returns error? {
 function testParseTableConstraintValidationReturnsError() returns error? {
     // parseTable must honour enableConstraintValidation just like parseSheet.
     // The table holds out-of-range ages (-5, 150), so enabled validation must reject them.
-    ParseOptions opts = {
+    TableParseOptions opts = {
         enableConstraintValidation: true
     };
 
@@ -208,7 +208,7 @@ function testTableGetRowsConstraintValidationReturnsError() returns error? {
     Workbook wb = check fromFile(CONSTRAINT_TEST_DIR + "constraint_table.xlsx");
     Table tbl = check wb.getTable("ConstraintTable");
 
-    ParseOptions opts = {
+    TableParseOptions opts = {
         enableConstraintValidation: true
     };
 

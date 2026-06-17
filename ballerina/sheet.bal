@@ -104,8 +104,9 @@ public type Sheet isolated object {
     # Employee employee = check sheet.getRow(5);
     # ```
     #
-    # + index - Row index (0-based, relative to data start row).
-    #           Example: If dataStartRowIndex=1, getRow(0) returns Excel row 1, getRow(2) returns Excel row 3.
+    # + index - 0-based index within the data window: `getRow(i)` reads sheet row
+    #           `dataStartRowIndex + i`. With `dataStartRowIndex` unset it defaults to the
+    #           row after the header (or row 0 when headerless), so `getRow(0)` is the first data row.
     # + options - Read options
     # + t - Target type descriptor
     # + return - Single row or error

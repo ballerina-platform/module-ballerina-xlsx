@@ -98,6 +98,9 @@ public isolated function writeSheet(Row[] data, string path, string sheetName = 
 # Tables are unique by name across the entire workbook, so no sheet
 # specification is needed. Headers are automatically excluded from results.
 #
+# A table is self-describing — its column definitions are the header and its area is the
+# data range. `rowCount` caps the data rows read (header and any totals row always excluded).
+#
 # Supports parsing to:
 # - `string[][]` - Raw string array
 # - `record{}[]` - Array of records (table headers map to fields)
@@ -115,30 +118,34 @@ public isolated function writeSheet(Row[] data, string path, string sheetName = 
 #
 # + path - Path to the XLSX file
 # + tableName - Name of the table to parse
-# + options - Parse options
+# + options - Table parse options
 # + t - Target row type descriptor (record, map, or string[])
 # + return - Parsed data or TableNotFoundError
-public isolated function parseTable(string path, string tableName, ParseOptions options = {},
+public isolated function parseTable(string path, string tableName, TableParseOptions options = {},
         typedesc<Row> t = <>) returns t[]|Error = @java:Method {
     'class: "io.ballerina.lib.xlsx.Native"
 } external;
 
 # Write data to an existing Excel table.
 #
-# Writes data to the specified table. If the data exceeds the current table
-# size, the table automatically expands to accommodate the new rows.
+# By default (`REPLACE`) the table's data is replaced with `data` and the data range is resized
+# to fit exactly — it grows or shrinks, leaving no stale rows. `tableWriteMode = APPEND` adds the
+# rows below the existing data instead. If a resize would overlap another table, the write fails
+# with a `TableOverlapError` and nothing is written.
 #
 # ```ballerina
-# Employee[] newEmployees = [...];
-# check xlsx:writeTable(newEmployees, "sales.xlsx", "EmployeeTable");
+# Employee[] employees = [...];
+# check xlsx:writeTable(employees, "sales.xlsx", "EmployeeTable");
+# check xlsx:writeTable(moreRows, "sales.xlsx", "EmployeeTable", tableWriteMode = APPEND);
 # ```
 #
 # + data - Data to write
 # + path - Path to the XLSX file containing the table
 # + tableName - Name of the table to write to
-# + return - TableNotFoundError if table doesn't exist, or other Error
-public isolated function writeTable(Row[] data, string path, string tableName)
-        returns Error? = @java:Method {
+# + options - Table write options (`tableWriteMode`)
+# + return - `TableNotFoundError` if the table doesn't exist, `TableOverlapError` on a colliding resize, or other `Error`
+public isolated function writeTable(Row[] data, string path, string tableName,
+        *TableWriteOptions options) returns Error? = @java:Method {
     'class: "io.ballerina.lib.xlsx.Native"
 } external;
 

@@ -147,9 +147,11 @@ public final class Native {
      * @param data      Data to write
      * @param filePath  Path to the XLSX file
      * @param tableName Name of the table to write to
+     * @param options   Table write options (tableWriteMode)
      * @return null on success, error on failure
      */
-    public static Object writeTable(BArray data, BString filePath, BString tableName) {
+    public static Object writeTable(BArray data, BString filePath, BString tableName,
+                                    BMap<BString, Object> options) {
         Path path = Paths.get(filePath.getValue());
 
         // Check if file exists
@@ -180,7 +182,7 @@ public final class Native {
                 for (org.apache.poi.xssf.usermodel.XSSFTable table : sheet.getTables()) {
                     if (name.equals(table.getName()) || name.equals(table.getDisplayName())) {
                         Object result = io.ballerina.lib.xlsx.xlsx.TableHandle.writeToXSSFTable(
-                                table, sheet, data);
+                                table, sheet, data, options);
                         if (result != null) {
                             return result;  // Error
                         }

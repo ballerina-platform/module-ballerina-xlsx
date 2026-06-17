@@ -189,7 +189,7 @@ function testParseTableNotFound() returns error? {
 function testParseTableCaseInsensitiveHeaders() returns error? {
     // CaseTable has lowercase headers (name/age/department); TableEmployee fields are
     // capitalised (Name/Age/Department). With caseInsensitiveHeaders they must match.
-    ParseOptions opts = {
+    TableParseOptions opts = {
         caseInsensitiveHeaders: true
     };
 
@@ -199,6 +199,27 @@ function testParseTableCaseInsensitiveHeaders() returns error? {
     test:assertEquals(employees[0].Name, "Alice", "First employee name");
     test:assertEquals(employees[0].Age, 30, "First employee age");
     test:assertEquals(employees[1].Name, "Bob", "Second employee name");
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testTableGetRowWithOptions() returns error? {
+    // Single-row table read threads its binding fields through TableRowParseOptions.
+    // CaseTable has lowercase headers (name/age) vs the capitalised TableEmployee fields,
+    // so the row only binds when caseInsensitiveHeaders is honoured by getRow.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "case_table.xlsx");
+    Table tbl = check wb.getTable("CaseTable");
+
+    TableRowParseOptions opts = {
+        caseInsensitiveHeaders: true
+    };
+    TableEmployee emp = check tbl.getRow(0, opts);
+
+    test:assertEquals(emp.Name, "Alice", "getRow(0) name via caseInsensitive match");
+    test:assertEquals(emp.Age, 30, "getRow(0) age via caseInsensitive match");
+
+    check wb.close();
 }
 
 @test:Config {
@@ -546,6 +567,239 @@ function testTablePutRows() returns error? {
     check wb.close();
 }
 
+// =============================================================================
+// TABLE WRITE-MODE TESTS — REPLACE resize (grow/shrink/clear), APPEND, overlap
+// =============================================================================
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableReplaceShrinks() returns error? {
+    // REPLACE (the default) with fewer rows must shrink the data range — no stale rows survive
+    // inside the table. EmployeeTable starts with 3 data rows.
+    string tempFile = getTempFilePath("table_shrink");
+    Workbook wbSrc = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    check wbSrc.saveAs(tempFile);
+    check wbSrc.close();
+
+    TableEmployee[] fewer = [{Name: "Solo", Age: 41, Department: "Ops"}];
+    check writeTable(fewer, tempFile, "EmployeeTable");
+
+    TableEmployee[] result = check parseTable(tempFile, "EmployeeTable");
+    test:assertEquals(result.length(), 1, "REPLACE with 1 row must leave exactly 1 data row");
+    test:assertEquals(result[0].Name, "Solo", "The single row must be the written row");
+
+    Workbook wbCheck = check fromFile(tempFile);
+    Table shrunk = check wbCheck.getTable("EmployeeTable");
+    test:assertEquals(check shrunk.getRowCount(), 1, "Table data-row count must shrink to 1");
+    CellRange dataRange = check shrunk.getDataCellRange();
+    test:assertEquals(dataRange.lastRowIndex, 1, "Data range must shrink (no stale rows below)");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableReplaceClears() returns error? {
+    // REPLACE with an empty array clears the table to a single blank data row (Excel needs >= 1).
+    string tempFile = getTempFilePath("table_clear");
+    Workbook wbSrc = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    check wbSrc.saveAs(tempFile);
+    check wbSrc.close();
+
+    TableEmployee[] none = [];
+    check writeTable(none, tempFile, "EmployeeTable");
+
+    Workbook wbCheck = check fromFile(tempFile);
+    Table cleared = check wbCheck.getTable("EmployeeTable");
+    test:assertEquals(check cleared.getRowCount(), 1, "Cleared table keeps a single blank data row");
+    string[][] rows = check cleared.getRows();
+    test:assertEquals(rows.length(), 1, "Cleared table reads a single data row");
+    test:assertEquals(rows[0][0], "", "The kept data row must be blank");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableAppendMode() returns error? {
+    // APPEND adds rows below the existing data; existing rows are preserved.
+    string tempFile = getTempFilePath("table_append");
+    Workbook wbSrc = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    check wbSrc.saveAs(tempFile);
+    check wbSrc.close();
+
+    TableEmployee[] more = [
+        {Name: "Dan", Age: 28, Department: "HR"},
+        {Name: "Eve", Age: 33, Department: "Legal"}
+    ];
+    check writeTable(more, tempFile, "EmployeeTable", tableWriteMode = APPEND);
+
+    TableEmployee[] result = check parseTable(tempFile, "EmployeeTable");
+    test:assertEquals(result.length(), 5, "APPEND must keep 3 original + 2 new rows");
+    test:assertEquals(result[0].Name, "Alice", "Original first row preserved");
+    test:assertEquals(result[2].Name, "Charlie", "Original last row preserved");
+    test:assertEquals(result[3].Name, "Dan", "First appended row");
+    test:assertEquals(result[4].Name, "Eve", "Second appended row");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testTablePutRowsAppendMode() returns error? {
+    // The object API honours the mode too.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("T");
+    check sheet.putRows([["Name", "Value"], ["A", "1"], ["B", "2"]]);
+    Table t = check sheet.createTable("PutAppend", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.putRows([["C", "3"]], tableWriteMode = APPEND);
+
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 3, "APPEND adds below existing data");
+    test:assertEquals(rows[0][0], "A", "Original row preserved");
+    test:assertEquals(rows[2][0], "C", "Appended row at the bottom");
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableTotalsRowResize() returns error? {
+    // A totals row must survive a resize (grow then shrink) and stay directly below the data.
+    string totalsFile = getTempFilePath("table_totals_resize");
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    check sheet.putRows([["Region", "Amount"], ["North", "100"], ["South", "250"]]);
+    Table salesTable = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check setTotalRowNative(salesTable, 1, 350.0);
+    check wb.saveAs(totalsFile);
+    check wb.close();
+
+    // Grow: replace 2 data rows with 4.
+    string[][] grown = [["North", "100"], ["South", "250"], ["East", "75"], ["West", "125"]];
+    check writeTable(grown, totalsFile, "SalesTable");
+
+    Workbook wbGrown = check fromFile(totalsFile);
+    Table grownTable = check wbGrown.getTable("SalesTable");
+    test:assertEquals(check grownTable.getRowCount(), 4, "Data rows grow to 4");
+    test:assertTrue(check grownTable.hasTotalRow(), "Totals row survives the grow");
+    map<CellValue> grownTotals = check grownTable.getTotalRow();
+    test:assertEquals(grownTotals["Amount"], 350, "Totals value carried by the shift");
+    check wbGrown.close();
+
+    // Shrink: replace 4 data rows with 1.
+    string[][] shrunk = [["Only", "999"]];
+    check writeTable(shrunk, totalsFile, "SalesTable");
+
+    Workbook wbShrunk = check fromFile(totalsFile);
+    Table shrunkTable = check wbShrunk.getTable("SalesTable");
+    test:assertEquals(check shrunkTable.getRowCount(), 1, "Data rows shrink to 1 (no stale rows)");
+    test:assertTrue(check shrunkTable.hasTotalRow(), "Totals row survives the shrink");
+    map<CellValue> shrunkTotals = check shrunkTable.getTotalRow();
+    test:assertEquals(shrunkTotals["Amount"], 350, "Totals value still intact after shrink");
+    check wbShrunk.close();
+    check removeTempFile(totalsFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableResizeOverlapError() returns error? {
+    // Two tables stacked on one sheet. Growing the upper one over the lower must fail loud with a
+    // TableOverlapError and leave both tables untouched.
+    string tempFile = getTempFilePath("table_overlap");
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Stacked");
+    check sheet.putRows([
+        ["Name", "Value"],
+        ["A", "1"],
+        ["B", "2"],
+        ["", ""],
+        ["P", "Q"],
+        ["x", "y"],
+        ["z", "w"]
+    ]);
+    _ = check sheet.createTable("Upper", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Lower", {
+        firstRowIndex: 4,
+        lastRowIndex: 6,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Grow Upper from 2 to 5 data rows — would shift Lower down → overlap.
+    string[][] big = [["A", "1"], ["B", "2"], ["C", "3"], ["D", "4"], ["E", "5"]];
+    Error? result = writeTable(big, tempFile, "Upper");
+    test:assertTrue(result is TableOverlapError,
+            "Growing a table into another must return TableOverlapError");
+
+    // Both tables untouched — nothing was written.
+    Workbook wbCheck = check fromFile(tempFile);
+    Table upperCheck = check wbCheck.getTable("Upper");
+    Table lowerCheck = check wbCheck.getTable("Lower");
+    test:assertEquals(check upperCheck.getRowCount(), 2, "Upper table unchanged after a refused write");
+    test:assertEquals(check lowerCheck.getRowCount(), 2, "Lower table unchanged after a refused write");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableShiftsPlainContentDown() returns error? {
+    // Plain (non-table) content below a table is carried down by a grow, not overwritten.
+    string tempFile = getTempFilePath("table_plain_below");
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["Name", "Value"],
+        ["A", "1"],
+        ["B", "2"],
+        ["", ""],
+        ["NOTE", "keep-me"]
+    ]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Grow the table by 2 rows; the note at row 4 must shift down to row 6, preserved.
+    string[][] more = [["A", "1"], ["B", "2"], ["C", "3"], ["D", "4"]];
+    check writeTable(more, tempFile, "T");
+
+    Workbook wbCheck = check fromFile(tempFile);
+    Sheet s = check wbCheck.getSheet("S");
+    string moved = check s.getCell(6, 1);
+    test:assertEquals(moved, "keep-me", "Plain content below the table is carried down, not clobbered");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
 @test:Config {
     groups: ["table"]
 }
@@ -866,7 +1120,7 @@ function testWriteTableNotFound() returns error? {
 }
 function testParseTableWithRowCount() returns error? {
     // Test that rowCount option limits the number of rows returned
-    ParseOptions opts = {
+    TableParseOptions opts = {
         rowCount: 2
     };
     TableEmployee[] employees = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable", opts);
@@ -885,7 +1139,7 @@ function testTableGetRowsWithRowCount() returns error? {
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Get rows with rowCount limit
-    ParseOptions opts = {
+    TableParseOptions opts = {
         rowCount: 1
     };
     TableEmployee[] employees = check empTable.getRows(opts);
@@ -920,12 +1174,11 @@ function testWriteTableWithInlineLiteral() returns error? {
     Workbook check_wb = check fromFile(tempFile);
     Table empTable = check check_wb.getTable("EmployeeTable");
     string[][] rows = check empTable.getRows();
-    // writeTable overwrites from the first data row and expands when needed, but does not
-    // shrink — writing two rows over the original three leaves the third row in place.
-    test:assertEquals(rows.length(), 3, "Table keeps 3 data rows (overwrite-in-place, no shrink)");
+    // REPLACE (the default) resizes the table to fit the data, so writing two rows over the
+    // original three shrinks it to two — no stale trailing row survives.
+    test:assertEquals(rows.length(), 2, "REPLACE resizes the table to fit (3 -> 2 rows, no stale row)");
     test:assertEquals(rows[0][0], "Eve");
     test:assertEquals(rows[1][0], "Frank");
-    test:assertEquals(rows[2][0], "Charlie", "Untouched trailing row is preserved");
     check check_wb.close();
     check removeTempFile(tempFile);
 }

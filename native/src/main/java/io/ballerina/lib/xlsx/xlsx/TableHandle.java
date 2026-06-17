@@ -459,17 +459,19 @@ public final class TableHandle {
     }
 
     /**
-     * Put rows into the table (auto-expands if needed).
+     * Put rows into the table. By default (REPLACE) the data region is resized to fit the data
+     * exactly; APPEND adds the rows below the existing data.
      *
      * @param tableObj Ballerina Table object
      * @param data     Data to write
+     * @param options  Table write options (tableWriteMode)
      * @return null on success, error on failure
      */
-    public static Object putRows(BObject tableObj, BArray data) {
+    public static Object putRows(BObject tableObj, BArray data, BMap<BString, Object> options) {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
-            return writeTableInternal(table, sheet, data);
+            return writeTableInternal(table, sheet, data, isAppend(options));
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -482,12 +484,13 @@ public final class TableHandle {
      * Table handle. Used by {@code Native.writeTable} which has the XSSF objects
      * from {@code WorkbookFactory.create} and never vends a Table BObject.
      *
-     * Shared dispatch with {@link #putRows(BObject, BArray)} — both call
+     * Shared dispatch with {@link #putRows(BObject, BArray, BMap)} — both call
      * into {@link #writeTableInternal} below.
      */
-    public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data) {
+    public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data,
+                                          BMap<BString, Object> options) {
         try {
-            return writeTableInternal(table, sheet, data);
+            return writeTableInternal(table, sheet, data, isAppend(options));
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -495,67 +498,136 @@ public final class TableHandle {
         }
     }
 
+    private static boolean isAppend(BMap<BString, Object> options) {
+        return "APPEND".equals(XlsxConfig.fromWriteOptions(options).getTableWriteMode());
+    }
+
     /**
-     * Shared write dispatch. Resizes the table if the incoming data exceeds the
-     * current data-row capacity, then writes each row via {@link #writeRowData}.
+     * Shared write dispatch. Resizes the table to fit the incoming data — growing or shrinking
+     * the data range so no stale rows survive (REPLACE), or inserting the rows below the existing
+     * data (APPEND). The totals row and any content below the table ride along with the shift; a
+     * resize that would shift another table is refused with a {@code TableOverlapError}.
      */
-    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data) {
+    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data, boolean append) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
         int firstRow = area.getFirstCell().getRow();
         int lastRow = area.getLastCell().getRow();
         int firstCol = area.getFirstCell().getCol();
         int lastCol = area.getLastCell().getCol();
 
-        // Data starts after header row
-        int dataFirstRow = firstRow + 1;
+        int dataFirstRow = firstRow + 1;  // data starts after the header row
         int totalsRowCount = table.getTotalsRowCount();
         boolean hasTotals = totalsRowCount > 0;
-
-        long dataSize = data.getLength();
         int currentDataRows = lastRow - firstRow - totalsRowCount;
+        int n = (int) data.getLength();
 
-        // Check if we need to expand the table
-        if (dataSize > currentDataRows) {
-            // Calculate new last row (keeping totals if present)
-            int newDataLastRow = dataFirstRow + (int) dataSize - 1;
-            int newLastRow = hasTotals ? newDataLastRow + 1 : newDataLastRow;
-
-            // Resize the table
-            CellReference topLeft = new CellReference(firstRow, firstCol);
-            CellReference bottomRight = new CellReference(newLastRow, lastCol);
-            AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
-            CTTable ctTable = table.getCTTable();
-            ctTable.setRef(newArea.formatAsString());
-
-            // Update table references
-            table.updateHeaders();
+        // Resolve the new data-row count and where rows are written.
+        // REPLACE: the data becomes exactly n rows (>= 1, since Excel needs a data row; an empty
+        //          write clears the table to a single blank row). APPEND: n rows are added below
+        //          the existing data, which is left untouched.
+        int newDataRows;
+        int writeStart;
+        if (append) {
+            if (n == 0) {
+                return null;  // nothing to append
+            }
+            newDataRows = currentDataRows + n;
+            writeStart = dataFirstRow + currentDataRows;
+        } else {
+            newDataRows = Math.max(n, 1);
+            writeStart = dataFirstRow;
         }
 
-        // Write the data
-        StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+        int shiftAt = dataFirstRow + currentDataRows;  // one past the last current data row
+        int delta = newDataRows - currentDataRows;     // > 0 grow, < 0 shrink, 0 same size
 
-        // Resolve column index by table header name. Record/map rows route values to
-        // the column matching the field/key name (with @xlsx:Name annotation support
-        // for records); array rows fall back to positional placement at firstCol + i.
+        // Overlap pre-check, before any mutation: a nonzero resize shifts the totals row and
+        // everything below it; another table caught in that shift would have its cells moved but
+        // its definition left stale, so refuse rather than corrupt it.
+        if (delta != 0) {
+            String colliding = firstTableInShiftBand(sheet, table, shiftAt);
+            if (colliding != null) {
+                return DiagnosticLog.tableResizeOverlapError(table.getName(), colliding, sheet.getSheetName());
+            }
+        }
+
+        // Make room (grow) or pull rows up (shrink), carrying the totals row + content below.
+        if (delta > 0) {
+            RowShifter.makeRoom(sheet, shiftAt, delta);
+        } else if (delta < 0) {
+            RowShifter.removeRows(sheet, dataFirstRow + newDataRows, -delta);
+        }
+
+        // Resize the table area to the new data-row count (plus the totals row, if any).
+        int newLastRow = dataFirstRow + newDataRows - 1 + (hasTotals ? 1 : 0);
+        CellReference topLeft = new CellReference(firstRow, firstCol);
+        CellReference bottomRight = new CellReference(newLastRow, lastCol);
+        AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+        CTTable ctTable = table.getCTTable();
+        ctTable.setRef(newArea.formatAsString());
+        table.updateHeaders();
+
+        // Resolve column index by table header name. Record/map rows route values to the column
+        // matching the field/key name (with @xlsx:Name support for records); array rows fall back
+        // to positional placement at firstCol + i.
+        StyleCache styleCache = new StyleCache(sheet.getWorkbook());
         List<XSSFTableColumn> tableColumns = table.getColumns();
         Map<String, Integer> headerToCol = new HashMap<>();
         for (int i = 0; i < tableColumns.size(); i++) {
             headerToCol.put(tableColumns.get(i).getName(), firstCol + i);
         }
 
-        // We write data directly without headers since table has its own headers
-        for (int i = 0; i < dataSize; i++) {
-            int rowIdx = dataFirstRow + i;
+        // Data is written without headers — the table carries its own header row.
+        for (int i = 0; i < n; i++) {
+            int rowIdx = writeStart + i;
             Row row = sheet.getRow(rowIdx);
             if (row == null) {
                 row = sheet.createRow(rowIdx);
             }
+            writeRowData(row, firstCol, data.get(i), headerToCol, styleCache);
+        }
 
-            Object rowData = data.get(i);
-            writeRowData(row, firstCol, rowData, headerToCol, styleCache);
+        // REPLACE with empty input keeps a single blank data row — clear its cells.
+        if (!append && n == 0) {
+            blankRowCells(sheet, dataFirstRow, firstCol, lastCol);
         }
 
         return null;
+    }
+
+    /**
+     * Name of the first other table on the sheet whose rows reach into {@code [shiftAt, ..]} — the
+     * band a resize would shift — or {@code null} if none. Such a table would have its cells moved
+     * without its definition following, so the write must be refused.
+     */
+    private static String firstTableInShiftBand(XSSFSheet sheet, XSSFTable current, int shiftAt) {
+        for (XSSFTable other : sheet.getTables()) {
+            if (current.getName().equals(other.getName())) {
+                continue;
+            }
+            AreaReference otherArea = new AreaReference(other.getArea().formatAsString(),
+                    SpreadsheetVersion.EXCEL2007);
+            if (otherArea.getLastCell().getRow() >= shiftAt) {
+                return other.getName();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Blank the cells of a single row across the table's column span.
+     */
+    private static void blankRowCells(Sheet sheet, int rowIdx, int firstCol, int lastCol) {
+        Row row = sheet.getRow(rowIdx);
+        if (row == null) {
+            return;
+        }
+        for (int c = firstCol; c <= lastCol; c++) {
+            Cell cell = row.getCell(c);
+            if (cell != null) {
+                cell.setBlank();
+            }
+        }
     }
 
     // === Total Row Methods ===

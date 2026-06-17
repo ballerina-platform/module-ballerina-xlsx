@@ -44,6 +44,22 @@ public enum SheetWriteMode {
     APPEND
 }
 
+# Behaviour of `writeTable` / `Table.putRows` toward the table's existing data.
+#
+# A table always has a data region, so there is no requirement for `FAIL_IF_EXISTS`. Plain content
+# below the table is carried along with any shift; if a grow collides with another table,
+# the write fails with a `TableOverlapError`.
+public enum TableWriteMode {
+    # Replace the table's data with the given rows, resizing the data range to fit exactly
+    # (grows or shrinks). Writing an empty array clears the table to a single blank data row.
+    # (Default.)
+    REPLACE,
+
+    # Add the given rows below the table's existing data, shifting all rows below it (if any)
+    # down to make room. Existing data rows are preserved.
+    APPEND
+}
+
 # Annotation to map a record field to a specific Excel column name.
 # Use this when the Excel column header doesn't match the Ballerina field name.
 #
@@ -67,11 +83,28 @@ public type NameConfig record {|
 # Annotation to specify the Excel column name for a record field.
 public const annotation NameConfig Name on record field;
 
-# Options shared by every read operation, regardless of result shape.
+# Cell- and record-binding options honoured by every read operation, regardless of source
+# (sheet or table), cardinality (bulk, single row, single column), or result shape. Included
+# as the common base of every read-option record via `*CommonParseOptions;`.
 #
-# Included into the operation-specific option records (`ParseOptions`,
-# `RowParseOptions`, `ColumnParseOptions`) via type inclusion (`*CommonParseOptions;`).
+# The positional row-window fields (`headerRowIndex`, `dataStartRowIndex`) are deliberately
+# *not* here: they apply only to sheet reads — a table is self-describing (its column
+# definitions are the header, its area is the data range) — so they live one level down in
+# `CommonSheetParseOptions`.
 public type CommonParseOptions record {|
+    # How to handle formula cells (default: CACHED)
+    FormulaMode formulaMode = CACHED;
+    # Whether to match headers case-insensitively (default: false).
+    # When enabled, header "Name" will match record field "name" or "NAME".
+    boolean caseInsensitiveHeaders = false;
+|};
+
+# Options shared by sheet reads, which address rows by absolute position. Adds the
+# row-window fields to `CommonParseOptions`; included by `ParseOptions`, `RowParseOptions`,
+# and `ColumnParseOptions`. Table reads omit these and use `TableParseOptions` /
+# `TableRowParseOptions` instead.
+public type CommonSheetParseOptions record {|
+    *CommonParseOptions;
     # Row containing column headers/names (0-based index).
     # Set to `null` if the sheet has no headers - columns will be named "col0", "col1", etc.
     # Example: If headers are in row 1 (second row), set this to 1.
@@ -81,16 +114,26 @@ public type CommonParseOptions record {|
     # Row where actual data begins (0-based index).
     # If not specified, defaults to headerRowIndex + 1 (or 0 if headerRowIndex is null).
     int dataStartRowIndex?;
-    # How to handle formula cells (default: CACHED)
-    FormulaMode formulaMode = CACHED;
-    # Whether to match headers case-insensitively (default: false).
-    # When enabled, header "Name" will match record field "name" or "NAME".
-    boolean caseInsensitiveHeaders = false;
 |};
 
-# Options for bulk row reads — `parseSheet`, `parseTable`, `Sheet.getRows`, `Table.getRows`.
+# Data projection configuration for record/map reads.
+#
+# - Default `{}`: lenient mode — columns don't need to match every record field.
+# - Set to `false` (in the enclosing option's `allowDataProjection`): strict mode — every
+#   record field must have a matching column.
+public type DataProjection record {|
+    # Treat nil cells as field absence for optional fields.
+    boolean nilAsOptionalField = false;
+    # Allow missing columns for nilable/optional fields.
+    boolean absentAsNilableType = false;
+|};
+
+# Options for bulk sheet reads — `parseSheet`, `Sheet.getRows`.
+#
+# Reads the row window `[dataStartRowIndex, dataStartRowIndex + rowCount)`; with `rowCount`
+# unset (`null`) it reads through the last used row.
 public type ParseOptions record {|
-    *CommonParseOptions;
+    *CommonSheetParseOptions;
     # Maximum number of data rows to read. Set to `null` to read all rows (default).
     # Example: `rowCount: 100` reads at most 100 rows starting from dataStartRowIndex.
     int? rowCount = ();
@@ -99,15 +142,8 @@ public type ParseOptions record {|
     # `@constraint` annotations defined on the record type.
     # Note: Disable for better performance when constraints aren't needed.
     boolean enableConstraintValidation = true;
-    # Data projection configuration (default: enabled/lenient mode).
-    # - Default `{}`: Lenient mode - sheet columns don't need to match all record fields
-    # - Set to `false`: Strict mode - all record fields must have matching columns
-    record {|
-        # Treat nil cells as field absence for optional fields
-        boolean nilAsOptionalField = false;
-        # Allow missing columns for nilable/optional fields
-        boolean absentAsNilableType = false;
-    |}|false allowDataProjection = {};
+    # Data projection configuration (default: lenient `{}`; set to `false` for strict mode).
+    DataProjection|false allowDataProjection = {};
     # Fail-safe error handling configuration.
     # When set, parsing continues on row-level errors (type conversion, validation).
     # Errors are logged and problematic rows are skipped.
@@ -115,24 +151,19 @@ public type ParseOptions record {|
     FailSafeOptions failSafe?;
 |};
 
-# Options for reading a single row — `Sheet.getRow`, `Table.getRow`.
+# Options for reading a single sheet row — `Sheet.getRow`.
 #
 # Single-row reads are fail-fast, so there is no `failSafe` (skipping the only requested
 # row would leave nothing to return) and no `rowCount`. Constraint validation and data
 # projection still apply.
 public type RowParseOptions record {|
-    *CommonParseOptions;
+    *CommonSheetParseOptions;
     # Whether to validate type constraints (default: true).
     # When enabled, the parsed record is validated against any Ballerina
     # `@constraint` annotations defined on the record type.
     boolean enableConstraintValidation = true;
     # Data projection configuration (see `ParseOptions` for details).
-    record {|
-        # Treat nil cells as field absence for optional fields
-        boolean nilAsOptionalField = false;
-        # Allow missing columns for nilable/optional fields
-        boolean absentAsNilableType = false;
-    |}|false allowDataProjection = {};
+    DataProjection|false allowDataProjection = {};
 |};
 
 # Options for reading a single column — `Sheet.getColumn`.
@@ -140,9 +171,48 @@ public type RowParseOptions record {|
 # A column read yields scalar cell values rather than records, so constraint validation,
 # data projection, and fail-safe (record/bulk concerns) do not apply.
 public type ColumnParseOptions record {|
-    *CommonParseOptions;
+    *CommonSheetParseOptions;
     # Maximum number of cells to read. Set to `null` to read all (default).
     int? rowCount = ();
+|};
+
+# Options for bulk table reads — `parseTable`, `Table.getRows`.
+#
+# A table is self-describing: its column definitions are the header and its area is the data
+# range, so there are no positional `headerRowIndex` / `dataStartRowIndex` fields. Reads the
+# first `rowCount` data rows (the header and any totals row are always excluded); with
+# `rowCount` unset (`null`) it reads every data row.
+public type TableParseOptions record {|
+    *CommonParseOptions;
+    # Maximum number of data rows to read. Set to `null` to read all rows (default).
+    int? rowCount = ();
+    # Whether to validate type constraints (default: true).
+    # When enabled, parsed records are validated against any Ballerina
+    # `@constraint` annotations defined on the record type.
+    # Note: Disable for better performance when constraints aren't needed.
+    boolean enableConstraintValidation = true;
+    # Data projection configuration (default: lenient `{}`; set to `false` for strict mode).
+    DataProjection|false allowDataProjection = {};
+    # Fail-safe error handling configuration.
+    # When set, parsing continues on row-level errors (type conversion, validation).
+    # Errors are logged and problematic rows are skipped.
+    # Critical errors (file not found, corrupted file) still fail immediately.
+    FailSafeOptions failSafe?;
+|};
+
+# Options for reading a single table row — `Table.getRow`.
+#
+# Self-describing like `TableParseOptions` (no positional fields), and fail-fast like
+# `RowParseOptions` (no `failSafe`, no `rowCount`). Constraint validation and data
+# projection still apply.
+public type TableRowParseOptions record {|
+    *CommonParseOptions;
+    # Whether to validate type constraints (default: true).
+    # When enabled, the parsed record is validated against any Ballerina
+    # `@constraint` annotations defined on the record type.
+    boolean enableConstraintValidation = true;
+    # Data projection configuration (see `TableParseOptions` for details).
+    DataProjection|false allowDataProjection = {};
 |};
 
 # Options shared by sheet write operations that lay out rows from a starting position —
@@ -160,7 +230,7 @@ public type WriteOptions record {|
 # Options for `writeSheet`.
 public type SheetWriteOptions record {|
     *WriteOptions;
-    # How the target sheet is treated when the file already contains it (default: `REPLACE`).
+    # How the target sheet is treated when the file already contains it (default: `FAIL_IF_EXISTS`).
     # Sibling sheets are preserved in every mode.
     SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;
 |};
@@ -174,6 +244,12 @@ public type RowWriteOptions record {|
     # Row containing the column headers used to align a record/map row to columns (0-based,
     # default: 0). Ignored for `string[]` data, which is written positionally.
     int headerRowIndex = 0;
+|};
+
+# Options for `writeTable` / `Table.putRows`.
+public type TableWriteOptions record {|
+    # How the write treats the table's existing data (default: `REPLACE`).
+    TableWriteMode tableWriteMode = REPLACE;
 |};
 
 # A single row in a sheet — the atomic data unit. A row is one of two shapes:

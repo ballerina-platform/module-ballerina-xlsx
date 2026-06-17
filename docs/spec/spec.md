@@ -21,8 +21,8 @@ If you have any feedback or suggestions about the module, start a discussion via
    - 2.1. [Row and CellValue](#21-row-and-cellvalue)
    - 2.2. [CellRange](#22-cellrange)
 3. [Configurations](#3-configurations)
-   - 3.1. [ParseOptions](#31-parseoptions)
-   - 3.2. [RowParseOptions and ColumnParseOptions](#32-rowparseoptions-and-columnparseoptions)
+   - 3.1. [Sheet read options](#31-sheet-read-options)
+   - 3.2. [Table read options](#32-table-read-options)
    - 3.3. [Write options](#33-write-options)
    - 3.4. [FormulaMode](#34-formulamode)
    - 3.5. [FailSafeOptions](#35-failsafeoptions)
@@ -72,7 +72,7 @@ The v0.9 release deliberately defers several features. The following are **not**
 - **Formula authoring on write.** Strings starting with `=` are written verbatim as text, not as formula cells. There is no `Formula` wrapper type.
 - **Formula re-evaluation.** `FormulaMode.CACHED` returns the last cached value as-is. There is no `EVALUATE`, `RECALCULATE`, or `PRESERVE` mode.
 - **Streaming.** No row-streaming API for files larger than memory.
-- **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe *for the sheet being written*: formulas, formatting, charts, comments, and Excel Tables on the target sheet are not preserved by a `parseSheet → writeSheet` cycle. Other sheets in the file **are** preserved — `writeSheet` opens the existing workbook and only replaces (or appends to) the named sheet. (`parseTable → writeTable` likewise preserves the surrounding workbook; only the table's data range is overwritten.) For richer preservation of the target sheet itself, use the Workbook API and edit cells in place.
+- **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe *for the sheet being written*: formulas, formatting, charts, comments, and Excel Tables on the target sheet are not preserved by a `parseSheet → writeSheet` cycle. Other sheets in the file **are** preserved — `writeSheet` opens the existing workbook and only replaces (or appends to) the named sheet. (`parseTable → writeTable` likewise preserves the surrounding workbook; the table's data range is rewritten and resized to fit, with the totals row and any content below carried along by the resize.) For richer preservation of the target sheet itself, use the Workbook API and edit cells in place.
 - **XLS (legacy 97-2003) format**, password-protected files, named ranges, cell styling, and range operations.
 
 What's *included* in v0.9 that you might expect to be deferred:
@@ -139,64 +139,90 @@ Used by `Sheet.getUsedCellRange()`, `Sheet.createTable(name, range, headers)`, `
 
 ## 3. Configurations
 
-### 3.1 ParseOptions
+### 3.1 Sheet read options
 
-Read options share a `CommonParseOptions` base (included via `*CommonParseOptions;`) and add
-fields by result shape. `ParseOptions` is the **bulk-read** type — used by `parseSheet`,
-`parseTable`, `Sheet.getRows`, and `Table.getRows`.
+Read options are modelled by **applicability**: each operation accepts only the fields it can
+honour. Two fields are universal to every read — `formulaMode` and `caseInsensitiveHeaders` — and
+live in the `CommonParseOptions` base. Sheet reads add absolute row-window positioning
+(`headerRowIndex`, `dataStartRowIndex`) in `CommonSheetParseOptions`. The record/map binding
+controls are shared via the named `DataProjection` type.
+
+`ParseOptions` is the bulk-read type (`parseSheet`, `Sheet.getRows`); `RowParseOptions` is the
+single-row type (`Sheet.getRow`); `ColumnParseOptions` is the single-column type
+(`Sheet.getColumn`). A single-row read is **fail-fast** (no `failSafe` — skipping the only
+requested row would leave nothing to return), and a column read yields scalar cell values rather
+than records (so constraint validation, data projection, and fail-safe do not apply).
 
 ```ballerina
 public type CommonParseOptions record {|
-    int? headerRowIndex = 0;
-    int dataStartRowIndex?;
     FormulaMode formulaMode = CACHED;
     boolean caseInsensitiveHeaders = false;
 |};
 
-public type ParseOptions record {|
+public type CommonSheetParseOptions record {|
     *CommonParseOptions;
+    int? headerRowIndex = 0;
+    int dataStartRowIndex?;
+|};
+
+public type DataProjection record {|
+    boolean nilAsOptionalField = false;
+    boolean absentAsNilableType = false;
+|};
+
+public type ParseOptions record {|
+    *CommonSheetParseOptions;
     int? rowCount = ();
     boolean enableConstraintValidation = true;
-    record {|
-        boolean nilAsOptionalField = false;
-        boolean absentAsNilableType = false;
-    |}|false allowDataProjection = {};
+    DataProjection|false allowDataProjection = {};
     FailSafeOptions failSafe?;
 |};
-```
 
-| Field | Default | Meaning |
-|---|---|---|
-| `headerRowIndex` | `0` | 0-based row index of the header row. Set to `()` for headerless sheets — columns are exposed as `col0`, `col1`, … **Ignored when reading into `string[][]`**: raw mode is lossless, so the header row is returned as data — use `dataStartRowIndex` to skip leading rows. |
-| `dataStartRowIndex` | unset | 0-based row index where data starts. Defaults to `headerRowIndex + 1` (or `0` when headerless). |
-| `rowCount` | `()` | Maximum number of data rows to read. `()` reads all. |
-| `formulaMode` | `CACHED` | How to handle formula cells. See [3.4](#34-formulamode). |
-| `enableConstraintValidation` | `true` | When `true`, parsed records are validated against any `@constraint` annotations. |
-| `caseInsensitiveHeaders` | `false` | When `true`, header `"Name"` matches record field `name` or `NAME`. |
-| `allowDataProjection` | `{}` | Default `{}` enables lenient mode (extra sheet columns ignored). Set to `false` for strict mode (all record fields must have matching columns). `nilAsOptionalField` treats nil cells as field absence; `absentAsNilableType` allows missing columns for nilable/optional fields. |
-| `failSafe` | unset | When set, row-level errors (type conversion, constraint validation) are logged and skipped instead of failing the parse. See [3.5](#35-failsafeoptions). |
-
-### 3.2 RowParseOptions and ColumnParseOptions
-
-Single-row reads (`Sheet.getRow`, `Table.getRow`) take `RowParseOptions`; single-column reads
-(`Sheet.getColumn`) take `ColumnParseOptions`. Both build on `CommonParseOptions`. A single-row
-read is **fail-fast** (it has no `failSafe` — skipping the only requested row would leave nothing
-to return), and a column read yields scalar cell values rather than records (so constraint
-validation, data projection, and fail-safe do not apply).
-
-```ballerina
 public type RowParseOptions record {|
-    *CommonParseOptions;
+    *CommonSheetParseOptions;
     boolean enableConstraintValidation = true;
-    record {|
-        boolean nilAsOptionalField = false;
-        boolean absentAsNilableType = false;
-    |}|false allowDataProjection = {};
+    DataProjection|false allowDataProjection = {};
 |};
 
 public type ColumnParseOptions record {|
+    *CommonSheetParseOptions;
+    int? rowCount = ();
+|};
+```
+
+| Field | Default | Applies to | Meaning |
+|---|---|---|---|
+| `formulaMode` | `CACHED` | all reads | How to handle formula cells. See [3.4](#34-formulamode). |
+| `caseInsensitiveHeaders` | `false` | all reads | When `true`, header `"Name"` matches record field `name` or `NAME`. |
+| `headerRowIndex` | `0` | sheet reads | 0-based row index of the header row. Set to `()` for headerless sheets — columns are exposed as `col0`, `col1`, … **Ignored when reading into `string[][]`**: raw mode is lossless, so the header row is returned as data — use `dataStartRowIndex` to skip leading rows. |
+| `dataStartRowIndex` | unset | sheet reads | 0-based row index where data starts. Defaults to `headerRowIndex + 1` (or `0` when headerless). The bulk window is `[dataStartRowIndex, dataStartRowIndex + rowCount)`; `getRow(i)` reads row `dataStartRowIndex + i`. |
+| `rowCount` | `()` | bulk + column | Maximum number of data rows (cells, for a column) to read. `()` reads all. |
+| `enableConstraintValidation` | `true` | record/map reads | When `true`, parsed records are validated against any `@constraint` annotations. |
+| `allowDataProjection` | `{}` | record/map reads | Default `{}` enables lenient mode (extra columns ignored). Set to `false` for strict mode (all record fields must have matching columns). `nilAsOptionalField` treats nil cells as field absence; `absentAsNilableType` allows missing columns for nilable/optional fields. |
+| `failSafe` | unset | bulk reads | When set, row-level errors (type conversion, constraint validation) are logged and skipped instead of failing the parse. See [3.5](#35-failsafeoptions). |
+
+### 3.2 Table read options
+
+A table is **self-describing**: its column definitions are the header and its area is the data
+range. Table reads therefore omit the positional `headerRowIndex` / `dataStartRowIndex` fields —
+they include `CommonParseOptions` directly, not `CommonSheetParseOptions`. `TableParseOptions` is
+the bulk type (`parseTable`, `Table.getRows`) and `TableRowParseOptions` the single-row type
+(`Table.getRow`); the remaining fields behave exactly as in [3.1](#31-sheet-read-options).
+`rowCount` caps the data rows read, with the header and any totals row always excluded.
+
+```ballerina
+public type TableParseOptions record {|
     *CommonParseOptions;
     int? rowCount = ();
+    boolean enableConstraintValidation = true;
+    DataProjection|false allowDataProjection = {};
+    FailSafeOptions failSafe?;
+|};
+
+public type TableRowParseOptions record {|
+    *CommonParseOptions;
+    boolean enableConstraintValidation = true;
+    DataProjection|false allowDataProjection = {};
 |};
 ```
 
@@ -229,9 +255,21 @@ public enum SheetWriteMode {
     REPLACE,          # drop and recreate the sheet, preserving siblings
     APPEND            # add rows below the existing data, aligned to the header
 }
+
+# writeTable / Table.putRows.
+public type TableWriteOptions record {|
+    TableWriteMode tableWriteMode = REPLACE;
+|};
+
+# How a table write treats the table's existing data. A table always has a data region,
+# so there is no FAIL_IF_EXISTS.
+public enum TableWriteMode {
+    REPLACE,   # replace the data, resizing the data range to fit exactly (grows or shrinks)
+    APPEND     # add rows below the existing data
+}
 ```
 
-`writeTable` and `Table.putRows` take **no** write options — the table's own header row and data range are authoritative.
+A table is self-describing — its header and data range are authoritative — so `TableWriteOptions` carries only `tableWriteMode`; there are no positional or header fields.
 
 ### 3.4 FormulaMode
 
@@ -286,7 +324,7 @@ public type LogOutput record {|
 |};
 ```
 
-`failSafe` lives on `ParseOptions` only — it applies to bulk reads (`parseSheet`, `parseTable`, `Sheet.getRows`, `Table.getRows`). When set, row-level errors (`TypeConversionError`, `ConstraintValidationError`) are logged and the offending row is skipped. Single-row reads (`Sheet.getRow`, `Table.getRow`) are fail-fast and have no `failSafe`. Structural errors always fail immediately.
+`failSafe` lives on the bulk-read types (`ParseOptions`, `TableParseOptions`) — it applies to `parseSheet`, `parseTable`, `Sheet.getRows`, and `Table.getRows`. When set, row-level errors (`TypeConversionError`, `ConstraintValidationError`) are logged and the offending row is skipped. Single-row reads (`Sheet.getRow`, `Table.getRow`) are fail-fast and have no `failSafe`. Structural errors always fail immediately.
 
 ---
 
@@ -340,7 +378,7 @@ Reads the specified sheet from an XLSX file and binds rows to the target type in
 |---|---|---|
 | `path` | (required) | Path to the XLSX file. |
 | `sheet` | `0` | Sheet selector — sheet name (`string`) or 0-based index (`int`). |
-| `options` | `{}` | `ParseOptions` (see [3.1](#31-parseoptions)). |
+| `options` | `{}` | `ParseOptions` (see [3.1](#31-sheet-read-options)). |
 | `t` | inferred | Target row type — a `Row` member (record, `map<CellValue>`, or `string[]`). Function returns `t[]`. See [2.1](#21-row-and-cellvalue). |
 
 Examples:
@@ -406,7 +444,7 @@ check xlsx:writeSheet(employees, "report.xlsx", "Staff", sheetWriteMode = APPEND
 ```ballerina
 public isolated function parseTable(string path,
         string tableName,
-        ParseOptions options = {},
+        TableParseOptions options = {},
         typedesc<Row> t = <>)
     returns t[]|Error;
 ```
@@ -417,7 +455,7 @@ Reads from an Excel Table (ListObject) by name. Tables are unique by name across
 |---|---|---|
 | `path` | (required) | Path to the XLSX file. |
 | `tableName` | (required) | Name of the table. Raises `TableNotFoundError` if no matching table exists in any sheet. |
-| `options` | `{}` | `ParseOptions`. `headerRowIndex` and `dataStartRowIndex` are ignored — the table's own range defines these. All other fields (`formulaMode`, `enableConstraintValidation`, `caseInsensitiveHeaders`, `allowDataProjection`, `failSafe`) apply normally. |
+| `options` | `{}` | `TableParseOptions` (see [3.2](#32-table-read-options)). A table is self-describing, so there are no `headerRowIndex` / `dataStartRowIndex` fields; `rowCount`, `formulaMode`, `enableConstraintValidation`, `caseInsensitiveHeaders`, `allowDataProjection`, and `failSafe` apply normally. |
 | `t` | inferred | Target row type — a `Row` member (record, `map<CellValue>`, or `string[]`). Function returns `t[]`. |
 
 Example:
@@ -432,19 +470,19 @@ Sale[] sales = check xlsx:parseTable("sales.xlsx", "SalesTable");
 ```ballerina
 public isolated function writeTable(Row[] data,
         string path,
-        string tableName)
+        string tableName,
+        *TableWriteOptions options)
     returns Error?;
 ```
 
-Writes data to an existing Excel Table, auto-expanding the table's range if the data exceeds the current data range. The surrounding workbook (other sheets, named ranges, charts, formulas in unaffected cells) is preserved — only the cells inside the target table's data range are overwritten. The write is atomic.
-
-`writeTable` takes no write options — the table's own header row and data range are authoritative.
+Writes data to an existing Excel Table. By default (`tableWriteMode = REPLACE`) the table's data is replaced and the data range is **resized to fit the data exactly** — it grows or shrinks, so no stale rows survive inside the table (an empty array clears the table to a single blank data row). `tableWriteMode = APPEND` adds the rows below the existing data instead. The totals row, if any, and any content below the table are carried along by the resize; a resize that would shift **another** table fails with a `TableOverlapError` and writes nothing. The surrounding workbook (other sheets, named ranges, charts, formulas in unaffected cells) is preserved, and the write is atomic.
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `data` | (required) | Rows to write — `Row[]`. |
 | `path` | (required) | Path to the XLSX file containing the table. |
 | `tableName` | (required) | Name of the table to write into. Raises `TableNotFoundError` if no matching table exists. |
+| `options` | `{}` | `TableWriteOptions` — `tableWriteMode` (`REPLACE` default / `APPEND`). |
 
 Example:
 
@@ -587,11 +625,11 @@ public type Table isolated object {
 
     # Headers and data
     public isolated function getHeaders() returns string[]|Error;
-    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(TableParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
-    public isolated function getRow(int index, RowParseOptions options = {},
+    public isolated function getRow(int index, TableRowParseOptions options = {},
             typedesc<Row> t = <>) returns t|Error;
-    public isolated function putRows(Row[] data) returns Error?;   # auto-expands the table
+    public isolated function putRows(Row[] data, *TableWriteOptions options) returns Error?;
 
     # Total row
     public isolated function hasTotalRow() returns boolean|Error;
@@ -605,7 +643,7 @@ public type Table isolated object {
 
 Tables are obtained from `Workbook.getTable(name)`, `Workbook.getAllTables()`, `Sheet.getTable(name)`, `Sheet.getTables()`, `Sheet.createTable(...)`, or `Sheet.createTableFromData(...)`. Table names are unique across the entire workbook.
 
-`Table.putRows` automatically expands the underlying `XSSFTable` to fit the incoming data if it exceeds the current data range.
+`Table.putRows` resizes the underlying `XSSFTable` to fit the incoming data — growing or shrinking the data range under the default `REPLACE`, or adding rows below the existing data under `APPEND` (see [3.3](#33-write-options)). The totals row and any content below the table are carried along by the resize; a resize that would shift another table fails with a `TableOverlapError`.
 
 ---
 
@@ -740,7 +778,7 @@ public function main() returns error? {
     // Read all rows of a named table.
     Employee[] employees = check xlsx:parseTable("data.xlsx", "EmployeeTable");
 
-    // Append a row and write back. writeTable auto-expands the table.
+    // Add a row and write the whole set back. REPLACE (default) resizes the table to fit.
     Employee[] withNew = [...employees, {name: "Charlie", age: 35}];
     check xlsx:writeTable(withNew, "data.xlsx", "EmployeeTable");
 }

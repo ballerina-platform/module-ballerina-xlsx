@@ -253,6 +253,21 @@ public final class DiagnosticLog {
     }
 
     /**
+     * Create a table-overlap error for a write that would resize a table over another table.
+     *
+     * @param tableName     Name of the table being written
+     * @param existingTable Name of the table the resize would collide with
+     * @param sheetName     Sheet name where the collision occurs
+     * @return BError
+     */
+    public static BError tableResizeOverlapError(String tableName, String existingTable, String sheetName) {
+        String message = "Cannot write to table '" + tableName + "': resizing would overlap table '" +
+                existingTable + "' in sheet '" + sheetName + "'";
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        return createTypedError(TABLE_OVERLAP_ERROR_TYPE, message, details);
+    }
+
+    /**
      * Create an invalid table range error.
      *
      * @param message   Error message describing the invalid range

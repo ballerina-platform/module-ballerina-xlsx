@@ -104,7 +104,8 @@ public type Table isolated object {
 
     # Get all data rows from the table.
     #
-    # Headers and totals row are automatically excluded. Supports reading to:
+    # Headers and totals row are automatically excluded. `rowCount` caps the data rows
+    # returned (reads the first `rowCount` data rows). Supports reading to:
     # - `string[][]` - Raw string array
     # - `record{}[]` - Array of records (headers map to fields)
     #
@@ -117,10 +118,10 @@ public type Table isolated object {
     # Employee[] employees = check table.getRows();
     # ```
     #
-    # + options - Read options
+    # + options - Table read options
     # + t - Target row type descriptor (record, map, or string[])
     # + return - Array of data rows or error
-    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(TableParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
 
     # Get a single data row from the table by index.
@@ -134,25 +135,29 @@ public type Table isolated object {
     # ```
     #
     # + index - Row index (0-based within data range)
-    # + options - Read options
+    # + options - Single table-row read options
     # + t - Target type descriptor
     # + return - Single row or error
-    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, TableRowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error;
 
     # Write rows to the table.
     #
-    # If the data exceeds the current table size, the table automatically expands.
-    # Existing data is overwritten starting from the first data row.
+    # By default (`REPLACE`) the table's data is replaced and the data range resized to fit
+    # exactly (it grows or shrinks, leaving no stale rows). `tableWriteMode = APPEND` adds the
+    # rows below the existing data. A resize that would overlap another table fails with a
+    # `TableOverlapError`.
     #
     # ```ballerina
     # Employee[] employees = [{name: "John", age: 30}, {name: "Jane", age: 25}];
     # check table.putRows(employees);
+    # check table.putRows(moreRows, tableWriteMode = APPEND);
     # ```
     #
     # + data - Data to write (records or arrays)
+    # + options - Table write options (`tableWriteMode`)
     # + return - Error if write fails
-    public isolated function putRows(Row[] data) returns Error?;
+    public isolated function putRows(Row[] data, *TableWriteOptions options) returns Error?;
 
     # Check if the table has a total row.
     #
@@ -240,17 +245,17 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(TableParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, TableRowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function putRows(Row[] data) returns Error? = @java:Method {
+    public isolated function putRows(Row[] data, *TableWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
