@@ -53,10 +53,12 @@ public isolated function parseSheet(string path, string|int sheet = 0, ParseOpti
 
 # Write Ballerina data to a sheet in an XLSX file.
 #
-# If the file already exists it is opened and only the named sheet is affected — every sibling sheet, their tables, and formulas are
-# preserved. If the file does not exist, it is created with the single sheet. By default the
-# write fails when the named sheet already exists (`FAIL_IF_EXISTS`); set `sheetWriteMode` to
-# `REPLACE` the sheet's contents or `APPEND` rows to it.
+# If the file already exists it is opened and only the named sheet is affected — every sibling
+# sheet, their tables, and formulas are preserved. If the file does not exist, it is created with
+# the single sheet. By default the write fails when the named sheet already exists
+# (`FAIL_IF_EXISTS`). `sheetWriteMode = REPLACE` drops and recreates the sheet — discarding its
+# tables and formatting — and `sheetWriteMode = APPEND` adds the rows below the sheet's existing
+# data (aligning records/maps to the existing header; `startRowIndex` is ignored in this mode).
 #
 # Supports writing from:
 # - `string[][]` - Raw string array (first row written as-is)

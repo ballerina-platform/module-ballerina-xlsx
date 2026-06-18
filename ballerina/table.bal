@@ -199,6 +199,20 @@ public type Table isolated object {
     # + newRange - New table range as a `CellRange` record or an A1-notation string
     # + return - Error if resize fails (e.g., invalid range, overlap)
     public isolated function resize(CellRange|string newRange) returns Error?;
+
+    # Delete a data row from the table by 0-based data-row index.
+    #
+    # The table shrinks to fit: the totals row and any content below it move up to close the
+    # gap. A table must keep at least one data row, so the last data row cannot be deleted.
+    #
+    # ```ballerina
+    # check table.deleteRow(0);  // remove the first data row
+    # ```
+    #
+    # + index - 0-based row index within the data range (first data row is index 0)
+    # + return - An `Error` if the index is out of range, deletion would leave no data row,
+    #            or the shrink would disrupt another table
+    public isolated function deleteRow(int index) returns Error?;
 };
 
 # Concrete implementation of `Table`. Not exported — instances are vended
@@ -274,6 +288,10 @@ isolated class TableImpl {
     } external;
 
     public isolated function resize(CellRange|string newRange) returns Error? = @java:Method {
+        'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
+    } external;
+
+    public isolated function deleteRow(int index) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 }

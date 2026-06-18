@@ -241,11 +241,14 @@ public type SheetWriteOptions record {|
     # names (honouring `@xlsx:Name`) or map keys. Ignored for `string[][]` input, whose
     # first row is written as-is.
     boolean writeHeaders = true;
-    # Row to start writing at (0-based, default: 0). For a record/map write into a sheet that
-    # already has a header row at this position, values align to the existing columns by name.
+    # Row at which a fresh write block starts (0-based, default: 0) — the header goes here and
+    # data follows. Used only by `FAIL_IF_EXISTS` and `REPLACE`. Ignored by `APPEND`, which always
+    # appends below the sheet's existing data and auto-detects the header from the used range.
     int startRowIndex = 0;
     # How the target sheet is treated when the file already contains it (default: `FAIL_IF_EXISTS`).
-    # Sibling sheets are preserved in every mode.
+    # Sibling sheets are preserved in every mode. **`REPLACE` is destructive** — it drops and
+    # recreates the named sheet, discarding any tables and formatting on it; the default
+    # `FAIL_IF_EXISTS` guards against accidental overwrites.
     SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;
 |};
 

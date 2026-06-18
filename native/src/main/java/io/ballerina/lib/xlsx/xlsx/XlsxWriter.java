@@ -102,13 +102,16 @@ public final class XlsxWriter {
                             // string[][] appends positionally below the last data row.
                             startRow = appendRow;
                         } else if (first instanceof BMap) {
-                            // record/map: align to the existing header row (at startRow) and place
-                            // data at the append row. Refuse rather than silently shift columns
-                            // when there is no header to align against.
-                            if (existingHeaderMap(sheet, startRow) == null) {
-                                return DiagnosticLog.error("Cannot APPEND a record or map to sheet '"
-                                        + sheetName + "': no header row found at index " + startRow);
+                            // record/map: align to the sheet's existing header row (auto-detected
+                            // from the used range) and place data at the append row. startRowIndex
+                            // is ignored in APPEND. Refuse rather than silently shift columns when
+                            // there is no header to align against.
+                            int headerRow = used.getFirstRow();
+                            Object headerErr = requireHeaderForAppend(sheet, headerRow);
+                            if (headerErr != null) {
+                                return headerErr;
                             }
+                            startRow = headerRow;
                             dataStartRowOverride = appendRow;
                         }
                     }
@@ -117,7 +120,8 @@ public final class XlsxWriter {
             } else {
                 // FAIL_IF_EXISTS (default).
                 if (existingIdx != -1) {
-                    return DiagnosticLog.error("Sheet '" + sheetName + "' already exists in '" + filePath
+                    return DiagnosticLog.sheetExistsError(sheetName, "Sheet '" + sheetName
+                            + "' already exists in '" + filePath
                             + "'. Use sheetWriteMode REPLACE or APPEND to write into an existing sheet.");
                 }
                 sheet = workbook.createSheet(sheetName);
@@ -215,7 +219,12 @@ public final class XlsxWriter {
     private static void writeArrayData(Sheet sheet, BArray data, int startRow, int startCol,
                                         StyleCache styleCache) {
         for (int i = 0; i < data.size(); i++) {
-            BArray rowData = (BArray) data.get(i);
+            Object item = data.get(i);
+            if (!(item instanceof BArray rowData)) {
+                throw new BallerinaErrorException(DiagnosticLog.error(
+                        "Row " + i + " has an incompatible shape for a string[][] write. "
+                                + "All rows in a string[][] write must be arrays."));
+            }
             Row row = sheet.createRow(startRow + i);
 
             for (int j = 0; j < rowData.size(); j++) {
@@ -248,6 +257,19 @@ public final class XlsxWriter {
             }
         }
         return map.isEmpty() ? null : map;
+    }
+
+    /**
+     * Guard for an APPEND of records/maps: the sheet must have a header row at {@code headerRow}
+     * to align values against. Returns a typed error if absent, else {@code null}. Shared by the
+     * {@code writeSheet} (file) and {@code Sheet.putRows} (open-sheet) append paths.
+     */
+    private static Object requireHeaderForAppend(Sheet sheet, int headerRow) {
+        if (existingHeaderMap(sheet, headerRow) == null) {
+            return DiagnosticLog.error("Cannot APPEND a record or map to sheet '" + sheet.getSheetName()
+                    + "': no header row found at row " + headerRow);
+        }
+        return null;
     }
 
     /**
@@ -471,9 +493,9 @@ public final class XlsxWriter {
                         return DiagnosticLog.error("APPEND insert position " + insertAt
                                 + " must be below the header row " + headerRow);
                     }
-                    if (existingHeaderMap(sheet, headerRow) == null) {
-                        return DiagnosticLog.error("Cannot APPEND a record or map: no header row "
-                                + "found at row " + headerRow);
+                    Object headerErr = requireHeaderForAppend(sheet, headerRow);
+                    if (headerErr != null) {
+                        return headerErr;
                     }
                     if (midInsert) {
                         RowShifter.makeRoom(sheet, insertAt, n);

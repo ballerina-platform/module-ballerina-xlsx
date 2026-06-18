@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.xlsx.utils;
 
+import io.ballerina.lib.xlsx.xlsx.BallerinaErrorException;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.values.BError;
@@ -26,24 +27,34 @@ import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
 
 import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Utility class for constraint validation.
  */
 public final class ConstraintUtils {
 
-    // Thread-safe eager initialization of constraint module availability
+    // Thread-safe eager initialization of constraint module availability and the resolved
+    // validate(Object, BTypedesc) method, so the reflective lookup happens once, not per row.
     private static final boolean CONSTRAINT_MODULE_AVAILABLE;
+    private static final Method VALIDATE_METHOD;
+
+    // Typedescs are immutable; cache one per record type rather than rebuilding it per row.
+    private static final Map<RecordType, BTypedesc> TYPEDESC_CACHE = new ConcurrentHashMap<>();
 
     static {
         boolean available;
+        Method method = null;
         try {
-            Class.forName("io.ballerina.stdlib.constraint.Constraints");
+            Class<?> constraintClass = Class.forName("io.ballerina.stdlib.constraint.Constraints");
+            method = constraintClass.getMethod("validate", Object.class, BTypedesc.class);
             available = true;
-        } catch (ClassNotFoundException e) {
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
             available = false;
         }
         CONSTRAINT_MODULE_AVAILABLE = available;
+        VALIDATE_METHOD = method;
     }
 
     private ConstraintUtils() {
@@ -58,33 +69,27 @@ public final class ConstraintUtils {
      * @return The validated record if successful, or BError if validation fails
      */
     public static Object validate(BMap<BString, Object> record, RecordType recordType) {
-        // Check if constraint module is available
+        // Constraint module not on the classpath → nothing to validate against.
         if (!isConstraintModuleAvailable()) {
-            // Constraint module not available, skip validation
             return record;
         }
 
         try {
-            // Use reflection to call constraint:validate() function
-            // This avoids compile-time dependency on the constraint module
-            Class<?> constraintClass = Class.forName("io.ballerina.stdlib.constraint.Constraints");
-            Method validateMethod = constraintClass.getMethod("validate", Object.class, BTypedesc.class);
-
-            // Create a typedesc for the record type
-            BTypedesc typedesc = ValueCreator.createTypedescValue(recordType);
-
-            // Call the validate function
-            Object result = validateMethod.invoke(null, record, typedesc);
-
-            return result;
+            // The validate(Object, BTypedesc) method and the per-type typedesc are both cached, so
+            // the hot path is a single reflective invoke per row.
+            BTypedesc typedesc = TYPEDESC_CACHE.computeIfAbsent(recordType,
+                    rt -> ValueCreator.createTypedescValue(rt));
+            return VALIDATE_METHOD.invoke(null, record, typedesc);
         } catch (Exception e) {
-            // If validation call fails, return the error
+            // A genuine validation failure surfaces as a BError cause — return it so the caller can
+            // record it (and skip the row under fail-safe).
             if (e.getCause() instanceof BError) {
                 return e.getCause();
             }
-            // Wrap other exceptions as constraint validation error
-            return DiagnosticLog.constraintValidationError(
-                    "Constraint validation failed: " + e.getMessage(), null, null);
+            // Anything else (a reflection/wiring failure, not a per-row data problem) must fail fast
+            // rather than be masked as a skippable validation error.
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Constraint validation could not be performed: " + e.getMessage(), e));
         }
     }
 

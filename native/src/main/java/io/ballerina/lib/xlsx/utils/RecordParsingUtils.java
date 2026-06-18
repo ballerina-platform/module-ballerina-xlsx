@@ -618,8 +618,7 @@ public final class RecordParsingUtils {
                     } else {
                         // Blank cell for required non-nilable field is an error
                         throw new TypeConversionException(
-                                "Required field '" + mapping.fieldName + "' cannot be null (blank cell)",
-                                "", mapping.type.toString(), "null");
+                                "Required field '" + mapping.fieldName + "' cannot be null (blank cell)");
                     }
                 }
             }
@@ -651,7 +650,8 @@ public final class RecordParsingUtils {
                     context.config.isEnableConstraintValidation());
             if (validationError != null) {
                 if (!context.isFailSafeEnabled()) {
-                    return DiagnosticLog.constraintValidationError(validationError.getMessage(), rowIdx, null);
+                    return DiagnosticLog.constraintValidationError(validationError.getMessage(),
+                            validationError, rowIdx, extractConstraintField(validationError.getMessage()));
                 }
                 handleFailSafe(context, row, rowIdx, currentColIdx, validationError.getMessage());
                 return null;
@@ -694,6 +694,31 @@ public final class RecordParsingUtils {
         }
         Object result = ConstraintUtils.validate(record, recordType);
         return (result instanceof BError) ? (BError) result : null;
+    }
+
+    /**
+     * Best-effort extraction of the offending field name from a constraint validation message of
+     * the form {@code Validation failed for '$.field:constraint' constraint(s)}. Returns null when
+     * the message carries no recognizable {@code $.field} path.
+     */
+    private static String extractConstraintField(String message) {
+        if (message == null) {
+            return null;
+        }
+        int marker = message.indexOf("$.");
+        if (marker < 0) {
+            return null;
+        }
+        int start = marker + 2;
+        int end = start;
+        while (end < message.length()) {
+            char c = message.charAt(end);
+            if (c == ':' || c == '\'' || c == ' ') {
+                break;
+            }
+            end++;
+        }
+        return end > start ? message.substring(start, end) : null;
     }
 
     /**

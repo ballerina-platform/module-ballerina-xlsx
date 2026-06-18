@@ -25,40 +25,26 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 
-import java.text.MessageFormat;
-import java.util.Locale;
-import java.util.ResourceBundle;
-
 /**
  * Utility class for creating diagnostic errors.
  */
 public final class DiagnosticLog {
-
-    private static final String ERROR_PREFIX = "error.";
-    private static ResourceBundle errorBundle;
 
     // Ballerina error type names (as declared in errors.bal).
     private static final String ERROR_TYPE = "Error";
     private static final String PARSE_ERROR_TYPE = "ParseError";
     private static final String FILE_NOT_FOUND_ERROR_TYPE = "FileNotFoundError";
     private static final String SHEET_NOT_FOUND_ERROR_TYPE = "SheetNotFoundError";
+    private static final String SHEET_EXISTS_ERROR_TYPE = "SheetExistsError";
     private static final String TYPE_CONVERSION_ERROR_TYPE = "TypeConversionError";
     private static final String CONSTRAINT_VALIDATION_ERROR_TYPE = "ConstraintValidationError";
     private static final String TABLE_NOT_FOUND_ERROR_TYPE = "TableNotFoundError";
+    private static final String TABLE_EXISTS_ERROR_TYPE = "TableExistsError";
     private static final String TABLE_OVERLAP_ERROR_TYPE = "TableOverlapError";
     private static final String INVALID_TABLE_RANGE_ERROR_TYPE = "InvalidTableRangeError";
 
     private DiagnosticLog() {
         // Private constructor to prevent instantiation
-    }
-
-    static {
-        try {
-            errorBundle = ResourceBundle.getBundle("xlsx_error", Locale.getDefault());
-        } catch (Exception e) {
-            // Fallback: errors will use default messages
-            errorBundle = null;
-        }
     }
 
     /**
@@ -94,18 +80,6 @@ public final class DiagnosticLog {
                 causeError,
                 null
         );
-    }
-
-    /**
-     * Create a diagnostic error with code and arguments.
-     *
-     * @param code Error code
-     * @param args Message arguments
-     * @return BError
-     */
-    public static BError error(DiagnosticErrorCode code, Object... args) {
-        String message = formatMessage(code, args);
-        return error(message);
     }
 
     /**
@@ -180,9 +154,43 @@ public final class DiagnosticLog {
      * @param maxIndex Maximum valid index
      * @return BError
      */
-    public static BError sheetNotFoundError(int index, int maxIndex) {
+    public static BError sheetNotFoundError(long index, int maxIndex) {
         String message = "Sheet at index " + index + " not found (valid range: 0-" + maxIndex + ")";
         return createTypedError(SHEET_NOT_FOUND_ERROR_TYPE, message, null);
+    }
+
+    /**
+     * Create a sheet-already-exists error.
+     *
+     * @param sheetName Name of the sheet that already exists
+     * @return BError
+     */
+    public static BError sheetExistsError(String sheetName) {
+        return sheetExistsError(sheetName, "Sheet '" + sheetName + "' already exists in the workbook");
+    }
+
+    /**
+     * Create a sheet-already-exists error with a custom message (e.g. carrying a remediation hint).
+     *
+     * @param sheetName Name of the sheet that already exists
+     * @param message   Full error message
+     * @return BError
+     */
+    public static BError sheetExistsError(String sheetName, String message) {
+        BMap<BString, Object> details = createErrorDetails(sheetName, null, null, null, null);
+        return createTypedError(SHEET_EXISTS_ERROR_TYPE, message, details);
+    }
+
+    /**
+     * Create a table-already-exists error.
+     *
+     * @param tableName Name of the table that already exists
+     * @return BError
+     */
+    public static BError tableExistsError(String tableName) {
+        String message = "Table '" + tableName + "' already exists in the workbook";
+        BMap<BString, Object> details = createErrorDetails(null, tableName, null, null, null);
+        return createTypedError(TABLE_EXISTS_ERROR_TYPE, message, details);
     }
 
     /**
@@ -200,16 +208,22 @@ public final class DiagnosticLog {
     }
 
     /**
-     * Create a constraint validation error.
+     * Create a constraint validation error, chaining the underlying {@code constraint:Error} as the
+     * cause and recording the offending field name (when known) in the error details.
      *
-     * @param message Error message from constraint validation
-     * @param row     Row number where validation failed
-     * @param column  Column number where validation failed (if applicable)
+     * @param message   Error message from constraint validation
+     * @param cause     The underlying constraint error (chained as the cause), or null
+     * @param row       Row number where validation failed
+     * @param fieldName Name of the field that failed validation, or null if not determinable
      * @return BError
      */
-    public static BError constraintValidationError(String message, Integer row, Integer column) {
-        BMap<BString, Object> details = createErrorDetails(null, null, null, row, column);
-        return createTypedError(CONSTRAINT_VALIDATION_ERROR_TYPE, message, details);
+    public static BError constraintValidationError(String message, BError cause, Integer row, String fieldName) {
+        BMap<BString, Object> details = createErrorDetails(null, null, null, row, null);
+        if (fieldName != null) {
+            details.put(StringUtils.fromString("fieldName"), StringUtils.fromString(fieldName));
+        }
+        return ErrorCreator.createError(ModuleUtils.getModule(), CONSTRAINT_VALIDATION_ERROR_TYPE,
+                StringUtils.fromString(message), cause, details);
     }
 
     /**
@@ -283,6 +297,21 @@ public final class DiagnosticLog {
     }
 
     /**
+     * Create a table-overlap error for a sheet row-delete that would shift (and so corrupt) a table.
+     *
+     * @param tableName Name of the table the delete would disrupt
+     * @param sheetName Sheet name where the conflict occurs
+     * @param row       0-based row index of the delete
+     * @return BError
+     */
+    public static BError tableDeleteConflictError(String tableName, String sheetName, int row) {
+        String message = "Cannot delete row " + row + ": it would disrupt table '" + tableName
+                + "' in sheet '" + sheetName + "' — use Table.deleteRow to modify the table";
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        return createTypedError(TABLE_OVERLAP_ERROR_TYPE, message, details);
+    }
+
+    /**
      * Create an invalid table range error.
      *
      * @param message   Error message describing the invalid range
@@ -336,25 +365,5 @@ public final class DiagnosticLog {
         }
 
         return details;
-    }
-
-    private static String formatMessage(DiagnosticErrorCode code, Object... args) {
-        String pattern = getErrorMessage(code);
-        if (args.length > 0) {
-            return MessageFormat.format(pattern, args);
-        }
-        return pattern;
-    }
-
-    private static String getErrorMessage(DiagnosticErrorCode code) {
-        if (errorBundle != null) {
-            try {
-                return errorBundle.getString(ERROR_PREFIX + code.getMessageKey());
-            } catch (Exception e) {
-                // Fall through to default
-            }
-        }
-        // Default message based on error code
-        return code.getErrorCode() + ": " + code.getMessageKey().replace('.', ' ');
     }
 }

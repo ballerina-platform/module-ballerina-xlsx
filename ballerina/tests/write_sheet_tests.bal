@@ -1007,7 +1007,7 @@ function testWriteSheetFailsIfSheetExists() returns error? {
 
     // The default mode refuses to overwrite an existing sheet.
     Error? result = writeSheet([["Second"]], tempFile);
-    test:assertTrue(result is Error, "Default FAIL_IF_EXISTS must refuse an existing sheet");
+    test:assertTrue(result is SheetExistsError, "Default FAIL_IF_EXISTS must refuse an existing sheet");
 
     // The refusal happens before any write, so the original data is intact.
     string[][] parsed = check parseSheet(tempFile);
@@ -1061,6 +1061,23 @@ function testWriteSheetAppendAlignsToHeader() returns error? {
     test:assertEquals(all.length(), 3, "Row appended below the existing data");
     test:assertEquals(all[0], {name: "Al", age: 30, dept: "Eng"}, "Existing rows untouched");
     test:assertEquals(all[2], {name: "Cy", age: 40, dept: "HR"}, "Appended row aligned by header name");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendIgnoresStartRowIndex() returns error? {
+    // In APPEND, startRowIndex is ignored: the header is auto-detected from the used range and the
+    // row is appended below the existing data regardless of the index passed.
+    string tempFile = getTempFilePath("append_ignores_startrow");
+    AppendLogRow[] initial = [{name: "Al", age: 30, dept: "Eng"}];
+    check writeSheet(initial, tempFile, "Log");
+
+    AppendLogShuffled[] more = [{age: 40, dept: "HR", name: "Cy"}];
+    check writeSheet(more, tempFile, "Log", sheetWriteMode = APPEND, startRowIndex = 5);
+
+    AppendLogRow[] all = check parseSheet(tempFile, "Log");
+    test:assertEquals(all.length(), 2, "Row appended below existing data; startRowIndex ignored in APPEND");
+    test:assertEquals(all[1], {name: "Cy", age: 40, dept: "HR"}, "Appended and aligned to the real header");
     check removeTempFile(tempFile);
 }
 

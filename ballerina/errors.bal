@@ -26,6 +26,9 @@ public type FileNotFoundError distinct Error;
 # Represents an error when a requested sheet is not found.
 public type SheetNotFoundError distinct Error;
 
+# Represents an error when creating or renaming a sheet to a name that already exists.
+public type SheetExistsError distinct Error;
+
 # Represents an error during type conversion.
 public type TypeConversionError distinct Error;
 
@@ -34,6 +37,9 @@ public type ConstraintValidationError distinct Error;
 
 # Represents an error when a requested table is not found.
 public type TableNotFoundError distinct Error;
+
+# Represents an error when creating or renaming a table to a name that already exists.
+public type TableExistsError distinct Error;
 
 # Represents an error when creating a table would overlap with an existing table.
 public type TableOverlapError distinct Error;
@@ -53,4 +59,7 @@ public type ErrorDetails record {|
     int rowNumber?;
     # Column number where error occurred (if applicable)
     int columnNumber?;
+    # Name of the record field involved in the error (e.g., the field that failed constraint
+    # validation), if applicable
+    string fieldName?;
 |};

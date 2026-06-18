@@ -827,6 +827,12 @@ public final class SheetHandle {
                 return DiagnosticLog.error(
                         "Row index " + idx + " is out of range for deletion");
             }
+            // Deleting a row shifts everything below up; a table caught in that shift would have
+            // its cells moved but its definition left stale. Refuse and point at the Table API.
+            String shifted = RowShifter.firstTableShiftedBy(sheet, idx, null);
+            if (shifted != null) {
+                return DiagnosticLog.tableDeleteConflictError(shifted, sheet.getSheetName(), idx);
+            }
             Row row = sheet.getRow(idx);
             if (row != null) {
                 sheet.removeRow(row);
@@ -858,7 +864,7 @@ public final class SheetHandle {
             // Refuse to rename to a name another sheet already uses (case-insensitive).
             int existing = WorkbookHandle.findSheetIndexCaseInsensitive(workbook, name);
             if (existing != -1 && existing != idx) {
-                return DiagnosticLog.error("Sheet '" + name + "' already exists");
+                return DiagnosticLog.sheetExistsError(name);
             }
             workbook.setSheetName(idx, name);
             return null;
@@ -987,7 +993,7 @@ public final class SheetHandle {
                         (XSSFSheet) workbook.getSheetAt(i);
                 for (XSSFTable t : s.getTables()) {
                     if (tableName.equals(t.getName()) || tableName.equals(t.getDisplayName())) {
-                        return DiagnosticLog.error("Table '" + tableName + "' already exists in workbook");
+                        return DiagnosticLog.tableExistsError(tableName);
                     }
                 }
             }
@@ -1081,6 +1087,14 @@ public final class SheetHandle {
             }
 
             XSSFSheet xssfSheet = (XSSFSheet) sheet;
+
+            // An Excel table needs at least a header row, so there is nothing to wrap when the
+            // data is empty (the write below would be a no-op, leaving a malformed 1x1 table).
+            if (data.getLength() == 0) {
+                return DiagnosticLog.invalidTableRangeError(
+                        "Cannot create a table from empty data: a table requires at least a header row");
+            }
+
             // Write data first
             BMap<BString, Object> writeOptions = ValueCreator.createMapValue();
             writeOptions.put(StringUtils.fromString("writeHeaders"), true);
@@ -1101,20 +1115,15 @@ public final class SheetHandle {
             // Get dimensions from data. Record/map rows generate a header row, so the
             // table spans data rows + 1. A string[][] already carries its header as the
             // first row, so its height is exactly the supplied row count.
-            int colCount = 1; // Default
-            boolean arrayData = false;
+            boolean arrayData = data.get(0) instanceof BArray;
 
-            // Determine column count and row shape from the first row
-            if (data.getLength() > 0) {
-                Object firstItem = data.get(0);
-                if (firstItem instanceof BMap) {
-                    @SuppressWarnings("unchecked")
-                    BMap<BString, Object> record = (BMap<BString, Object>) firstItem;
-                    colCount = record.getKeys().length;
-                } else if (firstItem instanceof BArray) {
-                    arrayData = true;
-                    colCount = (int) ((BArray) firstItem).getLength();
-                }
+            // Column span = the header row just written at startRow (contiguous cells from
+            // startCol). Reading back the written header reflects the true width for record,
+            // map, and string[][] shapes alike — a record's present-key count would undercount
+            // records that omit absent optional fields.
+            int colCount = countHeaderColumns(xssfSheet, startRow, startCol);
+            if (colCount == 0) {
+                colCount = 1;
             }
 
             int rowCount = arrayData ? (int) data.getLength() : (int) data.getLength() + 1;
@@ -1135,6 +1144,24 @@ public final class SheetHandle {
         } catch (Exception e) {
             return DiagnosticLog.error("Error creating table from data: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Count the contiguous populated header cells of the row at {@code headerRow}, starting at
+     * {@code startCol} — the column span of the data block written there.
+     */
+    private static int countHeaderColumns(Sheet sheet, int headerRow, int startCol) {
+        Row row = sheet.getRow(headerRow);
+        if (row == null) {
+            return 0;
+        }
+        int count = 0;
+        int col = startCol;
+        while (UsedRangeDetector.hasRealData(row.getCell(col))) {
+            count++;
+            col++;
+        }
+        return count;
     }
 
     /**

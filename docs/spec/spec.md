@@ -10,7 +10,7 @@ _Edition_: Swan Lake
 
 This is the specification for the `xlsx` module of the [Ballerina language](https://ballerina.io/), which provides functionality for reading and writing Microsoft Excel files in the XLSX (Office Open XML) format with type-safe data binding to Ballerina records.
 
-The `xlsx` module specification is written to describe the functionality available from version 0.9.0 onwards.
+The `xlsx` module specification is written to describe the functionality available from version 1.0.0 onwards.
 
 If you have any feedback or suggestions about the module, start a discussion via a [GitHub issue](https://github.com/ballerina-platform/ballerina-library/issues) or in the [Discord server](https://discord.gg/ballerinalang). Based on the outcome of the discussion, the specification and implementation can be updated. Community contributions are also encouraged. If you notice an implementation that deviates from the specification, please raise an issue.
 
@@ -241,8 +241,8 @@ public type WriteOptions record {|
 # writeSheet.
 public type SheetWriteOptions record {|
     boolean writeHeaders = true;
-    int startRowIndex = 0;                          # 0-based row to start writing at
-    SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;  # don't silently overwrite an existing sheet
+    int startRowIndex = 0;                          # fresh-write block start; ignored by APPEND
+    SheetWriteMode sheetWriteMode = FAIL_IF_EXISTS;  # REPLACE is destructive (drops the sheet)
 |};
 
 # Sheet.setRow — headerRowIndex locates the header a record/map row aligns against.
@@ -604,7 +604,7 @@ public type Sheet isolated object {
 Notes:
 - `Sheet.getCell` binds the cell to the target type `t` (default `CellValue`). The default yields the cell's natural value (a date/time cell becomes an ISO `string`); pinning a `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell is `()` for a target that admits it (the default `CellValue` does), or an error for a non-nilable scalar target.
 - `Sheet.getColumn` accepts a column reference as either a header name (`string`) or a 0-based index (`int`); `caseInsensitiveHeaders` applies to the header lookup.
-- `Sheet.deleteRow(index)` removes the row and shifts subsequent rows up by one to preserve dense indexing.
+- `Sheet.deleteRow(index)` removes the row and shifts subsequent rows up by one to preserve dense indexing. If the deletion would shift a table on the sheet (moving its cells but not its definition), it is refused with a `TableOverlapError` — use `Table.deleteRow` to delete a row from inside a table.
 
 ---
 
@@ -642,12 +642,15 @@ public type Table isolated object {
     # Modification
     public isolated function rename(string newName) returns Error?;
     public isolated function resize(CellRange|string newRange) returns Error?;
+    public isolated function deleteRow(int index) returns Error?;         # shrinks the table to fit
 };
 ```
 
 Tables are obtained from `Workbook.getTable(name)`, `Workbook.getAllTables()`, `Sheet.getTable(name)`, `Sheet.getTables()`, `Sheet.createTable(...)`, or `Sheet.createTableFromData(...)`. Table names are unique across the entire workbook.
 
 `Table.putRows` resizes the underlying `XSSFTable` to fit the incoming data — growing or shrinking the data range under the default `REPLACE`, or adding rows below the existing data (or at `insertAt`, a 0-based data-row index) under `APPEND` (see [3.3](#33-write-options)). The totals row and any content below the table are carried along by the resize; a resize that would shift another table fails with a `TableOverlapError`. Conversely, inserting *sheet* rows (`Sheet.putRows` / `setRow` with `APPEND`) into a table's region is refused with the same error — modify a table through the Table API rather than by shifting its rows from the sheet.
+
+`Table.deleteRow(index)` deletes a single data row (0-based within the data range), shrinking the table to fit: the totals row and any content below move up to close the gap. A table must keep at least one data row, so the last data row cannot be deleted; a delete that would shift another table fails with a `TableOverlapError`.
 
 ---
 
@@ -658,9 +661,11 @@ public type Error distinct error<ErrorDetails>;
 public type ParseError distinct Error;
 public type FileNotFoundError distinct Error;
 public type SheetNotFoundError distinct Error;
+public type SheetExistsError distinct Error;
 public type TypeConversionError distinct Error;
 public type ConstraintValidationError distinct Error;
 public type TableNotFoundError distinct Error;
+public type TableExistsError distinct Error;
 public type TableOverlapError distinct Error;
 public type InvalidTableRangeError distinct Error;
 
@@ -670,12 +675,13 @@ public type ErrorDetails record {|
     string cellAddress?;     # A1 notation, e.g., "B5"
     int rowNumber?;          # 1-based, matching Excel UI
     int columnNumber?;       # 1-based, matching Excel UI
+    string fieldName?;       # record field involved (e.g., the field that failed constraints)
 |};
 ```
 
 Semantics:
-- **Structural errors** (`ParseError`, `FileNotFoundError`, `SheetNotFoundError`, `TableNotFoundError`, `TableOverlapError`, `InvalidTableRangeError`) fail immediately, regardless of `failSafe`.
-- **Row-level errors** (`TypeConversionError`, `ConstraintValidationError`) fail immediately by default; with `failSafe` set, the offending row is logged and skipped.
+- **Structural errors** (`ParseError`, `FileNotFoundError`, `SheetNotFoundError`, `SheetExistsError`, `TableNotFoundError`, `TableExistsError`, `TableOverlapError`, `InvalidTableRangeError`) fail immediately, regardless of `failSafe`.
+- **Row-level errors** (`TypeConversionError`, `ConstraintValidationError`) fail immediately by default; with `failSafe` set, the offending row is logged and skipped. `ConstraintValidationError` chains the underlying `constraint:Error` as its cause and records the offending field in `ErrorDetails.fieldName` when determinable.
 
 **Index conventions:** option fields (`headerRowIndex`, `dataStartRowIndex`, `startRowIndex`) and `CellRange` are **0-based**; `ErrorDetails.rowNumber`/`columnNumber` and `Location` are **1-based**, matching the Excel UI. Code that feeds error locations back into option values must convert between the two.
 

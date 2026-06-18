@@ -135,6 +135,9 @@ function testConstraintViolationReturnsError() returns error? {
         // The error must pinpoint the offending row, not just signal a generic failure.
         test:assertTrue(result.detail().rowNumber is int,
                 "ConstraintValidationError should carry the violating row number");
+        // The underlying constraint:Error is chained as the cause for full diagnostics.
+        test:assertTrue(result.cause() is error,
+                "ConstraintValidationError should chain the underlying constraint error as its cause");
     }
 }
 

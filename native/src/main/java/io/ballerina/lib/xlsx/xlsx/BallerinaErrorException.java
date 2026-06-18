@@ -28,7 +28,7 @@ import io.ballerina.runtime.api.values.BError;
  * and structured details (sheetName, cellAddress, rowNumber, columnNumber).
  * </p>
  *
- * @since 0.9.0
+ * @since 1.0.0
  */
 public class BallerinaErrorException extends RuntimeException {
 
@@ -51,5 +51,14 @@ public class BallerinaErrorException extends RuntimeException {
      */
     public BError getBError() {
         return bError;
+    }
+
+    /**
+     * This is a control-flow exception used only to carry a {@link BError} across Java frames; the
+     * Java stack trace is never inspected, so skip the (expensive) stack capture.
+     */
+    @Override
+    public Throwable fillInStackTrace() {
+        return this;
     }
 }

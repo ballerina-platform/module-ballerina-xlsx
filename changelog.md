@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-18
+
 Tracking issue: [ballerina-library#8115](https://github.com/ballerina-platform/ballerina-library/issues/8115)
 
 ### Added
@@ -28,7 +30,7 @@ Tracking issue: [ballerina-library#8115](https://github.com/ballerina-platform/b
 - `Sheet` as a public `object` type (interface) backed by an internal `SheetImpl` class. Compile-time prevention of direct `new Sheet()` — instances are vended only through `Workbook` methods. Same idiom for `Table`.
 - `Sheet` methods: `getName`, `getUsedRange`, `getUsedCellRange`, `getRowCount`, `getColumnCount`, `getRows`, `getRow`, `getColumn`, `getCell`, `putRows`, `setRow`, `setColumn`, `setCell(int, int, CellValue)`, `setCellByAddress(string, CellValue)` (A1 notation), `deleteRow`, `rename`
 - `Sheet` table management: `getTable`, `getTables`, `createTable`, `createTableFromData`, `deleteTable`
-- `Table` (Excel Tables / ListObjects): `getName`, `getDisplayName`, `getSheetName`, `getRange`/`getDataRange` (A1-notation strings), `getCellRange`/`getDataCellRange` (`CellRange` records), `getRowCount`, `getColumnCount`, `getHeaders`, `getRows`, `getRow`, `putRows` (resizes to fit), `hasTotalRow`, `getTotalRow`, `rename`, `resize` (accepts a `CellRange` or an A1 string)
+- `Table` (Excel Tables / ListObjects): `getName`, `getDisplayName`, `getSheetName`, `getRange`/`getDataRange` (A1-notation strings), `getCellRange`/`getDataCellRange` (`CellRange` records), `getRowCount`, `getColumnCount`, `getHeaders`, `getRows`, `getRow`, `putRows` (resizes to fit), `hasTotalRow`, `getTotalRow`, `rename`, `resize` (accepts a `CellRange` or an A1 string), `deleteRow` (removes a data row, shrinking the table to fit). Deleting a *sheet* row that a table sits on is refused (`TableOverlapError`) — `Table.deleteRow` is the table-aware path.
 - `CellValue` type (`string|int|float|decimal|boolean|time:Date|time:Civil|time:TimeOfDay|()`) for cell values — the empty cell `()` is a member, so a blank cell reads as `()`. Used directly (no trailing `?`) by `Sheet.getCell`, `Sheet.getColumn`, `Sheet.setCell`/`setCellByAddress`, `Sheet.setColumn`, and `Table.getTotalRow` (`map<CellValue>`).
 - Handle-touching accessors return a typed `Error` on an invalidated handle (closed workbook / deleted sheet or table) instead of panicking: the metadata getters on `Workbook`/`Sheet`/`Table` carry `|Error`, and `Workbook.getSheet`/`getTable`, `Sheet.getTable`/`deleteTable` surface not-found as `SheetNotFoundError`/`TableNotFoundError` within an `…|Error` return.
 - `@xlsx:Name` annotation for bidirectional header-to-field mapping (read and write). Annotation values are trimmed on lookup so accidental whitespace doesn't silently break matching.
@@ -49,6 +51,6 @@ Tracking issue: [ballerina-library#8115](https://github.com/ballerina-platform/b
 - Per-call cell-style cache so concurrent writes don't serialise on a global lock and no workbook-pinning leak in the process-level map.
 - Phantom-reference leak protection — workbooks that escape without `close()` are reclaimed by a background cleanup thread (O(1) unregister keyed by `Workbook` identity).
 - `CellRange` type for representing rectangular sheet regions (0-based indices)
-- Distinct error types: `Error`, `ParseError`, `FileNotFoundError`, `SheetNotFoundError`, `TypeConversionError`, `ConstraintValidationError`, `TableNotFoundError`, `TableOverlapError`, `InvalidTableRangeError`
-- `ErrorDetails` record carrying `sheetName`, `tableName`, `cellAddress`, `rowNumber` (1-based), and `columnNumber` (1-based) context
+- Distinct error types: `Error`, `ParseError`, `FileNotFoundError`, `SheetNotFoundError`, `SheetExistsError`, `TypeConversionError`, `ConstraintValidationError`, `TableNotFoundError`, `TableExistsError`, `TableOverlapError`, `InvalidTableRangeError`. `ConstraintValidationError` chains the underlying `constraint:Error` as its cause.
+- `ErrorDetails` record carrying `sheetName`, `tableName`, `cellAddress`, `rowNumber` (1-based), `columnNumber` (1-based), and `fieldName` (the record field involved, e.g. the field that failed constraint validation) context
 

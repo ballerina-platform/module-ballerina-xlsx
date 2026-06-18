@@ -982,3 +982,13 @@ function testFromBytesInvalidReturnsParseError() returns error? {
     Workbook|Error result = fromBytes(garbage);
     test:assertTrue(result is ParseError, "Invalid XLSX bytes must surface as ParseError");
 }
+
+@test:Config {groups: ["workbook"]}
+function testCreateSheetDuplicateErrors() returns error? {
+    // A sheet name must be unique within the workbook (case-insensitive).
+    Workbook wb = new;
+    _ = check wb.createSheet("Data");
+    Sheet|Error result = wb.createSheet("Data");
+    test:assertTrue(result is SheetExistsError, "A duplicate sheet name must raise SheetExistsError");
+    check wb.close();
+}

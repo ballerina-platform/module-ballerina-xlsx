@@ -288,17 +288,6 @@ public class XlsxConfig {
         return rowCount;
     }
 
-    /**
-     * Check if a row count limit is set.
-     */
-    public boolean hasRowCountLimit() {
-        return rowCount != null;
-    }
-
-    public String getFormulaMode() {
-        return formulaMode;
-    }
-
     public boolean isFormulaModeText() {
         return FORMULA_MODE_TEXT.equals(formulaMode);
     }

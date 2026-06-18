@@ -1498,3 +1498,168 @@ function testTableInsertAtOverlapError() returns error? {
     test:assertTrue(result is TableOverlapError, "A mid-insert that shifts a second table must error");
     check wb.close();
 }
+
+// =============================================================================
+// TABLE ROW DELETE (Table.deleteRow)
+// =============================================================================
+
+// Record whose optional field may be absent in a given row.
+type OptionalAgeRow record {|
+    string name;
+    int age?;
+|};
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRow() returns error? {
+    // Deleting a data row shrinks the table; the row below is pulled up to close the gap.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"], ["Cara", "40"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 3,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.deleteRow(1);  // remove Bob
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 2, "Table shrank by one data row");
+    test:assertEquals(rows[0][0], "Alice", "Row before the delete preserved");
+    test:assertEquals(rows[1][0], "Cara", "Row after the delete pulled up");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowOutOfRange() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = t.deleteRow(5);
+    test:assertTrue(result is InvalidTableRangeError, "Out-of-range data-row index must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteLastRowRefused() returns error? {
+    // A table must keep at least one data row, so the last one cannot be deleted.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = t.deleteRow(0);
+    test:assertTrue(result is InvalidTableRangeError, "Deleting the only data row must error");
+    test:assertEquals(check t.getRowCount(), 1, "The data row is left intact");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowCarriesTotalsRow() returns error? {
+    // The totals row and its value ride along with the upward shift when a data row is deleted.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    check sheet.putRows([["Region", "Amount"], ["North", "100"], ["South", "250"], ["East", "75"]]);
+    Table t = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 3,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check setTotalRowNative(t, 1, 425.0);
+
+    check t.deleteRow(0);  // remove North
+    test:assertEquals(check t.getRowCount(), 2, "Two data rows remain");
+    test:assertTrue(check t.hasTotalRow(), "Totals row survives the delete");
+    map<CellValue> totals = check t.getTotalRow();
+    test:assertEquals(totals["Amount"], 425, "Totals value carried up by the shift");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtShiftsTotalsRow() returns error? {
+    // A mid-table insert shifts the totals row down and preserves its value.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    check sheet.putRows([["Region", "Amount"], ["North", "100"], ["South", "250"]]);
+    Table t = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check setTotalRowNative(t, 1, 350.0);
+
+    check t.putRows([["East", "75"]], tableWriteMode = APPEND, insertAt = 1);
+    test:assertEquals(check t.getRowCount(), 3, "Data grew to three rows");
+    test:assertTrue(check t.hasTotalRow(), "Totals row survives the insert");
+    map<CellValue> totals = check t.getTotalRow();
+    test:assertEquals(totals["Amount"], 350, "Totals value preserved after the shift");
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows[1][0], "East", "Inserted at data-row 1");
+    check wb.close();
+}
+
+// =============================================================================
+// createTableFromData column span + empty rejection
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataKeepsAllDeclaredColumns() returns error? {
+    // The table spans every declared column even when the first row omits an optional field
+    // (the column count is read from the written header, not the first row's present keys).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    OptionalAgeRow[] data = [{name: "Alice"}, {name: "Bob", age: 30}];
+    Table t = check sheet.createTableFromData("T", data);
+    test:assertEquals(check t.getColumnCount(), 2, "Table spans both declared columns");
+    string[] headers = check t.getHeaders();
+    test:assertTrue(headers.indexOf("age") is int,
+            "The optional column is part of the table even though the first row omits it");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataEmptyRejected() returns error? {
+    // A table needs at least a header row, so empty data cannot form one.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    string[][] empty = [];
+    Table|Error result = sheet.createTableFromData("T", empty);
+    test:assertTrue(result is InvalidTableRangeError, "Empty data cannot form a table");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableDuplicateNameErrors() returns error? {
+    // A table name must be unique within the workbook.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    _ = check sheet.createTable("Dup", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Table|Error result = sheet.createTable("Dup", {
+        firstRowIndex: 3,
+        lastRowIndex: 4,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    test:assertTrue(result is TableExistsError, "A duplicate table name must raise TableExistsError");
+    check wb.close();
+}

@@ -2,4 +2,4 @@
 distribution = "2201.12.0"
 org = "xlsx_examples"
 name = "standardize_and_enrich"
-version = "0.9.0"
+version = "1.0.0"

@@ -25,6 +25,10 @@ import ballerina/jballerina.java;
 # module-level `xlsx:fromFile` and `xlsx:fromBytes` factory functions
 # to open an existing XLSX from a path or byte array.
 #
+# A single workbook handle — and the `Sheet` and `Table` handles obtained from it — wraps shared
+# mutable state and is not safe for concurrent mutation; confine each workbook to one strand, or
+# guard access with a lock. Independent workbooks (separate handles) are fully isolated.
+#
 # ```ballerina
 # // Empty in-memory workbook
 # xlsx:Workbook empty = check new;

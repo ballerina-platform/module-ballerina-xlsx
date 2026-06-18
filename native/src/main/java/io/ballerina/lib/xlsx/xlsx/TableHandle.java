@@ -503,6 +503,57 @@ public final class TableHandle {
     }
 
     /**
+     * Delete a single data row from the table by 0-based data-row index. The table shrinks to fit:
+     * the totals row and any content below it are pulled up to close the gap. Excel requires at
+     * least one data row, so the last remaining data row cannot be deleted. A shrink that would
+     * shift another table is refused with a {@code TableOverlapError}.
+     *
+     * @param tableObj Ballerina Table object
+     * @param index    0-based row index within the data range
+     * @return null on success, error on failure
+     */
+    public static Object deleteRow(BObject tableObj, long index) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+            int firstRow = area.getFirstCell().getRow();
+            int lastRow = area.getLastCell().getRow();
+            int firstCol = area.getFirstCell().getCol();
+            int lastCol = area.getLastCell().getCol();
+            int dataFirstRow = firstRow + 1;
+            int totalsRowCount = table.getTotalsRowCount();
+            boolean hasTotals = totalsRowCount > 0;
+            int currentDataRows = lastRow - firstRow - totalsRowCount;
+            int idx = (int) index;
+
+            if (idx < 0 || idx >= currentDataRows) {
+                return DiagnosticLog.invalidTableRangeError("Row index " + idx
+                        + " is out of range for a table with " + currentDataRows + " data rows");
+            }
+            if (currentDataRows <= 1) {
+                return DiagnosticLog.invalidTableRangeError("Cannot delete the only data row of table '"
+                        + table.getName() + "': a table requires at least one data row");
+            }
+
+            // Deleting pulls the totals row + everything below up; another table caught in that
+            // shift would have its cells moved but its definition left stale, so refuse instead.
+            String colliding = RowShifter.firstTableShiftedBy(sheet, dataFirstRow + idx, table.getName());
+            if (colliding != null) {
+                return DiagnosticLog.tableResizeOverlapError(table.getName(), colliding, sheet.getSheetName());
+            }
+
+            RowShifter.removeRows(sheet, dataFirstRow + idx, 1);
+            resizeTableArea(table, firstRow, firstCol, lastCol, currentDataRows - 1, hasTotals);
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error deleting table row: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Shared write dispatch. Resizes the table to fit the incoming data — growing or shrinking
      * the data range so no stale rows survive (REPLACE), or inserting the rows below the existing
      * data (APPEND). The totals row and any content below the table ride along with the shift; a
@@ -568,13 +619,7 @@ public final class TableHandle {
         }
 
         // Resize the table area to the new data-row count (plus the totals row, if any).
-        int newLastRow = dataFirstRow + newDataRows - 1 + (hasTotals ? 1 : 0);
-        CellReference topLeft = new CellReference(firstRow, firstCol);
-        CellReference bottomRight = new CellReference(newLastRow, lastCol);
-        AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
-        CTTable ctTable = table.getCTTable();
-        ctTable.setRef(newArea.formatAsString());
-        table.updateHeaders();
+        resizeTableArea(table, firstRow, firstCol, lastCol, newDataRows, hasTotals);
 
         // Resolve column index by table header name. Record/map rows route values to the column
         // matching the field/key name (with @xlsx:Name support for records); array rows fall back
@@ -602,6 +647,39 @@ public final class TableHandle {
         }
 
         return null;
+    }
+
+    /**
+     * Re-set the table's area to span {@code newDataRows} data rows (plus the totals row, if any),
+     * keeping the header row and column span fixed, then resync the header model. Shared by the
+     * write/resize paths so the table {@code ref} always follows a row-count change.
+     */
+    private static void resizeTableArea(XSSFTable table, int firstRow, int firstCol, int lastCol,
+                                        int newDataRows, boolean hasTotals) {
+        int dataFirstRow = firstRow + 1;
+        int newLastRow = dataFirstRow + newDataRows - 1 + (hasTotals ? 1 : 0);
+        CellReference topLeft = new CellReference(firstRow, firstCol);
+        CellReference bottomRight = new CellReference(newLastRow, lastCol);
+        AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+        table.getCTTable().setRef(newArea.formatAsString());
+        table.updateHeaders();
+    }
+
+    /**
+     * Whether two rectangular areas intersect (used by the resize overlap guard).
+     */
+    private static boolean rangesOverlap(AreaReference a, AreaReference b) {
+        int aFirstRow = a.getFirstCell().getRow();
+        int aLastRow = a.getLastCell().getRow();
+        int aFirstCol = a.getFirstCell().getCol();
+        int aLastCol = a.getLastCell().getCol();
+        int bFirstRow = b.getFirstCell().getRow();
+        int bLastRow = b.getLastCell().getRow();
+        int bFirstCol = b.getFirstCell().getCol();
+        int bLastCol = b.getLastCell().getCol();
+        boolean rowsOverlap = aFirstRow <= bLastRow && aLastRow >= bFirstRow;
+        boolean colsOverlap = aFirstCol <= bLastCol && aLastCol >= bFirstCol;
+        return rowsOverlap && colsOverlap;
     }
 
     /**
@@ -801,10 +879,21 @@ public final class TableHandle {
                 lastCol = ((Long) rangeRecord.get(StringUtils.fromString("lastColumnIndex"))).intValue();
             }
 
-            // Validate range
+            // Validate range shape: at least one header row + one data row, and a valid column span.
             if (firstRow >= lastRow) {
                 return DiagnosticLog.invalidTableRangeError(
                         "Invalid range: must have at least one header row and one data row");
+            }
+            if (firstCol > lastCol) {
+                return DiagnosticLog.invalidTableRangeError(
+                        "Invalid range: first column is after the last column");
+            }
+            // Validate range bounds against the spreadsheet limits.
+            SpreadsheetVersion version = SpreadsheetVersion.EXCEL2007;
+            if (firstRow < 0 || firstCol < 0
+                    || lastRow > version.getLastRowIndex() || lastCol > version.getLastColumnIndex()) {
+                return DiagnosticLog.invalidTableRangeError("Range is outside the sheet bounds ("
+                        + version.getMaxRows() + " rows x " + version.getMaxColumns() + " columns)");
             }
 
             // Get current column info
@@ -815,6 +904,19 @@ public final class TableHandle {
             CellReference topLeft = new CellReference(firstRow, firstCol);
             CellReference bottomRight = new CellReference(lastRow, lastCol);
             AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+
+            // Refuse a resize that would overlap another table on the sheet (mirrors createTable).
+            for (XSSFTable other : sheet.getTables()) {
+                if (table.getName().equals(other.getName())) {
+                    continue;
+                }
+                AreaReference otherArea = new AreaReference(other.getArea().formatAsString(),
+                        SpreadsheetVersion.EXCEL2007);
+                if (rangesOverlap(newArea, otherArea)) {
+                    return DiagnosticLog.tableOverlapError(table.getName(), other.getName(),
+                            sheet.getSheetName());
+                }
+            }
 
             CTTable ctTable = table.getCTTable();
             ctTable.setRef(newArea.formatAsString());

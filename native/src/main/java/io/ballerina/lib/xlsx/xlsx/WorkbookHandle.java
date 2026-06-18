@@ -364,12 +364,13 @@ public final class WorkbookHandle {
     public static Object getSheetByIndex(BObject workbookObj, long index) {
         try {
             Workbook workbook = getWorkbook(workbookObj);
-            int idx = (int) index;
-
-            if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
-                return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            int sheetCount = workbook.getNumberOfSheets();
+            // Bounds-check the 64-bit index before narrowing, so a huge value cannot wrap to a
+            // valid int and silently address the wrong sheet.
+            if (index < 0 || index >= sheetCount) {
+                return DiagnosticLog.sheetNotFoundError(index, sheetCount - 1);
             }
-            return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
+            return createBallerinaSheet(workbookObj, workbook.getSheetAt((int) index));
         } catch (BallerinaErrorException e) {
             return e.getBError();
         }
@@ -391,7 +392,7 @@ public final class WorkbookHandle {
 
             // Check if sheet already exists (case-insensitive, matching Excel semantics)
             if (findSheetIndexCaseInsensitive(workbook, sheetName) != -1) {
-                return DiagnosticLog.error("Sheet '" + sheetName + "' already exists");
+                return DiagnosticLog.sheetExistsError(sheetName);
             }
 
             return createBallerinaSheet(workbookObj, workbook.createSheet(sheetName));
@@ -560,16 +561,17 @@ public final class WorkbookHandle {
     public static Object deleteSheetByIndex(BObject workbookObj, long index) {
         try {
             Workbook workbook = getWorkbook(workbookObj);
-            int idx = (int) index;
-
-            if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
-                return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            int sheetCount = workbook.getNumberOfSheets();
+            // Bounds-check the 64-bit index before narrowing (see getSheetByIndex).
+            if (index < 0 || index >= sheetCount) {
+                return DiagnosticLog.sheetNotFoundError(index, sheetCount - 1);
             }
-            if (workbook.getNumberOfSheets() == 1) {
+            if (sheetCount == 1) {
                 return DiagnosticLog.error(
                         "Cannot delete the last sheet — Excel requires at least one sheet");
             }
 
+            int idx = (int) index;
             Sheet doomed = workbook.getSheetAt(idx);
             invalidateHandlesForSheet(workbookObj, doomed);
             workbook.removeSheetAt(idx);

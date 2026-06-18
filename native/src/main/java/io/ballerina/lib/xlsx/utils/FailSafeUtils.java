@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.xlsx.utils;
 
+import io.ballerina.lib.xlsx.xlsx.TypeConversionException;
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.concurrent.StrandMetadata;
 import io.ballerina.runtime.api.creators.ValueCreator;
@@ -34,15 +35,15 @@ import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.FAILED_FILE_IO_OPERATION;
-import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.HEADER_CANNOT_BE_EMPTY;
-import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.INVALID_XLSX_DATA_FORMAT;
-import static io.ballerina.lib.xlsx.utils.DiagnosticErrorCode.NO_FIELD_FOR_HEADER;
-
 /**
  * Utility class for fail-safe error handling and logging in XLSX operations.
  */
 public final class FailSafeUtils {
+
+    // Ballerina error type names that fail-safe may recover from (skip the row + log). Everything
+    // else — unexpected POI/runtime faults, IO errors, structural Ballerina errors — fails fast.
+    private static final String TYPE_CONVERSION_ERROR_TYPE = "TypeConversionError";
+    private static final String CONSTRAINT_VALIDATION_ERROR_TYPE = "ConstraintValidationError";
 
     // Fail-safe options field names
     private static final BString FILE_OUTPUT_MODE = StringUtils.fromString("fileOutputMode");
@@ -72,37 +73,29 @@ public final class FailSafeUtils {
     }
 
     /**
-     * Check if the exception is allowed for fail-safe handling.
-     * Critical structural errors are NOT allowed and will cause parsing to fail immediately.
+     * Whether an exception is recoverable under fail-safe (skip the offending row + log) rather
+     * than failing the whole parse.
      *
-     * @param exception The exception to check
-     * @return true if the exception can be handled by fail-safe, false if it should fail immediately
+     * <p>This is a strict allowlist: only a per-row data fault — a cell that cannot be converted
+     * to its target type ({@link TypeConversionException} or a {@code TypeConversionError}), or a
+     * row that fails constraint validation ({@code ConstraintValidationError}) — is recoverable.
+     * Anything else (unexpected POI/runtime exceptions, IO errors, and structural Ballerina errors
+     * such as a missing sheet or an empty header row) fails fast, so internal faults are never
+     * silently masked as skipped rows.</p>
+     *
+     * @param exception The exception to classify
+     * @return true if the row may be skipped under fail-safe, false if it must fail immediately
      */
     public static boolean isAllowedFailSafe(Exception exception) {
-        if (!(exception instanceof BError bError)) {
-            return true;  // Non-Ballerina errors are allowed for fail-safe
-        }
-        String message = bError.getMessage();
-        if (message == null) {
+        if (exception instanceof TypeConversionException) {
             return true;
         }
-        // Filter out critical structural errors that should always fail fast
-        return !matchesErrorCode(message, INVALID_XLSX_DATA_FORMAT)
-                && !matchesErrorCode(message, NO_FIELD_FOR_HEADER)
-                && !matchesErrorCode(message, HEADER_CANNOT_BE_EMPTY);
-    }
-
-    /**
-     * Check if an error message matches a specific error code.
-     *
-     * @param message   The error message
-     * @param errorCode The error code to match
-     * @return true if the message contains the error code
-     */
-    private static boolean matchesErrorCode(String message, DiagnosticErrorCode errorCode) {
-        // Check if message contains the error code
-        return message.contains(errorCode.getErrorCode()) ||
-                message.contains(errorCode.getMessageKey().replace('.', ' '));
+        if (exception instanceof BError bError) {
+            String typeName = bError.getType().getName();
+            return TYPE_CONVERSION_ERROR_TYPE.equals(typeName)
+                    || CONSTRAINT_VALIDATION_ERROR_TYPE.equals(typeName);
+        }
+        return false;
     }
 
     /**
@@ -255,8 +248,7 @@ public final class FailSafeUtils {
                 Files.createFile(path);
             }
         } catch (IOException ioException) {
-            throw DiagnosticLog.error(FAILED_FILE_IO_OPERATION,
-                    String.format(FILE_IO_ERROR, filePath, ioException.getMessage()));
+            throw DiagnosticLog.error(String.format(FILE_IO_ERROR, filePath, ioException.getMessage()));
         }
     }
 
@@ -270,8 +262,7 @@ public final class FailSafeUtils {
         try {
             Files.write(path, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException exception) {
-            throw DiagnosticLog.error(FAILED_FILE_IO_OPERATION,
-                    String.format(FILE_OVERWRITE_ERROR, filePath, exception.getMessage()));
+            throw DiagnosticLog.error(String.format(FILE_OVERWRITE_ERROR, filePath, exception.getMessage()));
         }
     }
 
@@ -287,8 +278,7 @@ public final class FailSafeUtils {
             Files.writeString(path, content.trim() + System.lineSeparator(),
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
         } catch (IOException exception) {
-            throw DiagnosticLog.error(FAILED_FILE_IO_OPERATION,
-                    String.format(FILE_WRITE_ERROR, filePath, exception.getMessage()));
+            throw DiagnosticLog.error(String.format(FILE_WRITE_ERROR, filePath, exception.getMessage()));
         }
     }
 

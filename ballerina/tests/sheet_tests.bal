@@ -566,6 +566,8 @@ function testPutRowsAppendInsertAboveHeaderRefused() returns error? {
     map<CellValue>[] more = [{"Name": "Bob", "Age": 25}];
     Error? result = sheet.putRows(more, startRowIndex = 0, sheetWriteMode = APPEND);
     test:assertTrue(result is Error, "Inserting a record at the header row must be refused");
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 2, "The sheet is left untouched by the refused insert");
     check wb.close();
 }
 
@@ -712,6 +714,29 @@ function testSetRowInsertIntoTableRefused() returns error? {
     Error? result = sheet.setRow(1, ["X", "Y"], sheetWriteMode = APPEND);
     test:assertTrue(result is TableOverlapError,
             "Inserting a row into a table's region via setRow must be refused");
+    Table t = check sheet.getTable("T");
+    test:assertEquals(check t.getRowCount(), 2, "The table is left untouched by the refused insert");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetDeleteRowIntoTableRefused() returns error? {
+    // Deleting a sheet row a table sits on would shift its cells without its definition
+    // following, so it is refused — Table.deleteRow is the supported path.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = sheet.deleteRow(1);
+    test:assertTrue(result is TableOverlapError, "Deleting a row a table sits on must be refused");
+    Table t = check sheet.getTable("T");
+    test:assertEquals(check t.getRowCount(), 2, "The table is left intact");
     check wb.close();
 }
 
