@@ -1113,8 +1113,8 @@ function testParseNaturalTypedCellsIntoRecord() returns error? {
     NaturalTypedRow[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
 
     test:assertEquals(data.length(), 1, "Should have 1 data row");
-    test:assertTrue(data[0].intCol is int, "intCol should bind to int");
-    test:assertEquals(data[0].intCol, 42, "intCol should be 42");
+    // intCol is statically `int`, so binding succeeded iff the value asserts equal below.
+    test:assertEquals(data[0].intCol, 42, "intCol should bind to int 42");
     test:assertEquals(data[0].decimalCol, 3.14d, "decimalCol should be 3.14");
     test:assertEquals(data[0].boolCol, true, "boolCol should be true");
 }

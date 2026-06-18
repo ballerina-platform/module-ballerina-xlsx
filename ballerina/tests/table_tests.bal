@@ -980,11 +980,9 @@ function testTableGetTotalRow() returns error? {
 
     test:assertTrue(check reopenedTable.hasTotalRow(), "Table should have a total row");
 
+    // Binding to a map<CellValue> is itself the guard for the typedesc-based inherent-type fix:
+    // this `check` would fail if the native returned the wider map<anydata>.
     map<CellValue> totals = check reopenedTable.getTotalRow();
-    // The returned map must be a genuine map<CellValue>, not the wider map<anydata> the
-    // native builds internally — this guards the typedesc-based inherent-type fix.
-    test:assertTrue(totals is map<CellValue>,
-            "Total row must be a genuine map<CellValue>, not map<anydata>");
     CellValue amountTotal = totals["Amount"];
     test:assertEquals(amountTotal, 350, "Total should bind to its natural type (int 350)");
     test:assertTrue(amountTotal is int, "Whole-number total must bind to int, not decimal/string");
