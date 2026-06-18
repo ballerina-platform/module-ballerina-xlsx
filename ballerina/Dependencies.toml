@@ -157,7 +157,7 @@ modules = [
 [[package]]
 org = "ballerina"
 name = "xlsx"
-version = "0.9.1"
+version = "1.0.0"
 dependencies = [
 	{org = "ballerina", name = "constraint"},
 	{org = "ballerina", name = "file"},
