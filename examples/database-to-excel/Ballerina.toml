@@ -3,10 +3,3 @@ distribution = "2201.12.0"
 org = "xlsx_examples"
 name = "database_to_excel"
 version = "0.9.0"
-
-# H2 is bundled as a platform dependency so the example runs against an
-# in-memory database with no external server to install or configure.
-[[platform.java21.dependency]]
-groupId = "com.h2database"
-artifactId = "h2"
-version = "2.2.224"

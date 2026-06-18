@@ -443,7 +443,7 @@ function testWorkbookOpenModifySave() returns error? {
     check wb.saveAs(tempFile);
     check wb.close();
 
-    // Verify modifications: the original row stays at row 0 and the new row landed at row 1.
+    // Verify modifications: the original row stays at 0 and the new row landed at 1.
     string[][] result = check parseSheet(tempFile);
     test:assertEquals(result.length(), 2, "Should have the original row plus the appended row");
     test:assertEquals(result[0][0], "Original", "Original row must be preserved at row 0");

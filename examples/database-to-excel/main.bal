@@ -33,6 +33,7 @@
 import ballerina/io;
 import ballerina/sql;
 import ballerinax/java.jdbc;
+import ballerinax/h2.driver as _;
 import ballerina/xlsx;
 
 // The shape of a row in the database.
