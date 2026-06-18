@@ -306,7 +306,9 @@ function cleanupTestData() returns error? {
     // when a test passes, so a failed assertion would otherwise strand its temp file on disk.
     if check file:test(TEST_DATA_DIR, file:EXISTS) {
         foreach file:MetaData entry in check file:readDir(TEST_DATA_DIR) {
-            if !entry.dir && entry.absPath.includes("/temp_") {
+            // Match on the file name (OS-agnostic) rather than a POSIX-separator substring.
+            string fileName = check file:basename(entry.absPath);
+            if !entry.dir && fileName.startsWith("temp_") {
                 check file:remove(entry.absPath);
             }
         }

@@ -63,12 +63,21 @@ public final class XlsxWriter {
      * @return null on success, error on failure
      */
     public static Object writeToFile(String filePath, BArray data, BMap<BString, Object> options) {
-        XlsxConfig config = XlsxConfig.fromWriteOptions(options);
-        java.nio.file.Path dest = java.nio.file.Paths.get(filePath);
-        boolean existedBefore = java.nio.file.Files.exists(dest);
+        // Resolve the path up front, in its own guard so a malformed path surfaces as a typed error
+        // (not a raw InvalidPathException). existedBefore must be known BEFORE the open below so the
+        // open-failure classification (an existing-but-corrupt file → ParseError) stays correct.
+        java.nio.file.Path dest;
+        boolean existedBefore;
+        try {
+            dest = java.nio.file.Paths.get(filePath);
+            existedBefore = java.nio.file.Files.exists(dest);
+        } catch (Exception e) {
+            return DiagnosticLog.error("Invalid file path '" + filePath + "': " + e.getMessage());
+        }
 
         // Open the existing workbook so sibling sheets are preserved, or create a new one.
         try (Workbook workbook = WorkbookHandle.openWorkbookForEdit(filePath)) {
+            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
             String sheetName = config.getWriteSheetName();
             WorkbookHandle.validateSheetName(sheetName);
 
@@ -134,9 +143,14 @@ public final class XlsxWriter {
                 return dispatchResult; // error from dispatch
             }
 
-            // Atomic save: serialize → temp file → atomic rename. If any step fails,
-            // the destination file (if it existed) is untouched.
-            WorkbookHandle.writeAtomically(dest, workbook);
+            // Atomic save: serialize → temp file → atomic rename. If any step fails, the destination
+            // file (if it existed) is untouched. A save IOException is reported as a write failure,
+            // distinct from the open-failure classification in the outer catch below.
+            try {
+                WorkbookHandle.writeAtomically(dest, workbook);
+            } catch (IOException e) {
+                return DiagnosticLog.error("Failed to write XLSX file: " + e.getMessage(), e);
+            }
             return null; // Success
 
         } catch (BallerinaErrorException e) {
@@ -394,6 +408,21 @@ public final class XlsxWriter {
             // Header-position write: resolve each map key against existing headers
             int dataStartRow = (dataStartRowOverride != null) ? dataStartRowOverride : startRow + 1;
 
+            // Pre-validate every key resolves before creating/writing any row, so a bad key in a
+            // later row cannot leave earlier rows already mutated (matters for the persistent
+            // object-API caller; mirrors the up-front column resolution in writeRecordData).
+            for (int i = 0; i < data.size(); i++) {
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
+                for (BString key : map.getKeys()) {
+                    if (existingHeaders.get(key.getValue()) == null) {
+                        throw new BallerinaErrorException(DiagnosticLog.error(
+                                "Map key '" + key.getValue()
+                                + "' has no matching column in the existing sheet header row"));
+                    }
+                }
+            }
+
             for (int i = 0; i < data.size(); i++) {
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
@@ -540,6 +569,31 @@ public final class XlsxWriter {
         if (n == 0) {
             return null;
         }
+
+        // A record/map write into a sheet that already has a header at startRow aligns to that
+        // header and writes data BELOW it, in columns resolved by name (not a contiguous block from
+        // startCol). Check exactly those data cells — the existing header is aligned to, not
+        // overwritten, so it must not count as an occupied target.
+        Map<String, Integer> existingHeaders = recordOrMap ? existingHeaderMap(sheet, startRow) : null;
+        if (existingHeaders != null) {
+            int dataStartRow = startRow + 1;
+            for (int i = 0; i < n; i++) {
+                Row row = sheet.getRow(dataStartRow + i);
+                if (row == null) {
+                    continue;
+                }
+                for (int col : resolveWrittenColumns(data.get(i), existingHeaders)) {
+                    if (UsedRangeDetector.hasRealData(row.getCell(col))) {
+                        return DiagnosticLog.error("Cannot write with FAIL_IF_EXISTS: row "
+                                + (dataStartRow + i) + " is not empty in a target column");
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Fresh write (string[][], or a record/map with no existing header): a contiguous block from
+        // startCol, including the header row a record/map write emits.
         int height;
         int width;
         if (recordOrMap) {
@@ -568,6 +622,38 @@ public final class XlsxWriter {
     }
 
     /**
+     * The column indices a record/map row would write into, resolved by header name against
+     * {@code existingHeaders} (records honour {@code @xlsx:Name}). Unknown fields/keys are skipped —
+     * the write itself reports those — leaving only the cells that would actually be touched.
+     */
+    private static List<Integer> resolveWrittenColumns(Object rowData, Map<String, Integer> existingHeaders) {
+        List<Integer> cols = new ArrayList<>();
+        if (!(rowData instanceof BMap)) {
+            return cols;
+        }
+        @SuppressWarnings("unchecked")
+        BMap<BString, Object> map = (BMap<BString, Object>) rowData;
+        Type valueType = TypeUtils.getReferredType(TypeUtils.getType(map));
+        if (valueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+            RecordType recordType = (RecordType) valueType;
+            for (String fieldName : recordType.getFields().keySet()) {
+                Integer col = existingHeaders.get(AnnotationUtils.getHeaderName(recordType, fieldName));
+                if (col != null) {
+                    cols.add(col);
+                }
+            }
+        } else {
+            for (BString key : map.getKeys()) {
+                Integer col = existingHeaders.get(key.getValue());
+                if (col != null) {
+                    cols.add(col);
+                }
+            }
+        }
+        return cols;
+    }
+
+    /**
      * Column span of a single row value — array length for {@code string[]}, entry count for a
      * record or map.
      */
@@ -577,6 +663,38 @@ public final class XlsxWriter {
         }
         if (rowData instanceof BMap<?, ?> map) {
             return map.size();
+        }
+        return 0;
+    }
+
+    /**
+     * The number of columns the writers emit for {@code data} — the authoritative width for sizing a
+     * table built around a fresh write: records → the declared field count of the first row's runtime
+     * type; maps → the union of all keys; {@code string[][]} → the first row's length. Mirrors
+     * {@link #dispatchWrite}. Returns 0 for empty data.
+     */
+    public static int writtenColumnCount(BArray data) {
+        if (data.size() == 0) {
+            return 0;
+        }
+        Object first = data.get(0);
+        if (first instanceof BArray firstArray) {
+            return firstArray.size();
+        }
+        if (first instanceof BMap) {
+            Type firstType = TypeUtils.getReferredType(TypeUtils.getType(first));
+            if (firstType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+                return ((RecordType) firstType).getFields().size();
+            }
+            LinkedHashSet<String> keys = new LinkedHashSet<>();
+            for (int i = 0; i < data.size(); i++) {
+                @SuppressWarnings("unchecked")
+                BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);
+                for (BString key : map.getKeys()) {
+                    keys.add(key.getValue());
+                }
+            }
+            return keys.size();
         }
         return 0;
     }

@@ -273,7 +273,7 @@ public enum TableWriteMode {
 }
 ```
 
-A table is self-describing — its header and data range are authoritative — so `TableWriteOptions` carries only `tableWriteMode`; there are no positional or header fields.
+A table is self-describing — its header and data range are authoritative — so `TableWriteOptions` carries only `tableWriteMode` and an APPEND-only `insertAt` (a 0-based data-row index); there are no positional or header fields.
 
 ### 3.4 FormulaMode
 
@@ -486,7 +486,7 @@ Writes data to an existing Excel Table. By default (`tableWriteMode = REPLACE`) 
 | `data` | (required) | Rows to write — `Row[]`. |
 | `path` | (required) | Path to the XLSX file containing the table. |
 | `tableName` | (required) | Name of the table to write into. Raises `TableNotFoundError` if no matching table exists. |
-| `options` | `{}` | `TableWriteOptions` — `tableWriteMode` (`REPLACE` default / `APPEND`). |
+| `options` | `{}` | `TableWriteOptions` — `tableWriteMode` (`REPLACE` default / `APPEND`) and `insertAt` (APPEND-only 0-based data-row index; `()` = bottom). |
 
 Example:
 

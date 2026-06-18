@@ -1663,3 +1663,113 @@ function testCreateTableDuplicateNameErrors() returns error? {
     test:assertTrue(result is TableExistsError, "A duplicate table name must raise TableExistsError");
     check wb.close();
 }
+
+// =============================================================================
+// CODE-REVIEW HARDENING: validate-before-mutate + no stale cells
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsReplaceClearsStaleCells() returns error? {
+    // REPLACE with a row narrower than the existing data must not leave stale values behind in the
+    // columns the new row does not supply (the reused row is blanked first).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "c"], ["1", "2", "3"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+
+    // REPLACE with a map that supplies only column "a"; b and c must be cleared, not left as 2/3.
+    map<CellValue>[] rows = [{"a": "X"}];
+    check t.putRows(rows);
+    map<CellValue>[] read = check t.getRows();
+    test:assertEquals(read.length(), 1, "Data resized to a single row");
+    test:assertEquals(read[0]["a"], "X", "Supplied column written");
+    test:assertEquals(read[0]["b"], (), "Stale value in unsupplied column 'b' cleared");
+    test:assertEquals(read[0]["c"], (), "Stale value in unsupplied column 'c' cleared");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsUnknownKeyLeavesTableUnchanged() returns error? {
+    // A key with no matching column is rejected BEFORE any shift/resize, so the failed write leaves
+    // the existing table intact rather than half-mutated.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    map<CellValue>[] rows = [{"name": "Cara", "salary": 999}];
+    Error? result = t.putRows(rows);
+    test:assertTrue(result is Error, "An unknown key must error");
+    test:assertEquals(check t.getRowCount(), 2, "Table data rows unchanged by the failed write");
+    string[][] read = check t.getRows();
+    test:assertEquals(read[0][0], "Alice", "Existing data intact (not shrunk/blanked)");
+    test:assertEquals(read[1][0], "Bob", "Existing data intact");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataDuplicateNameWritesNoStrayData() returns error? {
+    // A duplicate-name failure is detected before writing, so no data is stranded on the sheet.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["x"], ["1"]]);
+    _ = check sheet.createTable("Dup", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 0
+    });
+
+    record {| string name; int age; |}[] data = [{name: "Al", age: 1}];
+    Table|Error result = sheet.createTableFromData("Dup", data, startRowIndex = 5);
+    test:assertTrue(result is TableExistsError, "Duplicate table name must raise TableExistsError");
+    CellRange? used = check sheet.getUsedCellRange();
+    if used is CellRange {
+        test:assertTrue(used.lastRowIndex <= 1, "No stray data written at the createTableFromData region");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataColumnCountMapAndArray() returns error? {
+    // The table spans the full written width for map (union of keys) and string[][] (first-row) data.
+    Workbook wb = new;
+    Sheet mapSheet = check wb.createSheet("M");
+    map<CellValue>[] maps = [{"a": "1", "b": "2"}, {"a": "3", "b": "4", "c": "5"}];
+    Table mapTable = check mapSheet.createTableFromData("MT", maps);
+    test:assertEquals(check mapTable.getColumnCount(), 3, "Map table spans the union of all keys");
+
+    Sheet arrSheet = check wb.createSheet("A");
+    string[][] arr = [["h1", "h2", "h3"], ["x", "y", "z"]];
+    Table arrTable = check arrSheet.createTableFromData("AT", arr);
+    test:assertEquals(check arrTable.getColumnCount(), 3, "Array table spans the header (first) row width");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableGetRangeAndDataRange() returns error? {
+    // A1-notation range accessors: getRange spans the whole table; getDataRange excludes the header.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    test:assertEquals(check t.getRange(), "A1:B3", "Full range spans the header and data rows");
+    test:assertEquals(check t.getDataRange(), "A2:B3", "Data range excludes the header row");
+    check wb.close();
+}

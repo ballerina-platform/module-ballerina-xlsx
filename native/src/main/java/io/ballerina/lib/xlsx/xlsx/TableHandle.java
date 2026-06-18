@@ -601,6 +601,22 @@ public final class TableHandle {
 
         int delta = newDataRows - currentDataRows;     // > 0 grow, < 0 shrink, 0 same size
 
+        // Resolve column index by table header name (columns are unchanged by a row-count resize),
+        // and validate that every row's fields/keys resolve BEFORE mutating — a bad field/key must
+        // not leave the table half-shifted/half-written (matters for the persistent object-API
+        // caller; the one-shot writeTable is shielded by its atomic save). Arrays are positional.
+        List<XSSFTableColumn> tableColumns = table.getColumns();
+        Map<String, Integer> headerToCol = new HashMap<>();
+        for (int i = 0; i < tableColumns.size(); i++) {
+            headerToCol.put(tableColumns.get(i).getName(), firstCol + i);
+        }
+        for (int i = 0; i < n; i++) {
+            Object validationError = validateRowResolves(data.get(i), headerToCol);
+            if (validationError != null) {
+                return validationError;
+            }
+        }
+
         // Overlap pre-check, before any mutation: a nonzero resize shifts the totals row and
         // everything below it; another table caught in that shift would have its cells moved but
         // its definition left stale, so refuse rather than corrupt it.
@@ -621,19 +637,13 @@ public final class TableHandle {
         // Resize the table area to the new data-row count (plus the totals row, if any).
         resizeTableArea(table, firstRow, firstCol, lastCol, newDataRows, hasTotals);
 
-        // Resolve column index by table header name. Record/map rows route values to the column
-        // matching the field/key name (with @xlsx:Name support for records); array rows fall back
-        // to positional placement at firstCol + i.
+        // Data is written without headers — the table carries its own header row. Blank each target
+        // row's column span first so a sparse record/map row (which writes only its own fields/keys)
+        // leaves no stale values behind in a reused row.
         StyleCache styleCache = new StyleCache(sheet.getWorkbook());
-        List<XSSFTableColumn> tableColumns = table.getColumns();
-        Map<String, Integer> headerToCol = new HashMap<>();
-        for (int i = 0; i < tableColumns.size(); i++) {
-            headerToCol.put(tableColumns.get(i).getName(), firstCol + i);
-        }
-
-        // Data is written without headers — the table carries its own header row.
         for (int i = 0; i < n; i++) {
             int rowIdx = writeStart + i;
+            blankRowCells(sheet, rowIdx, firstCol, lastCol);
             Row row = sheet.getRow(rowIdx);
             if (row == null) {
                 row = sheet.createRow(rowIdx);
@@ -1131,6 +1141,39 @@ public final class TableHandle {
 
         return RecordParsingUtils.parseRowToRecord(row, rowIdx, binding.columnToField, binding.absentFields,
                 binding.extraColumns, binding.restFieldType, context);
+    }
+
+    /**
+     * Validate that a record's fields (honouring {@code @xlsx:Name}) or a map's keys all resolve to a
+     * table column, returning a typed error on the first miss (else {@code null}). Mirrors
+     * {@link #writeRowData}'s resolution so an unknown field/key is caught before any mutation.
+     * Arrays are positional and always resolvable.
+     */
+    private static Object validateRowResolves(Object rowData, Map<String, Integer> headerToCol) {
+        if (!(rowData instanceof BMap)) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        BMap<BString, Object> map = (BMap<BString, Object>) rowData;
+        Type valueType = TypeUtils.getReferredType(TypeUtils.getType(map));
+        if (valueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+            RecordType recordType = (RecordType) valueType;
+            for (String fieldName : recordType.getFields().keySet()) {
+                String headerName = AnnotationUtils.getHeaderName(recordType, fieldName);
+                if (headerToCol.get(headerName) == null) {
+                    return DiagnosticLog.error("Field '" + fieldName + "' (header '" + headerName
+                            + "') has no matching column in the table");
+                }
+            }
+        } else {
+            for (BString key : map.getKeys()) {
+                if (headerToCol.get(key.getValue()) == null) {
+                    return DiagnosticLog.error("Map key '" + key.getValue()
+                            + "' has no matching column in the table");
+                }
+            }
+        }
+        return null;
     }
 
     /**

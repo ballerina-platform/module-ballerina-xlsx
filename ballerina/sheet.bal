@@ -158,7 +158,8 @@ public type Sheet isolated object {
     # Like `getColumn`, the target type drives the binding: the default `CellValue` yields the
     # cell's natural value (a date/time cell becomes an ISO `string`), while pinning a
     # `time:Civil` / `time:Date` / `time:TimeOfDay` (or a scalar) yields that type. A blank cell
-    # binds to `()` for a nilable target, or returns an error for a non-nilable one.
+    # binds to `()` when the target admits it (the default `CellValue` does), or returns an error
+    # for a non-nilable scalar target.
     #
     # ```ballerina
     # xlsx:CellValue value = check sheet.getCell(0, 2);   // natural value (ISO string for dates)
@@ -168,7 +169,8 @@ public type Sheet isolated object {
     # + rowIndex - 0-based row index (absolute)
     # + columnIndex - 0-based column index (absolute)
     # + t - Target cell type descriptor (`CellValue`); defaults to the cell's natural value
-    # + return - Cell value, `nil` for a blank cell (nilable target), or error
+    # + return - Cell value; `()` for a blank cell when the target admits it (the default `CellValue`
+    #            does), or an error for a non-nilable scalar target
     public isolated function getCell(int rowIndex, int columnIndex, typedesc<CellValue> t = <>)
             returns t|Error;
 

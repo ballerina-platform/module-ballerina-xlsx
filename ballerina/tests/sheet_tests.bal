@@ -780,3 +780,55 @@ function testPutRowsReplaceIntoTableRegionAllowed() returns error? {
     test:assertEquals(rows[0][0], "Carol", "Row overwritten in place");
     check wb.close();
 }
+
+// =============================================================================
+// CODE-REVIEW HARDENING: setRow validate-before-shift + FAIL_IF_EXISTS alignment
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSetRowAppendUnknownFieldLeavesSheetUnchanged() returns error? {
+    // An APPEND insert whose record can't be aligned (unknown field) must be rejected BEFORE the
+    // row shift, so it leaves no spurious shifted row behind.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"]]);
+
+    record {| string name; int salary; |} bad = {name: "Bob", salary: 5};
+    Error? result = sheet.setRow(1, bad, sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "Unknown field must error");
+    string[][] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 2, "No spurious row inserted (sheet left unchanged)");
+    test:assertEquals(rows[1][0], "Alice", "Existing row not shifted");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsWritesBelowExistingHeader() returns error? {
+    // FAIL_IF_EXISTS with a record aligns to the existing header and writes data below it; an empty
+    // data region must be accepted (the header is aligned-to, not an occupied target).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"]]);   // header only, no data rows yet
+
+    map<CellValue>[] rows = [{"name": "Al", "age": 30}];
+    check sheet.putRows(rows, sheetWriteMode = FAIL_IF_EXISTS);
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read.length(), 2, "Header + the appended data row");
+    test:assertEquals(read[1][0], "Al", "Aligned to the header and written below it");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsRefusesOccupiedDataRow() returns error? {
+    // FAIL_IF_EXISTS refuses when a target data cell (resolved by header name) is already occupied.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Existing", "99"]]);
+
+    map<CellValue>[] rows = [{"name": "Al", "age": 30}];
+    Error? result = sheet.putRows(rows, sheetWriteMode = FAIL_IF_EXISTS);
+    test:assertTrue(result is Error, "An occupied target data row must be refused");
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read[1][0], "Existing", "Existing data not overwritten");
+    check wb.close();
+}

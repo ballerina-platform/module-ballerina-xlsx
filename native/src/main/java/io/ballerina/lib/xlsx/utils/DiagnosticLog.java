@@ -292,7 +292,7 @@ public final class DiagnosticLog {
     public static BError tableShiftConflictError(String tableName, String sheetName, int row) {
         String message = "Cannot insert at row " + row + ": it would disrupt table '" + tableName
                 + "' in sheet '" + sheetName + "' — use the Table API to modify the table";
-        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, row, null);
         return createTypedError(TABLE_OVERLAP_ERROR_TYPE, message, details);
     }
 
@@ -307,7 +307,7 @@ public final class DiagnosticLog {
     public static BError tableDeleteConflictError(String tableName, String sheetName, int row) {
         String message = "Cannot delete row " + row + ": it would disrupt table '" + tableName
                 + "' in sheet '" + sheetName + "' — use Table.deleteRow to modify the table";
-        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, null, null);
+        BMap<BString, Object> details = createErrorDetails(sheetName, tableName, null, row, null);
         return createTypedError(TABLE_OVERLAP_ERROR_TYPE, message, details);
     }
 

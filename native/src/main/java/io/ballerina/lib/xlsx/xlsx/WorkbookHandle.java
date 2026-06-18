@@ -24,6 +24,7 @@ import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
+import org.apache.poi.EncryptedDocumentException;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
@@ -207,9 +208,12 @@ public final class WorkbookHandle {
             return workbookObj;
         } catch (FileNotFoundException e) {
             return DiagnosticLog.fileNotFoundError("Failed to open workbook: " + filePath.getValue(), e);
+        } catch (EncryptedDocumentException e) {
+            return DiagnosticLog.parseError(
+                    "Cannot open a password-protected (encrypted) workbook: " + filePath.getValue());
         } catch (IOException e) {
-            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP,
-            // malformed OOXML, encrypted files). The file existed; reading it as XLSX failed.
+            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP or
+            // malformed OOXML). The file existed; reading it as XLSX failed.
             return DiagnosticLog.parseError("Failed to parse workbook: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook: " + e.getMessage(), e);
@@ -233,10 +237,12 @@ public final class WorkbookHandle {
             workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
             registerForCleanup(workbookObj, workbook);
             return workbookObj;
+        } catch (EncryptedDocumentException e) {
+            return DiagnosticLog.parseError(
+                    "Cannot open a password-protected (encrypted) workbook from the given bytes");
         } catch (IOException e) {
-            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP,
-            // malformed OOXML, encrypted content). The bytes were readable; interpreting
-            // them as XLSX failed.
+            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP or
+            // malformed OOXML). The bytes were readable; interpreting them as XLSX failed.
             return DiagnosticLog.parseError("Failed to parse workbook bytes: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook from bytes: " + e.getMessage(), e);
@@ -256,7 +262,8 @@ public final class WorkbookHandle {
      *
      * @param path destination path
      * @return an open Workbook — the existing contents if the file exists, else empty
-     * @throws IOException if an existing file cannot be read as XLSX (corrupt or encrypted)
+     * @throws IOException if an existing file cannot be read as XLSX (e.g. corrupt or malformed);
+     *                     a password-protected file surfaces as an unchecked EncryptedDocumentException
      */
     static Workbook openWorkbookForEdit(String path) throws IOException {
         Path filePath = Paths.get(path);

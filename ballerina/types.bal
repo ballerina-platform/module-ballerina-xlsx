@@ -51,14 +51,15 @@ public enum SheetWriteMode {
 # A table always has a data region, so there is no requirement for `FAIL_IF_EXISTS`. Plain content
 # below the table is carried along with any shift; if a grow collides with another table,
 # the write fails with a `TableOverlapError`.
+#
+# - `REPLACE` (default): replace the table's data with the given rows, resizing the data range to
+#   fit exactly (grows or shrinks). Writing an empty array clears the table to a single blank row.
+# - `APPEND`: add the given rows below the table's existing data (or at `insertAt`), shifting any
+#   rows below down to make room. Existing data rows are preserved.
 public enum TableWriteMode {
-    # Replace the table's data with the given rows, resizing the data range to fit exactly
-    # (grows or shrinks). Writing an empty array clears the table to a single blank data row.
-    # (Default.)
+    // REPLACE / APPEND are documented on the enum above; they are shared with SheetWriteMode, which
+    // owns the per-member docs (Ballerina allows member-level metadata on only one duplicate member).
     REPLACE,
-
-    # Add the given rows below the table's existing data, shifting all rows below it (if any)
-    # down to make room. Existing data rows are preserved.
     APPEND
 }
 
@@ -343,10 +344,14 @@ public enum ErrorLogContentType {
 # File write options for error logs.
 #
 # Controls how the error log file is written when multiple errors occur.
+#
+# - `APPEND` (default): append new errors to the existing log file.
+# - `OVERWRITE`: overwrite the log file on the first error, then append subsequent errors.
 public enum FileWriteOption {
-    # Append new errors to the existing log file (default).
+    // APPEND is shared with SheetWriteMode/TableWriteMode, which own its per-member doc; both
+    // members are documented on the enum above (member-level metadata is allowed on only one
+    // occurrence of a duplicated enum member).
     APPEND,
-    # Overwrite the log file on first error, then append subsequent errors.
     OVERWRITE
 }
 
