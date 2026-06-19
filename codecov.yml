@@ -6,5 +6,13 @@ coverage:
     project:
       default:
         target: 80
+    patch:
+      default:
+        # The Ballerina layer is a thin interop surface: most lines are external
+        # declarations or abstract object-type method signatures, and inferred-typedesc 
+        # lines (`typedesc<T> t = <>`) are never credited as covered. 
+        # These are not executable, so report
+        # patch coverage for visibility, but do not block the build on it.
+        informational: true
 ignore:
   - "examples"
