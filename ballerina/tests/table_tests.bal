@@ -1716,6 +1716,37 @@ function testTablePutRowsUnknownKeyLeavesTableUnchanged() returns error? {
 }
 
 @test:Config {groups: ["table"]}
+function testTablePutRowsWideArrayLeavesTableUnchanged() returns error? {
+    // An array row wider than the table's columns would write past the last column into adjacent
+    // sheet cells; it must be refused BEFORE any shift/resize, leaving the table and sheet intact.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // The table has 2 columns; a 3-value array row overflows it.
+    string[][] wide = [["Cara", "40", "Sales"]];
+    Error? result = t.putRows(wide);
+    test:assertTrue(result is Error, "An over-wide array row must error");
+    test:assertEquals(check t.getRowCount(), 2, "Table data rows unchanged by the failed write");
+    test:assertEquals(check t.getColumnCount(), 2, "Table column count unchanged");
+    CellRange? used = check sheet.getUsedCellRange();
+    if used is CellRange {
+        test:assertTrue(used.lastColumnIndex <= 1, "No data spilled beyond the table's last column");
+        test:assertTrue(used.lastRowIndex <= 2, "No new row added by the failed write");
+    }
+    string[][] read = check t.getRows();
+    test:assertEquals(read[0][0], "Alice", "Existing data intact");
+    test:assertEquals(read[1][0], "Bob", "Existing data intact");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
 function testCreateTableFromDataDuplicateNameWritesNoStrayData() returns error? {
     // A duplicate-name failure is detected before writing, so no data is stranded on the sheet.
     Workbook wb = new;

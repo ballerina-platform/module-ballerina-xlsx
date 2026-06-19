@@ -604,7 +604,8 @@ public final class TableHandle {
         // Resolve column index by table header name (columns are unchanged by a row-count resize),
         // and validate that every row's fields/keys resolve BEFORE mutating — a bad field/key must
         // not leave the table half-shifted/half-written (matters for the persistent object-API
-        // caller; the one-shot writeTable is shielded by its atomic save). Arrays are positional.
+        // caller; the one-shot writeTable is shielded by its atomic save). Arrays are positional and
+        // must fit within the table's column span.
         List<XSSFTableColumn> tableColumns = table.getColumns();
         Map<String, Integer> headerToCol = new HashMap<>();
         for (int i = 0; i < tableColumns.size(); i++) {
@@ -1150,6 +1151,18 @@ public final class TableHandle {
      * Arrays are positional and always resolvable.
      */
     private static Object validateRowResolves(Object rowData, Map<String, Integer> headerToCol) {
+        if (rowData instanceof BArray) {
+            // Arrays are positional: value i lands in the i-th table column. A row with more values
+            // than the table has columns would write past the table's last column into adjacent
+            // sheet cells, so refuse it before any mutation.
+            BArray array = (BArray) rowData;
+            if (array.getLength() > headerToCol.size()) {
+                return DiagnosticLog.error("Array row has " + array.getLength()
+                        + " value(s) but the table has " + headerToCol.size()
+                        + " column(s); a row cannot extend beyond the table's columns");
+            }
+            return null;
+        }
         if (!(rowData instanceof BMap)) {
             return null;
         }
@@ -1182,11 +1195,11 @@ public final class TableHandle {
      * Records: iterate fields in declaration order, resolve each header via {@code @xlsx:Name}
      * (falling back to the field name), look up the column in {@code headerToCol}. Maps:
      * iterate keys and look them up. Arrays: positional placement at {@code startCol + i}
-     * (arrays have no header semantics).
+     * (arrays have no header semantics), rejected if wider than the table's columns.
      *
-     * An unknown header for a record field or map key surfaces a typed
-     * {@link BallerinaErrorException} so the caller sees a clear "no matching column" error
-     * rather than a silent misalignment.
+     * An unknown header for a record field or map key, or an array row wider than the
+     * table, surfaces a typed {@link BallerinaErrorException} so the caller sees a clear
+     * error rather than a silent misalignment or a write outside the table.
      */
     private static void writeRowData(Row row, int startCol, Object rowData,
                                       Map<String, Integer> headerToCol,
@@ -1228,6 +1241,11 @@ public final class TableHandle {
             }
         } else if (rowData instanceof BArray) {
             BArray array = (BArray) rowData;
+            if (array.getLength() > headerToCol.size()) {
+                throw new BallerinaErrorException(DiagnosticLog.error(
+                        "Array row has " + array.getLength() + " value(s) but the table has "
+                                + headerToCol.size() + " column(s)"));
+            }
             for (int i = 0; i < array.getLength(); i++) {
                 Cell cell = row.createCell(startCol + i);
                 Object value = array.get(i);
