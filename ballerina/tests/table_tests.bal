@@ -1986,6 +1986,39 @@ function testTableResizeNoOverlapWithSibling() returns error? {
 }
 
 @test:Config {groups: ["table"]}
+function testTableResizeNegativeFirstColumn() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: -1, lastColumnIndex: 1});
+    test:assertTrue(result is InvalidTableRangeError, "A negative first column must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeLastColumnExceedsBounds() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    // Excel's last column index is 16383; 20000 is past the sheet bound.
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 20000});
+    test:assertTrue(result is InvalidTableRangeError, "A column past the sheet bound must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
 function testTableResizeShrinkColumns() returns error? {
     // Shrinking the column span removes the trailing table columns.
     Workbook wb = new;
@@ -2059,6 +2092,40 @@ function testTableDeleteRowShiftConflict() returns error? {
     Error? result = upper.deleteRow(0);
     test:assertTrue(result is TableOverlapError, "A delete that shifts a second table must error");
     test:assertEquals(check upper.getRowCount(), 2, "Upper table left intact after the refused delete");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowNegativeIndex() returns error? {
+    // The negative side of the deleteRow range check.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Error? result = t.deleteRow(-1);
+    test:assertTrue(result is InvalidTableRangeError, "A negative deleteRow index must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtNegative() returns error? {
+    // The negative side of the APPEND insertAt range check.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Error? result = t.putRows([["X", "9"]], tableWriteMode = APPEND, insertAt = -1);
+    test:assertTrue(result is InvalidTableRangeError, "A negative insertAt must error");
     check wb.close();
 }
 

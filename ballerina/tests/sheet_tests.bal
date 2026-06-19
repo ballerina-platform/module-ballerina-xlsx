@@ -1193,6 +1193,57 @@ function testPutRowsAppendRecordNoHeaderErrors() returns error? {
 }
 
 @test:Config {groups: ["sheet"]}
+function testSetRowAppendStringArrayInserts() returns error? {
+    // APPEND of a string[] row is positional (not header-aligned) and shifts existing rows down.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"], ["Bo", "25"]]);
+    check sheet.setRow(2, ["X", "9"], sheetWriteMode = APPEND);
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read[2][0], "X", "string[] APPEND inserts positionally");
+    test:assertEquals(read[3][0], "Bo", "Existing row shifted down");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSetRowAppendValidRecordInserts() returns error? {
+    // APPEND of a record whose fields all resolve validates cleanly and inserts below the header.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"]]);
+    record {|string name; int age;|} row = {name: "Bo", age: 25};
+    check sheet.setRow(2, row, sheetWriteMode = APPEND);
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read[2][0], "Bo", "Valid record APPEND inserts the row");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsRecordPartialMatchOccupied() returns error? {
+    // A record with a field that matches a header and one that doesn't: only the matched column
+    // is checked, and an occupied matched cell is refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["X", "9"]]);
+    record {|string name; string ghost;|}[] recs = [{name: "Al", ghost: "g"}];
+    Error? result = sheet.putRows(recs, sheetWriteMode = FAIL_IF_EXISTS, startRowIndex = 0);
+    test:assertTrue(result is Error, "An occupied matched column must be refused (unmatched field skipped)");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsMapPartialMatchOccupied() returns error? {
+    // Same as above for a map: matched key checked, unmatched key skipped.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["X", "9"]]);
+    map<CellValue>[] rows = [{"name": "Al", "ghost": "g"}];
+    Error? result = sheet.putRows(rows, sheetWriteMode = FAIL_IF_EXISTS, startRowIndex = 0);
+    test:assertTrue(result is Error, "An occupied matched column must be refused (unmatched key skipped)");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
 function testSetRowAppendValidMapInserts() returns error? {
     // A fully-resolvable map APPEND validates cleanly and inserts below the header.
     Workbook wb = new;

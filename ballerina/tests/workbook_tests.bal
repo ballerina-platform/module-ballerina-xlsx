@@ -1015,6 +1015,17 @@ function testSaveAsToInvalidDirectoryErrors() returns error? {
 }
 
 @test:Config {groups: ["workbook"]}
+function testDeleteSheetNegativeIndex() returns error? {
+    // The negative side of the by-index bounds check.
+    Workbook wb = new;
+    _ = check wb.createSheet("Sheet1");
+    _ = check wb.createSheet("Sheet2");
+    Error? result = wb.deleteSheet(-1);
+    test:assertTrue(result is SheetNotFoundError, "A negative sheet index must surface as SheetNotFoundError");
+    check wb.close();
+}
+
+@test:Config {groups: ["workbook"]}
 function testDeleteLastSheetByIndexRefused() returns error? {
     // The by-index delete path also refuses to remove the only sheet.
     Workbook wb = new;

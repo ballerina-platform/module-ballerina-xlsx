@@ -1477,3 +1477,15 @@ function testWriteStripsControlCharsKeepsTab() returns error? {
     test:assertEquals(parsed[0][0], "a\tbcd", "Tab kept; the two illegal control chars stripped");
     check removeTempFile(tempFile);
 }
+
+@test:Config {groups: ["parseSheet"]}
+function testWriteStripsControlCharsKeepsNewline() returns error? {
+    // Newline is a permitted control char (kept); an illegal C0 control alongside it is stripped.
+    string tempFile = getTempFilePath("control_chars_nl");
+    string[][] data = [["a\nb\u{0001}c"]];
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[0][0], "a\nbc", "Newline kept; the illegal control char stripped");
+    check removeTempFile(tempFile);
+}
