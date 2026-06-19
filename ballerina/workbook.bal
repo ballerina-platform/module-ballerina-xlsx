@@ -16,42 +16,21 @@
 
 import ballerina/jballerina.java;
 
-# Represents an Excel workbook.
+# An Excel workbook: a set of sheets, with methods to read, create, delete, and save them.
 #
-# A workbook contains one or more sheets and provides methods to
-# access sheets, create new sheets, delete sheets, and save to files.
-#
-# Construct an empty in-memory workbook directly with `new`. Use the
-# module-level `xlsx:fromFile` and `xlsx:fromBytes` factory functions
-# to open an existing XLSX from a path or byte array.
-#
-# A single workbook handle — and the `Sheet` and `Table` handles obtained from it — wraps shared
-# mutable state and is not safe for concurrent mutation; confine each workbook to one strand, or
-# guard access with a lock. Independent workbooks (separate handles) are fully isolated.
+# Create an empty workbook with `new`, or open one with `xlsx:fromFile` / `xlsx:fromBytes`.
+# A workbook and the sheets and tables obtained from it are not safe for concurrent mutation.
 #
 # ```ballerina
-# // Empty in-memory workbook
-# xlsx:Workbook empty = check new;
-#
-# // Open an existing file
 # xlsx:Workbook wb = check xlsx:fromFile("report.xlsx");
-# string[] sheets = wb.getSheetNames();
 # xlsx:Sheet sheet = check wb.getSheet("Sales");
-# // ... modify data ...
-# check wb.save();   // Overwrites the original file
+# check wb.save();
 # check wb.close();
-#
-# // Open from a byte array (e.g., HTTP payload)
-# xlsx:Workbook fromBytes = check xlsx:fromBytes(sourceBytes);
 # ```
 public isolated class Workbook {
 
-    # Initialize an empty in-memory workbook.
-    #
-    # No file association; `save()` errors until a path is set via `saveAs(path)`.
-    # To open an existing workbook, use `xlsx:fromFile(path)` or `xlsx:fromBytes(bytes)`.
-    #
-    # Creating an empty in-memory workbook cannot fail, so `init` does not return an error.
+    # Create an empty in-memory workbook. Persist it with `saveAs(path)`, since `save()` has no
+    # source path yet. To open an existing workbook, use `xlsx:fromFile` or `xlsx:fromBytes`.
     public isolated function init() {
         self.initNew();
     }
@@ -76,29 +55,18 @@ public isolated class Workbook {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Check whether a sheet with the given name exists in the workbook.
-    #
-    # ```ballerina
-    # if check wb.hasSheet("Sales") {
-    #     xlsx:Sheet s = check wb.getSheet("Sales");
-    # }
-    # ```
+    # Check whether a sheet with the given name exists.
     #
     # + name - Sheet name
-    # + return - `true` if the sheet exists, `false` otherwise, or an `Error` if the workbook is closed
+    # + return - Whether the sheet exists, or an error if the workbook is closed
     public isolated function hasSheet(string name) returns boolean|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Get a sheet by name or index.
+    # Get a sheet by name or 0-based index.
     #
-    # ```ballerina
-    # xlsx:Sheet byName = check workbook.getSheet("Sales");
-    # xlsx:Sheet byIndex = check workbook.getSheet(0);
-    # ```
-    #
-    # + target - Sheet name (string) or 0-based index (int)
-    # + return - Sheet instance, or an `Error` (e.g. `SheetNotFoundError`) if not found or the workbook is closed
+    # + target - Sheet name, or 0-based index
+    # + return - The sheet, or a `SheetNotFoundError` if it does not exist
     public isolated function getSheet(string|int target) returns Sheet|Error {
         return target is string ? self.getSheetByName(target) : self.getSheetByIndex(target);
     }
@@ -114,27 +82,16 @@ public isolated class Workbook {
 
     # Create a new sheet in the workbook.
     #
-    # ```ballerina
-    # xlsx:Sheet newSheet = check workbook.createSheet("Report");
-    # check newSheet.putRows(data);
-    # ```
-    #
     # + name - Name for the new sheet
-    # + return - New sheet instance or Error if name already exists
+    # + return - The new sheet, or a `SheetExistsError` if the name is taken
     public isolated function createSheet(string name) returns Sheet|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Delete a sheet by name or index.
+    # Delete a sheet by name or 0-based index.
     #
-    # ```ballerina
-    # check workbook.deleteSheet("TempData");
-    # check workbook.deleteSheet(0);            // Delete first sheet
-    # ```
-    #
-    # + target - Sheet name (string) or 0-based index (int)
-    # + return - `SheetNotFoundError` if the sheet doesn't exist, or another `Error`
-    #           (e.g., refusing to delete the last sheet — Excel requires at least one)
+    # + target - Sheet name, or 0-based index
+    # + return - A `SheetNotFoundError` if the sheet is missing, or an error if it is the last sheet
     public isolated function deleteSheet(string|int target) returns Error? {
         if target is string {
             return self.deleteSheetByNameNative(target);
@@ -152,39 +109,18 @@ public isolated class Workbook {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Save the workbook to its source file.
+    # Save the workbook, overwriting the file it was opened from or last saved to with `saveAs`.
     #
-    # Overwrites the file the workbook was opened from (`xlsx:fromFile(path)`)
-    # or the path most recently passed to `saveAs(path)`. Returns an error for
-    # in-memory workbooks (`new`) that haven't yet been saved to a path.
-    #
-    # ```ballerina
-    # xlsx:Workbook wb = check xlsx:fromFile("data.xlsx");
-    # // ... modify ...
-    # check wb.save();  // Overwrites data.xlsx
-    # ```
-    #
-    # + return - Error if no source path or save fails
+    # + return - An error if the workbook has no source path (created with `new`), or if the save fails
     public isolated function save() returns Error? = @java:Method {
         name: "saveToSource",
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Save the workbook to a new location.
+    # Save the workbook to a new path, which then becomes the target of later `save()` calls.
     #
-    # After calling saveAs(), subsequent calls to save() will
-    # write to this new location.
-    #
-    # ```ballerina
-    # xlsx:Workbook wb = check new;
-    # xlsx:Sheet sheet = check wb.createSheet("Data");
-    # check sheet.putRows(data);
-    # check wb.saveAs("output.xlsx");
-    # // Now wb.save() would write to output.xlsx
-    # ```
-    #
-    # + path - Path to save the XLSX file
-    # + return - Error if save fails
+    # + path - Path to write the XLSX file to
+    # + return - An error if the save fails
     public isolated function saveAs(string path) returns Error? {
         check self.saveToPathNative(path);
     }
@@ -194,27 +130,16 @@ public isolated class Workbook {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Serialize the workbook to a byte array.
+    # Serialize the workbook to a byte array, for example to send as an HTTP response.
     #
-    # Useful for returning the workbook as an HTTP response body, embedding it
-    # in a larger payload, or any flow that needs the bytes without writing
-    # to a file.
-    #
-    # ```ballerina
-    # byte[] bytes = check wb.toBytes();
-    # // ... use the bytes ...
-    # ```
-    #
-    # + return - XLSX bytes or Error if serialization fails
+    # + return - The XLSX bytes, or an error if serialization fails
     public isolated function toBytes() returns byte[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Close the workbook and release resources.
+    # Close the workbook and release its resources. Call this when done to free memory.
     #
-    # Always call this when done with the workbook to free memory.
-    #
-    # + return - Error if close fails
+    # + return - An error if the close fails
     public isolated function close() returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
@@ -223,32 +148,17 @@ public isolated class Workbook {
     // TABLE METHODS
     // =============================================================================
 
-    # Get a table by name from anywhere in the workbook.
-    #
-    # Table names are unique across the entire workbook, so no sheet
-    # specification is needed.
-    #
-    # ```ballerina
-    # xlsx:Table empTable = check wb.getTable("EmployeeTable");
-    # Employee[] employees = check empTable.getRows();
-    # ```
+    # Get a table by name from anywhere in the workbook. Table names are unique workbook-wide.
     #
     # + name - Table name
-    # + return - Table, or an `Error` (e.g. `TableNotFoundError`) if not found or the workbook is closed
+    # + return - The table, or a `TableNotFoundError` if it does not exist
     public isolated function getTable(string name) returns Table|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;
 
-    # Get all tables across all sheets in the workbook.
+    # Get all tables across every sheet in the workbook.
     #
-    # ```ballerina
-    # xlsx:Table[] allTables = check wb.getAllTables();
-    # foreach xlsx:Table t in allTables {
-    #     io:println("Table: ", t.getName(), " in sheet: ", t.getSheetName());
-    # }
-    # ```
-    #
-    # + return - Array of all tables (may be empty), or Error on retrieval failure
+    # + return - All tables (may be empty), or an error on failure
     public isolated function getAllTables() returns Table[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.WorkbookHandle"
     } external;

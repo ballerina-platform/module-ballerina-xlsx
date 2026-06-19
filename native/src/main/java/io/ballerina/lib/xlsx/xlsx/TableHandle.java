@@ -19,8 +19,8 @@
 package io.ballerina.lib.xlsx.xlsx;
 
 import io.ballerina.lib.xlsx.utils.AnnotationUtils;
+import io.ballerina.lib.xlsx.utils.CellRangeUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
-import io.ballerina.lib.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
@@ -191,14 +191,7 @@ public final class TableHandle {
             // Exclude totals row if present (use getTotalsRowCount(), not isHasTotalsRow())
             int dataLastRow = lastRow - table.getTotalsRowCount();
 
-            BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                    ModuleUtils.getModule(), "CellRange");
-            cellRange.put(StringUtils.fromString("firstRowIndex"), (long) dataFirstRow);
-            cellRange.put(StringUtils.fromString("lastRowIndex"), (long) dataLastRow);
-            cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) firstCol);
-            cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) lastCol);
-
-            return cellRange;
+            return CellRangeUtils.create(dataFirstRow, dataLastRow, firstCol, lastCol);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         }
@@ -571,30 +564,30 @@ public final class TableHandle {
         int totalsRowCount = table.getTotalsRowCount();
         boolean hasTotals = totalsRowCount > 0;
         int currentDataRows = lastRow - firstRow - totalsRowCount;
-        int n = (int) data.getLength();
+        int inputRowCount = (int) data.getLength();
 
         // Resolve the new data-row count, where rows are written, and where the shift happens.
-        // REPLACE: the data becomes exactly n rows (>= 1, since Excel needs a data row; an empty
-        //          write clears the table to a single blank row); grow/shrink at the bottom.
-        // APPEND: n rows are inserted at data-row `p` (default bottom), shifting the rows from there
-        //          down — existing rows are left untouched.
+        // REPLACE: the data becomes exactly inputRowCount rows (>= 1, since Excel needs a data row;
+        //          an empty write clears the table to a single blank row); grow/shrink at the bottom.
+        // APPEND: inputRowCount rows are inserted at data-row insertIndex (default bottom), shifting
+        //          the rows from there down — existing rows are left untouched.
         int newDataRows;
         int writeStart;
         int shiftAt;
         if (append) {
-            if (n == 0) {
+            if (inputRowCount == 0) {
                 return null;  // nothing to append
             }
-            int p = (insertAtOverride != null) ? insertAtOverride : currentDataRows;
-            if (p < 0 || p > currentDataRows) {
-                return DiagnosticLog.invalidTableRangeError("insertAt " + p
+            int insertIndex = (insertAtOverride != null) ? insertAtOverride : currentDataRows;
+            if (insertIndex < 0 || insertIndex > currentDataRows) {
+                return DiagnosticLog.invalidTableRangeError("insertAt " + insertIndex
                         + " is out of range for a table with " + currentDataRows + " data rows");
             }
-            newDataRows = currentDataRows + n;
-            writeStart = dataFirstRow + p;
-            shiftAt = dataFirstRow + p;
+            newDataRows = currentDataRows + inputRowCount;
+            writeStart = dataFirstRow + insertIndex;
+            shiftAt = dataFirstRow + insertIndex;
         } else {
-            newDataRows = Math.max(n, 1);
+            newDataRows = Math.max(inputRowCount, 1);
             writeStart = dataFirstRow;
             shiftAt = dataFirstRow + currentDataRows;
         }
@@ -611,7 +604,7 @@ public final class TableHandle {
         for (int i = 0; i < tableColumns.size(); i++) {
             headerToCol.put(tableColumns.get(i).getName(), firstCol + i);
         }
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < inputRowCount; i++) {
             Object validationError = validateRowResolves(data.get(i), headerToCol);
             if (validationError != null) {
                 return validationError;
@@ -629,6 +622,8 @@ public final class TableHandle {
         }
 
         // Make room (grow) or pull rows up (shrink), carrying the totals row + content below.
+        // When delta == 0 the row count is unchanged, so no shift is needed — resizeTableArea below
+        // re-sets the same area and the write loop overwrites the existing rows in place.
         if (delta > 0) {
             RowShifter.makeRoom(sheet, shiftAt, delta);
         } else if (delta < 0) {
@@ -642,7 +637,7 @@ public final class TableHandle {
         // row's column span first so a sparse record/map row (which writes only its own fields/keys)
         // leaves no stale values behind in a reused row.
         StyleCache styleCache = new StyleCache(sheet.getWorkbook());
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < inputRowCount; i++) {
             int rowIdx = writeStart + i;
             blankRowCells(sheet, rowIdx, firstCol, lastCol);
             Row row = sheet.getRow(rowIdx);
@@ -653,7 +648,7 @@ public final class TableHandle {
         }
 
         // REPLACE with empty input keeps a single blank data row — clear its cells.
-        if (!append && n == 0) {
+        if (!append && inputRowCount == 0) {
             blankRowCells(sheet, dataFirstRow, firstCol, lastCol);
         }
 
@@ -884,10 +879,10 @@ public final class TableHandle {
             } else {
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> rangeRecord = (BMap<BString, Object>) newRange;
-                firstRow = ((Long) rangeRecord.get(StringUtils.fromString("firstRowIndex"))).intValue();
-                lastRow = ((Long) rangeRecord.get(StringUtils.fromString("lastRowIndex"))).intValue();
-                firstCol = ((Long) rangeRecord.get(StringUtils.fromString("firstColumnIndex"))).intValue();
-                lastCol = ((Long) rangeRecord.get(StringUtils.fromString("lastColumnIndex"))).intValue();
+                firstRow = CellRangeUtils.firstRow(rangeRecord);
+                lastRow = CellRangeUtils.lastRow(rangeRecord);
+                firstCol = CellRangeUtils.firstColumn(rangeRecord);
+                lastCol = CellRangeUtils.lastColumn(rangeRecord);
             }
 
             // Validate range shape: at least one header row + one data row, and a valid column span.
@@ -1258,13 +1253,8 @@ public final class TableHandle {
      * Create a CellRange record from an AreaReference.
      */
     private static BMap<BString, Object> createCellRange(AreaReference area) {
-        BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                ModuleUtils.getModule(), "CellRange");
-        cellRange.put(StringUtils.fromString("firstRowIndex"), (long) area.getFirstCell().getRow());
-        cellRange.put(StringUtils.fromString("lastRowIndex"), (long) area.getLastCell().getRow());
-        cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) area.getFirstCell().getCol());
-        cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) area.getLastCell().getCol());
-        return cellRange;
+        return CellRangeUtils.create(area.getFirstCell().getRow(), area.getLastCell().getRow(),
+                area.getFirstCell().getCol(), area.getLastCell().getCol());
     }
 
     /**

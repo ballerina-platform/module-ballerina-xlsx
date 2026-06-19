@@ -14,52 +14,51 @@
 // specific language governing permissions and limitations
 // under the License.
 
-# Represents a generic XLSX module error.
+# The base type for all `xlsx` module errors.
 public type Error distinct error<ErrorDetails>;
 
-# Represents an error that occurs during XLSX parsing.
+# The workbook content is malformed or could not be read.
 public type ParseError distinct Error;
 
-# Represents an error when the specified file cannot be found or accessed.
+# The XLSX file path does not exist or could not be accessed.
 public type FileNotFoundError distinct Error;
 
-# Represents an error when a requested sheet is not found.
+# No sheet matches the given name or index.
 public type SheetNotFoundError distinct Error;
 
-# Represents an error when creating or renaming a sheet to a name that already exists.
+# A sheet with the target name already exists.
 public type SheetExistsError distinct Error;
 
-# Represents an error during type conversion.
+# A cell value could not be converted to the target type.
 public type TypeConversionError distinct Error;
 
-# Represents an error when constraint validation fails for a record field.
+# A parsed record failed a `@constraint` rule.
 public type ConstraintValidationError distinct Error;
 
-# Represents an error when a requested table is not found.
+# No table matches the given name.
 public type TableNotFoundError distinct Error;
 
-# Represents an error when creating or renaming a table to a name that already exists.
+# A table with the target name already exists.
 public type TableExistsError distinct Error;
 
-# Represents an error when creating a table would overlap with an existing table.
+# A table write would overlap with another table.
 public type TableOverlapError distinct Error;
 
-# Represents an error when a table range specification is invalid.
+# A table range or insert position is invalid.
 public type InvalidTableRangeError distinct Error;
 
-# Details for XLSX errors.
+# Details attached to an XLSX error.
 public type ErrorDetails record {|
-    # Name of the sheet where error occurred (if applicable)
+    # Sheet where the error occurred
     string sheetName?;
-    # Name of the table where error occurred (if applicable)
+    # Table where the error occurred
     string tableName?;
-    # Cell address where error occurred (if applicable)
+    # Cell address where the error occurred
     string cellAddress?;
-    # Row number where error occurred (if applicable)
+    # Row number where the error occurred
     int rowNumber?;
-    # Column number where error occurred (if applicable)
+    # Column number where the error occurred
     int columnNumber?;
-    # Name of the record field involved in the error (e.g., the field that failed constraint
-    # validation), if applicable
+    # Record field involved in the error
     string fieldName?;
 |};

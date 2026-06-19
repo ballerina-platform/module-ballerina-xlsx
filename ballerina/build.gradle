@@ -48,7 +48,7 @@ ballerina {
     packageOrganization = packageOrg
     module = packageName
     langVersion = project.ballerinaLangVersion
-    testCoverageParam = "--code-coverage --coverage-format=xml"
+    testCoverageParam = "--code-coverage --coverage-format=xml --includes=io.ballerina.lib.xlsx.*:ballerina.*"
     isConnector = false
     platform = "java21"
 }

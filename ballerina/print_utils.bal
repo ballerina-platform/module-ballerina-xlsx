@@ -19,7 +19,7 @@ import ballerina/log;
 # Internal function called from native code to print warning logs for fail-safe mode.
 #
 # This function is invoked by the Java FailSafeUtils when console logging is enabled.
-# It uses WARN level because fail-safe mode intentionally skips invalid rows —
+# It uses WARN level because fail-safe mode intentionally skips invalid rows;
 # this is expected behavior, not an error.
 #
 # + message - The warning message to log

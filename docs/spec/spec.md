@@ -57,17 +57,18 @@ If you have any feedback or suggestions about the module, start a discussion via
 The `xlsx` module reads and writes Microsoft Excel files in the XLSX (Office Open XML) format. It provides:
 
 - **Type-safe data binding.** XLSX rows bind to Ballerina records, maps, or string arrays. Excel column headers map to record fields automatically (overridable via `@xlsx:Name`).
+- **Date and time binding.** Date, time, and date-time cells bind to `time:Civil` / `time:Date` / `time:TimeOfDay` (target-type-driven), with an ISO `string` fallback. See §10.8.
 - **Two API tiers.** A functional one-shot API (`parseSheet` / `writeSheet`) for simple file-based ETL, and an object-based Workbook API for multi-sheet operations, byte-array I/O, sheet/table management, and cell-level control.
 - **Excel Tables (ListObjects).** Reachable two ways — tier 1 `parseTable` / `writeTable` for one-shot flows, and the `Table` class via the Workbook API for richer operations (totals row, rename, resize).
 - **Fail-safe error handling.** Optional row-level error recovery with console and file logging.
 - **Constraint validation.** Integrates with `ballerina/constraint` annotations on parsed records.
 - **Atomic file writes.** File-based saves use a temp-file + rename pattern, so a failed write never destroys the original file.
 
-The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported in v0.9.
+The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported.
 
-### v0.9 limitations
+### Limitations
 
-The v0.9 release deliberately defers several features. The following are **not** supported:
+This release deliberately defers several features. The following are **not** supported:
 
 - **Formula authoring on write.** Strings starting with `=` are written verbatim as text, not as formula cells. There is no `Formula` wrapper type.
 - **Formula re-evaluation.** `FormulaMode.CACHED` returns the last cached value as-is. There is no `EVALUATE`, `RECALCULATE`, or `PRESERVE` mode.
@@ -75,12 +76,7 @@ The v0.9 release deliberately defers several features. The following are **not**
 - **Round-trip preservation through `parseSheet`/`writeSheet`.** Tier 1 sheet functions are a data-only pipe *for the sheet being written*: formulas, formatting, charts, comments, and Excel Tables on the target sheet are not preserved by a `parseSheet → writeSheet` cycle. Other sheets in the file **are** preserved — `writeSheet` opens the existing workbook and only replaces (or appends to) the named sheet. (`parseTable → writeTable` likewise preserves the surrounding workbook; the table's data range is rewritten and resized to fit, with the totals row and any content below carried along by the resize.) For richer preservation of the target sheet itself, use the Workbook API and edit cells in place.
 - **XLS (legacy 97-2003) format**, password-protected files, named ranges, cell styling, and range operations.
 
-What's *included* in v0.9 that you might expect to be deferred:
-
-- **Date / time / date-time binding** to `time:Civil` / `time:Date` / `time:TimeOfDay` (target-type-driven; ISO `string` fallback). See §10.8 for code examples.
-- **Excel Tables via tier 1**: `parseTable` and `writeTable` for one-shot table-by-name flows.
-
-One behaviour to be aware of:
+### Notes
 
 - **Large integers lose precision silently on write.** Integer values are written as numeric cells; values with `|n| > 2^53` lose precision silently — the same behaviour as Apache POI, openpyxl, and Excel itself. Declare the field as `string` to preserve exact digits. See §10.9.
 
@@ -287,7 +283,7 @@ public enum FormulaMode {
 - `CACHED` (default): Returns the formula cell's last cached value. The Ballerina target type must match the cached value's type.
 - `TEXT`: Returns the formula expression as a string. The target field must accept `string` — otherwise a `TypeConversionError` is raised.
 
-**Formula authoring on write is not supported in v0.9.** Strings starting with `=` are written as plain text.
+**Formula authoring on write is not supported.** Strings starting with `=` are written as plain text.
 
 ### 3.5 FailSafeOptions
 
@@ -924,7 +920,7 @@ RawTxn[] raw = check xlsx:parseSheet("transactions.xlsx");
 
 ### 10.9 Large integer IDs
 
-Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles, which is how Excel stores numeric cells. v0.9 writes all integers as numeric cells — values beyond `2^53` **lose precision silently**, matching what Apache POI, openpyxl, and Excel itself do.
+Integers with absolute value greater than `2^53` (≈ 9 × 10^15) cannot be represented exactly as IEEE-754 doubles, which is how Excel stores numeric cells. The module writes all integers as numeric cells — values beyond `2^53` **lose precision silently**, matching what Apache POI, openpyxl, and Excel itself do.
 
 To preserve 16+ digit identifiers (account numbers, order IDs, transaction references) exactly, declare the field as `string`:
 

@@ -19,6 +19,7 @@
 package io.ballerina.lib.xlsx.xlsx;
 
 import io.ballerina.lib.xlsx.utils.AnnotationUtils;
+import io.ballerina.lib.xlsx.utils.CellRangeUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
@@ -129,15 +130,8 @@ public final class SheetHandle {
                 return null;
             }
 
-            // Create CellRange record using the module's record type
-            BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                    ModuleUtils.getModule(), "CellRange");
-            cellRange.put(StringUtils.fromString("firstRowIndex"), (long) range.getFirstRow());
-            cellRange.put(StringUtils.fromString("lastRowIndex"), (long) range.getLastRow());
-            cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) range.getFirstColumn());
-            cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) range.getLastColumn());
-
-            return cellRange;
+            return CellRangeUtils.create(range.getFirstRow(), range.getLastRow(),
+                    range.getFirstColumn(), range.getLastColumn());
         } catch (BallerinaErrorException e) {
             return e.getBError();
         }
@@ -1037,10 +1031,10 @@ public final class SheetHandle {
             } else if (range instanceof BMap) {
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> cellRange = (BMap<BString, Object>) range;
-                int firstRow = ((Long) cellRange.get(StringUtils.fromString("firstRowIndex"))).intValue();
-                int lastRow = ((Long) cellRange.get(StringUtils.fromString("lastRowIndex"))).intValue();
-                int firstCol = ((Long) cellRange.get(StringUtils.fromString("firstColumnIndex"))).intValue();
-                int lastCol = ((Long) cellRange.get(StringUtils.fromString("lastColumnIndex"))).intValue();
+                int firstRow = CellRangeUtils.firstRow(cellRange);
+                int lastRow = CellRangeUtils.lastRow(cellRange);
+                int firstCol = CellRangeUtils.firstColumn(cellRange);
+                int lastCol = CellRangeUtils.lastColumn(cellRange);
 
                 CellReference topLeft = new CellReference(firstRow, firstCol);
                 CellReference bottomRight = new CellReference(lastRow, lastCol);

@@ -411,6 +411,8 @@ public final class XlsxWriter {
             // Pre-validate every key resolves before creating/writing any row, so a bad key in a
             // later row cannot leave earlier rows already mutated (matters for the persistent
             // object-API caller; mirrors the up-front column resolution in writeRecordData).
+            // Every element is a BMap here: dispatchWrite routes map-typed (non-record) data to this
+            // method, so the cast below is safe.
             for (int i = 0; i < data.size(); i++) {
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> map = (BMap<BString, Object>) data.get(i);

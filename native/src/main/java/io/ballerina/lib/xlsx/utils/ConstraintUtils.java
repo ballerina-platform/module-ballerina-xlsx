@@ -35,6 +35,11 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ConstraintUtils {
 
+    // Fully-qualified name of the optional constraint module's entry point and its validate method,
+    // resolved reflectively so the module stays an optional (compile-time-absent) dependency.
+    private static final String CONSTRAINT_CLASS_NAME = "io.ballerina.stdlib.constraint.Constraints";
+    private static final String VALIDATE_METHOD_NAME = "validate";
+
     // Thread-safe eager initialization of constraint module availability and the resolved
     // validate(Object, BTypedesc) method, so the reflective lookup happens once, not per row.
     private static final boolean CONSTRAINT_MODULE_AVAILABLE;
@@ -47,8 +52,8 @@ public final class ConstraintUtils {
         boolean available;
         Method method = null;
         try {
-            Class<?> constraintClass = Class.forName("io.ballerina.stdlib.constraint.Constraints");
-            method = constraintClass.getMethod("validate", Object.class, BTypedesc.class);
+            Class<?> constraintClass = Class.forName(CONSTRAINT_CLASS_NAME);
+            method = constraintClass.getMethod(VALIDATE_METHOD_NAME, Object.class, BTypedesc.class);
             available = true;
         } catch (ClassNotFoundException | NoSuchMethodException e) {
             available = false;
@@ -81,8 +86,9 @@ public final class ConstraintUtils {
                     rt -> ValueCreator.createTypedescValue(rt));
             return VALIDATE_METHOD.invoke(null, record, typedesc);
         } catch (Exception e) {
-            // A genuine validation failure surfaces as a BError cause — return it so the caller can
-            // record it (and skip the row under fail-safe).
+            // `e` is the InvocationTargetException from the reflective invoke; its own message is not
+            // meaningful. The real failure is its cause — a BError carrying the constraint message — so
+            // return that (the caller records it and skips the row under fail-safe).
             if (e.getCause() instanceof BError) {
                 return e.getCause();
             }
