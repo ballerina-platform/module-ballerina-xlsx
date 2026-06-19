@@ -1172,3 +1172,105 @@ function testSetRowHonorsHeaderRowIndex() returns error? {
     check wb3.close();
     check removeTempFile(tempFile);
 }
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetInvalidPathErrors() returns error? {
+    // A path the filesystem cannot represent (embedded NUL) must surface as a typed Error,
+    // not a raw runtime exception.
+    Error? result = writeSheet([["x"]], "bad\u{0000}name.xlsx");
+    test:assertTrue(result is Error, "An invalid file path must return an Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("Invalid file path"),
+                "Error must identify the invalid path");
+    }
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetRowUnionWithRecords() returns error? {
+    // An explicit Row[] of records exercises the union-dispatch record branch (the element
+    // static type is the Row union; dispatch picks the writer from the first runtime value).
+    string tempFile = getTempFilePath("union_records");
+    TwoIntRow first = {a: 1, b: 2};
+    TwoIntRow second = {a: 3, b: 4};
+    Row[] rows = [first, second];
+    check writeSheet(rows, tempFile, "U");
+
+    record {|int a; int b;|}[] parsed = check parseSheet(tempFile, "U");
+    test:assertEquals(parsed.length(), 2, "Both record rows written via union dispatch");
+    test:assertEquals(parsed[0], {a: 1, b: 2}, "First record row");
+    test:assertEquals(parsed[1], {a: 3, b: 4}, "Second record row");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendMapAlignsToHeader() returns error? {
+    // APPEND of map rows resolves keys against the existing header row and writes below the data.
+    string tempFile = getTempFilePath("append_map_align");
+    check writeSheet([["name", "age"], ["Al", "30"]], tempFile, "M");
+
+    map<CellValue>[] more = [{"age": 40, "name": "Cy"}];
+    check writeSheet(more, tempFile, "M", sheetWriteMode = APPEND);
+
+    string[][] parsed = check parseSheet(tempFile, "M");
+    test:assertEquals(parsed.length(), 3, "Map row appended below the existing data");
+    test:assertEquals(parsed[2][0], "Cy", "name aligned to column 0 by header, not key order");
+    test:assertEquals(parsed[2][1], "40", "age aligned to column 1 by header");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendMapUnmatchedKeyErrors() returns error? {
+    // A map key with no matching header is rejected during APPEND alignment.
+    string tempFile = getTempFilePath("append_map_badkey");
+    check writeSheet([["name", "age"], ["Al", "30"]], tempFile, "M");
+
+    map<CellValue>[] bad = [{"name": "Cy", "salary": 999}];
+    Error? result = writeSheet(bad, tempFile, "M", sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "An unmatched map key must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("salary"), "Error must name the offending key");
+    }
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetRowUnionWithMaps() returns error? {
+    // An explicit Row[] of maps drives the union-dispatch map branch.
+    string tempFile = getTempFilePath("union_maps");
+    map<CellValue> r1 = {"a": "1", "b": "2"};
+    map<CellValue> r2 = {"a": "3", "b": "4"};
+    Row[] rows = [r1, r2];
+    check writeSheet(rows, tempFile, "U");
+
+    string[][] parsed = check parseSheet(tempFile, "U");
+    test:assertEquals(parsed.length(), 3, "Header + two map rows written via union dispatch");
+    test:assertEquals(parsed[1][0], "1", "First map row value");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendToExistingEmptySheet() returns error? {
+    // APPEND into a sheet that exists but is empty falls through to a fresh write.
+    string tempFile = getTempFilePath("append_empty_existing");
+    Workbook wb = new;
+    _ = check wb.createSheet("E");
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    check writeSheet([["a", "b"], ["1", "2"]], tempFile, "E", sheetWriteMode = APPEND);
+    string[][] parsed = check parseSheet(tempFile, "E");
+    test:assertEquals(parsed, [["a", "b"], ["1", "2"]], "APPEND to an empty existing sheet writes fresh");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetMixedArrayThenMapErrors() returns error? {
+    // A Row[] whose first element is an array routes to the array writer; a later non-array
+    // element is rejected as an incompatible shape.
+    string tempFile = getTempFilePath("union_mixed");
+    map<CellValue> m = {"a": "1"};
+    Row[] mixed = [["h1", "h2"], m];
+    Error? result = writeSheet(mixed, tempFile);
+    test:assertTrue(result is Error, "A mixed array/map Row[] must error in the array writer");
+    check removeTempFile(tempFile);
+}

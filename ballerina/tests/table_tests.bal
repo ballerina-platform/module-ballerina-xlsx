@@ -1802,3 +1802,342 @@ function testTableGetRangeAndDataRange() returns error? {
     test:assertEquals(check t.getDataRange(), "A2:B3", "Data range excludes the header row");
     check wb.close();
 }
+
+// =============================================================================
+// HANDLE INVALIDATION — every Table method errors after the workbook is closed
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTableMethodsAfterCloseAllReturnError() returns error? {
+    // One vended handle, then close the workbook: every method must surface the
+    // "no longer valid" error rather than touch a freed native object.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Table t = check wb.getTable("EmployeeTable");
+    check wb.close();
+
+    string|Error name = t.getName();
+    test:assertTrue(name is Error, "getName after close must error");
+    string|Error displayName = t.getDisplayName();
+    test:assertTrue(displayName is Error, "getDisplayName after close must error");
+    string|Error sheetName = t.getSheetName();
+    test:assertTrue(sheetName is Error, "getSheetName after close must error");
+    string|Error range = t.getRange();
+    test:assertTrue(range is Error, "getRange after close must error");
+    CellRange|Error cellRange = t.getCellRange();
+    test:assertTrue(cellRange is Error, "getCellRange after close must error");
+    string|Error dataRange = t.getDataRange();
+    test:assertTrue(dataRange is Error, "getDataRange after close must error");
+    CellRange|Error dataCellRange = t.getDataCellRange();
+    test:assertTrue(dataCellRange is Error, "getDataCellRange after close must error");
+    int|Error rowCount = t.getRowCount();
+    test:assertTrue(rowCount is Error, "getRowCount after close must error");
+    int|Error colCount = t.getColumnCount();
+    test:assertTrue(colCount is Error, "getColumnCount after close must error");
+    string[]|Error headers = t.getHeaders();
+    test:assertTrue(headers is Error, "getHeaders after close must error");
+    string[]|Error oneRow = t.getRow(0);
+    test:assertTrue(oneRow is Error, "getRow after close must error");
+    boolean|Error hasTotals = t.hasTotalRow();
+    test:assertTrue(hasTotals is Error, "hasTotalRow after close must error");
+    map<CellValue>|Error totals = t.getTotalRow();
+    test:assertTrue(totals is Error, "getTotalRow after close must error");
+    Error? put = t.putRows([["x", "y", "z"]]);
+    test:assertTrue(put is Error, "putRows after close must error");
+    Error? renamed = t.rename("Renamed");
+    test:assertTrue(renamed is Error, "rename after close must error");
+    Error? resized = t.resize("A1:C4");
+    test:assertTrue(resized is Error, "resize after close must error");
+    Error? deleted = t.deleteRow(0);
+    test:assertTrue(deleted is Error, "deleteRow after close must error");
+}
+
+@test:Config {groups: ["table"]}
+function testTableGetRowAsStringArray() returns error? {
+    // Explicit string[] target on getRow drives the array/string-element branch.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Table t = check wb.getTable("EmployeeTable");
+    string[] row = check t.getRow(0);
+    test:assertEquals(row, ["Alice", "30", "Engineering"], "getRow as string[] returns the raw cells");
+    check wb.close();
+}
+
+// =============================================================================
+// TABLE RESIZE — A1 string, range validation, overlap, column grow/shrink
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTableResizeWithA1String() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "c"], ["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+
+    // A1-notation range parsed through the BString branch of resize.
+    check t.resize("A1:C4");
+    test:assertEquals(check t.getRowCount(), 3, "A1-string resize extends the data range to 3 rows");
+    test:assertEquals(check t.getColumnCount(), 3, "Column span unchanged at 3");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeInvalidColumnSpan() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // firstColumn after lastColumn is an invalid span.
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 3, lastColumnIndex: 1});
+    test:assertTrue(result is InvalidTableRangeError, "Inverted column span must error");
+    if result is InvalidTableRangeError {
+        test:assertTrue(result.message().includes("first column is after the last column"),
+                "Error must identify the inverted column span");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeOutOfBounds() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // Last row index beyond the XLSX sheet limit (1048575).
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 2000000, firstColumnIndex: 0, lastColumnIndex: 1});
+    test:assertTrue(result is InvalidTableRangeError, "A range past the sheet bounds must error");
+    if result is InvalidTableRangeError {
+        test:assertTrue(result.message().includes("outside the sheet bounds"),
+                "Error must identify the out-of-bounds range");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeIntoAnotherTableErrors() returns error? {
+    // Two side-by-side tables; resizing the first to span the second's columns must be refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "", "d", "e"], ["1", "2", "", "4", "5"]]);
+    Table left = check sheet.createTable("Left", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Right", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 3,
+        lastColumnIndex: 4
+    });
+
+    // Grow Left to span columns 0-4, overlapping Right.
+    Error? result = left.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 4});
+    test:assertTrue(result is TableOverlapError, "Resizing over another table must return TableOverlapError");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeNoOverlapWithSibling() returns error? {
+    // A resize that stays clear of a sibling table (different columns) is allowed — exercises the
+    // non-overlapping branch of the overlap guard.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["a", "b", "", "d", "e"],
+        ["1", "2", "", "4", "5"],
+        ["6", "7", "", "9", "10"]
+    ]);
+    Table left = check sheet.createTable("Left", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Right", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 3,
+        lastColumnIndex: 4
+    });
+
+    // Grow Left's rows only (columns 0-1) — Right (columns 3-4) is untouched.
+    check left.resize({firstRowIndex: 0, lastRowIndex: 2, firstColumnIndex: 0, lastColumnIndex: 1});
+    test:assertEquals(check left.getRowCount(), 2, "Left grows without colliding with Right");
+    Table right = check sheet.getTable("Right");
+    test:assertEquals(check right.getRowCount(), 1, "Right untouched");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeShrinkColumns() returns error? {
+    // Shrinking the column span removes the trailing table columns.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "c"], ["1", "2", "3"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+    test:assertEquals(check t.getColumnCount(), 3, "Starts with three columns");
+
+    check t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 1});
+    test:assertEquals(check t.getColumnCount(), 2, "Shrinks to two columns");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeGrowColumnWithBlankHeader() returns error? {
+    // Growing into a column whose header cell is empty falls back to a generated "ColumnN" name.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    // Only columns A and B carry data; C has no header cell.
+    check sheet.putRows([["name", "age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 2});
+    test:assertEquals(check t.getColumnCount(), 3, "Grows to three columns");
+    string[] headers = check t.getHeaders();
+    test:assertEquals(headers.length(), 3, "Three headers after the grow");
+    test:assertTrue(headers[2].startsWith("Column"), "Blank header cell yields a generated column name");
+    check wb.close();
+}
+
+// =============================================================================
+// TABLE deleteRow / APPEND / record-field validation / rename validation
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowShiftConflict() returns error? {
+    // Deleting a row pulls everything below up; a second table caught in that shift must be refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["Name", "Age"],
+        ["Alice", "30"],
+        ["Bob", "25"],
+        ["", ""],
+        ["P", "Q"],
+        ["x", "y"]
+    ]);
+    Table upper = check sheet.createTable("Upper", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Lower", {
+        firstRowIndex: 4,
+        lastRowIndex: 5,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = upper.deleteRow(0);
+    test:assertTrue(result is TableOverlapError, "A delete that shifts a second table must error");
+    test:assertEquals(check upper.getRowCount(), 2, "Upper table left intact after the refused delete");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableAppendEmptyIsNoOp() returns error? {
+    // APPEND with no rows is a no-op: the table is unchanged and no error is raised.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    string[][] none = [];
+    check t.putRows(none, tableWriteMode = APPEND);
+    test:assertEquals(check t.getRowCount(), 2, "APPEND of zero rows leaves the data unchanged");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsUnknownRecordFieldErrors() returns error? {
+    // A record field with no matching table column is rejected before any mutation.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // 'salary' has no matching column in the table.
+    record {|string name; int salary;|}[] bad = [{name: "Cara", salary: 999}];
+    Error? result = t.putRows(bad);
+    test:assertTrue(result is Error, "An unmatched record field must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("salary"),
+                "Error must name the offending field");
+    }
+    test:assertEquals(check t.getRowCount(), 1, "Table left intact after the refused write");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableRenameEmptyErrors() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", "A1:B2");
+
+    Error? result = t.rename("");
+    test:assertTrue(result is Error, "Empty table name must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("cannot be empty"), "Error must identify the empty name");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableRenameTooLongErrors() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", "A1:B2");
+
+    // Build a 256-character name (exceeds Excel's 255-char table-name limit).
+    string longName = "T";
+    foreach int _ in 0 ..< 8 {
+        longName = longName + longName;
+    }
+    Error? result = t.rename(longName);
+    test:assertTrue(result is Error, "A name beyond 255 characters must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("255-character limit"),
+                "Error must identify the length limit");
+    }
+    check wb.close();
+}

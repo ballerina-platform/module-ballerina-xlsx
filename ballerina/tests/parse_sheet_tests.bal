@@ -1372,3 +1372,108 @@ function testFractionalNumericToIntErrors() returns error? {
 
     check removeTempFile(tempFile);
 }
+
+// =============================================================================
+// CellConverter type-conversion matrix (boolean/numeric cell → pinned target)
+// =============================================================================
+
+@test:Config {groups: ["parseSheet"]}
+function testBooleanCellToNumericAndString() returns error? {
+    // natural_types.xlsx has a genuine boolean cell (boolCol = true). Pinning it to
+    // int/float/string drives the boolean→other conversions.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+
+    int[] asInt = check sheet.getColumn("boolCol");
+    test:assertEquals(asInt, [1], "true → int 1");
+    float[] asFloat = check sheet.getColumn("boolCol");
+    test:assertEquals(asFloat, [1.0], "true → float 1.0");
+    string[] asString = check sheet.getColumn("boolCol");
+    test:assertEquals(asString, ["true"], "true → string \"true\"");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testNumericCellToBoolean() returns error? {
+    // A non-zero numeric cell pinned to boolean binds to true.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    boolean[] flags = check sheet.getColumn("intCol");
+    test:assertEquals(flags, [true], "Non-zero numeric → boolean true");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testStringToIntDoubleFallback() returns error? {
+    // A whole-number-shaped string ("42.0") binds to int via the double fallback.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "42.0");
+    int[] vals = check sheet.getColumn("v");
+    test:assertEquals(vals, [42], "\"42.0\" → int 42 via double fallback");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testStringToFloatParseError() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "abc");
+    float[]|Error result = sheet.getColumn("v");
+    test:assertTrue(result is Error, "A non-numeric string pinned to float must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testStringToDecimalParseError() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "xyz");
+    decimal[]|Error result = sheet.getColumn("v");
+    test:assertTrue(result is Error, "A non-numeric string pinned to decimal must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testParseBooleanValidVariants() returns error? {
+    // The accepted truthy/falsy spellings all bind to boolean.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "b");
+    check sheet.setCell(1, 0, "yes");
+    check sheet.setCell(2, 0, "no");
+    check sheet.setCell(3, 0, "1");
+    check sheet.setCell(4, 0, "0");
+    boolean[] vals = check sheet.getColumn("b");
+    test:assertEquals(vals, [true, false, true, false],
+            "yes/no/1/0 map to true/false/true/false");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testWriteStripsIllegalControlChars() returns error? {
+    // XLSX (XML 1.0) forbids C0 control chars except tab/newline/CR; they are stripped on write.
+    string tempFile = getTempFilePath("control_chars");
+    string[][] data = [["clean"], ["a\u{0001}b"]];
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[1][0], "ab", "The illegal control character is stripped on write");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testWriteStripsControlCharsKeepsTab() returns error? {
+    // Tab is a permitted control char (kept); other C0 controls are stripped, including a
+    // second illegal char after the StringBuilder is already allocated.
+    string tempFile = getTempFilePath("control_chars_tab");
+    string[][] data = [["a\tb\u{0001}c\u{0002}d"]];
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[0][0], "a\tbcd", "Tab kept; the two illegal control chars stripped");
+    check removeTempFile(tempFile);
+}

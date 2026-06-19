@@ -832,3 +832,387 @@ function testPutRowsFailIfExistsRefusesOccupiedDataRow() returns error? {
     test:assertEquals(read[1][0], "Existing", "Existing data not overwritten");
     check wb.close();
 }
+
+// =============================================================================
+// HANDLE INVALIDATION — every Sheet method errors after the workbook is closed
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetMethodsAfterCloseAllReturnError() returns error? {
+    Workbook wb = check fromFile(TEST_DATA_DIR + "simple.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    check wb.close();
+
+    string|Error name = sheet.getName();
+    test:assertTrue(name is Error, "getName after close must error");
+    string|Error usedRange = sheet.getUsedRange();
+    test:assertTrue(usedRange is Error, "getUsedRange after close must error");
+    CellRange?|Error usedCellRange = sheet.getUsedCellRange();
+    test:assertTrue(usedCellRange is Error, "getUsedCellRange after close must error");
+    int|Error rowCount = sheet.getRowCount();
+    test:assertTrue(rowCount is Error, "getRowCount after close must error");
+    int|Error colCount = sheet.getColumnCount();
+    test:assertTrue(colCount is Error, "getColumnCount after close must error");
+    string[][]|Error allRows = sheet.getRows();
+    test:assertTrue(allRows is Error, "getRows after close must error");
+    string[]|Error oneRow = sheet.getRow(0);
+    test:assertTrue(oneRow is Error, "getRow after close must error");
+    Error? put = sheet.putRows([["a", "b"]]);
+    test:assertTrue(put is Error, "putRows after close must error");
+    string[]|Error col = sheet.getColumn(0);
+    test:assertTrue(col is Error, "getColumn after close must error");
+    CellValue|Error cell = sheet.getCell(0, 0);
+    test:assertTrue(cell is Error, "getCell after close must error");
+    Error? setR = sheet.setRow(0, ["x"]);
+    test:assertTrue(setR is Error, "setRow after close must error");
+    Error? setCol = sheet.setColumn(0, ["x"]);
+    test:assertTrue(setCol is Error, "setColumn after close must error");
+    Error? setC = sheet.setCell(0, 0, "x");
+    test:assertTrue(setC is Error, "setCell after close must error");
+    Error? setCA = sheet.setCellByAddress("A1", "x");
+    test:assertTrue(setCA is Error, "setCellByAddress after close must error");
+    Error? del = sheet.deleteRow(0);
+    test:assertTrue(del is Error, "deleteRow after close must error");
+    Error? ren = sheet.rename("X");
+    test:assertTrue(ren is Error, "rename after close must error");
+    Table|Error getT = sheet.getTable("T");
+    test:assertTrue(getT is Error, "getTable after close must error");
+    Table[]|Error getTs = sheet.getTables();
+    test:assertTrue(getTs is Error, "getTables after close must error");
+    Table|Error createT = sheet.createTable("T", "A1:B2");
+    test:assertTrue(createT is Error, "createTable after close must error");
+    Table|Error createTd = sheet.createTableFromData("T", [["a"], ["1"]]);
+    test:assertTrue(createTd is Error, "createTableFromData after close must error");
+    Error? delT = sheet.deleteTable("T");
+    test:assertTrue(delT is Error, "deleteTable after close must error");
+}
+
+// =============================================================================
+// getRows / getRow / getColumn / getCell — type and edge branches
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetRowsAsMaps() returns error? {
+    // map<CellValue>[] target drives the map dispatch branch of getRows.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    map<CellValue>[] rows = check sheet.getRows();
+    test:assertEquals(rows.length(), 3, "Three data rows as maps");
+    test:assertEquals(rows[0]["name"], "John Doe", "Map keyed by header name");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetRowsStringArrayRowCount() returns error? {
+    // rowCount caps the string[][] read.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    string[][] rows = check sheet.getRows({rowCount: 2});
+    test:assertEquals(rows.length(), 2, "rowCount limits the rows returned");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetRowOnEmptySheet() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Empty");
+    string[]|Error result = sheet.getRow(0);
+    test:assertTrue(result is Error, "getRow on an empty sheet must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("empty"), "Error must mention the empty sheet");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnOnEmptySheet() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Empty");
+    string[] col = check sheet.getColumn(0);
+    test:assertEquals(col.length(), 0, "A column on an empty sheet is empty");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnRowCountLimit() returns error? {
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    string[] names = check sheet.getColumn("name", {rowCount: 1});
+    test:assertEquals(names.length(), 1, "rowCount limits the column cells read");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnDataStartRowIndex() returns error? {
+    // An explicit dataStartRowIndex overrides the header+1 default.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "employees.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    string[] names = check sheet.getColumn("name", {dataStartRowIndex: 2});
+    test:assertEquals(names.length(), 2, "Data starts at row 2, so two values remain");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnNoHeaderRow() returns error? {
+    // A by-name lookup needs a string header row; a numeric first row has none.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, 1);
+    check sheet.setCell(0, 1, 2);
+    string[]|Error result = sheet.getColumn("x");
+    test:assertTrue(result is Error, "By-name lookup with no header row must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("no header row"), "Error must identify the missing header row");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetColumnTypeConversionError() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "not-a-number");
+    int[]|Error result = sheet.getColumn("v");
+    test:assertTrue(result is Error, "A non-numeric cell under an int[] target must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetGetCellTypeConversionError() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "hello");
+    int|Error result = sheet.getCell(0, 0);
+    test:assertTrue(result is Error, "A string cell pinned to int must error");
+    check wb.close();
+}
+
+// =============================================================================
+// setRow validation — REPLACE and APPEND field/key resolution
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetSetRowReplaceUnmatchedField() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Old", "1"]]);
+    record {|string name; string dept;|} bad = {name: "Al", dept: "Eng"};
+    Error? result = sheet.setRow(1, bad);
+    test:assertTrue(result is Error, "A record field with no header column must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("dept"), "Error must name the offending field");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetSetRowReplaceUnmatchedKey() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Old", "1"]]);
+    map<CellValue> bad = {"name": "Al", "dept": "Eng"};
+    Error? result = sheet.setRow(1, bad);
+    test:assertTrue(result is Error, "A map key with no header column must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("dept"), "Error must name the offending key");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetSetRowAppendAboveHeaderRefused() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"]]);
+    map<CellValue> row = {"name": "Bo", "age": 25};
+    Error? result = sheet.setRow(0, row, sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "An APPEND insert at/above the header must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("must be below the header"),
+                "Error must explain the position constraint");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetSetRowAppendNoHeaderRecord() returns error? {
+    // APPEND of a record below a sheet that has no string header row must error.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, 1);
+    check sheet.setCell(0, 1, 2);
+    record {|string name; int age;|} row = {name: "Al", age: 30};
+    Error? result = sheet.setRow(2, row, sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "APPEND of a record needs an existing header row");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetSetRowAppendUnmatchedMapKey() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"]]);
+    map<CellValue> row = {"name": "Bo", "dept": "Eng"};
+    Error? result = sheet.setRow(2, row, sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "An APPEND map key with no header column must error");
+    check wb.close();
+}
+
+// =============================================================================
+// setColumn writes into rows/cells that do not yet exist
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetSetColumnCreatesRows() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");   // header only; data rows do not exist yet
+    check sheet.setColumn("v", ["a", "b", "c"]);
+    string[] col = check sheet.getColumn("v");
+    test:assertEquals(col, ["a", "b", "c"], "setColumn creates the missing rows and cells");
+    check wb.close();
+}
+
+// =============================================================================
+// rename / createTable error and header branches
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testSheetRenameInvalidName() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Valid");
+    // Excel forbids '/' in sheet names.
+    Error? result = sheet.rename("Bad/Name");
+    test:assertTrue(result is Error, "An invalid sheet name must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetCreateTableWithHeaders() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["x", "y"], ["1", "2"]]);
+    // Explicit headers override the cell-derived column names.
+    Table t = check sheet.createTable("T", "A1:B2", ["Alpha", "Beta"]);
+    string[] headers = check t.getHeaders();
+    test:assertEquals(headers, ["Alpha", "Beta"], "Provided headers become the table column names");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSheetCreateTableBadRangeString() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["x", "y"], ["1", "2"]]);
+    Table|Error result = sheet.createTable("T", "not-a-range");
+    test:assertTrue(result is Error, "An unparseable A1 range must error");
+    check wb.close();
+}
+
+// =============================================================================
+// FAIL_IF_EXISTS occupancy — string[][], record (existing header), record (no header)
+// =============================================================================
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsStringArrayOccupied() returns error? {
+    // string[][] write into an occupied contiguous block must be refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Error? result = sheet.putRows([["x", "y"]], sheetWriteMode = FAIL_IF_EXISTS, startRowIndex = 0);
+    test:assertTrue(result is Error, "FAIL_IF_EXISTS over occupied cells must error");
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read[0][0], "a", "Existing content untouched");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsRecordOccupiedExistingHeader() returns error? {
+    // A record write that aligns to an existing header but whose target data row is occupied fails.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Existing", "99"]]);
+    record {|string name; int age;|}[] recs = [{name: "Al", age: 30}];
+    Error? result = sheet.putRows(recs, sheetWriteMode = FAIL_IF_EXISTS, startRowIndex = 0);
+    test:assertTrue(result is Error, "FAIL_IF_EXISTS over an occupied aligned data row must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsRecordNoHeaderOccupied() returns error? {
+    // A record write to a sheet with no string header falls back to the contiguous-block check.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, 1);   // numeric row 0 — not a string header
+    check sheet.setCell(0, 1, 2);
+    record {|int a; int b;|}[] recs = [{a: 5, b: 6}];
+    Error? result = sheet.putRows(recs, sheetWriteMode = FAIL_IF_EXISTS, startRowIndex = 0);
+    test:assertTrue(result is Error, "FAIL_IF_EXISTS over an occupied fresh block must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsFailIfExistsEmptyIsNoOp() returns error? {
+    // An empty FAIL_IF_EXISTS write has no target to check and writes nothing.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    string[][] empty = [];
+    check sheet.putRows(empty, sheetWriteMode = FAIL_IF_EXISTS, startRowIndex = 0);
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read.length(), 2, "Empty write leaves the sheet unchanged");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendRecordMidInsert() returns error? {
+    // APPEND of a record at an explicit mid-sheet row shifts existing rows down and aligns by header.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"], ["Bo", "25"], ["Cy", "40"]]);
+    record {|string name; int age;|}[] recs = [{name: "Zoe", age: 99}];
+    check sheet.putRows(recs, sheetWriteMode = APPEND, startRowIndex = 2);
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read[2][0], "Zoe", "Record inserted at row 2");
+    test:assertEquals(read[3][0], "Bo", "Existing row shifted down");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testPutRowsAppendRecordNoHeaderErrors() returns error? {
+    // Sheet.putRows APPEND of a record needs a header on the existing data to align against.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, 1);   // numeric row 0 — no string header to align to
+    check sheet.setCell(0, 1, 2);
+    record {|int a; int b;|}[] recs = [{a: 5, b: 6}];
+    Error? result = sheet.putRows(recs, sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "APPEND of a record without a header row must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSetRowAppendValidMapInserts() returns error? {
+    // A fully-resolvable map APPEND validates cleanly and inserts below the header.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"]]);
+    map<CellValue> row = {"name": "Bo", "age": 25};
+    check sheet.setRow(2, row, sheetWriteMode = APPEND);
+    string[][] read = check sheet.getRows();
+    test:assertEquals(read[2][0], "Bo", "Valid map APPEND inserts the row");
+    check wb.close();
+}
+
+@test:Config {groups: ["sheet"]}
+function testSetRowFailIfExistsEmptyRowSucceeds() returns error? {
+    // FAIL_IF_EXISTS on a genuinely empty row writes successfully.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.putRows([["name", "age"], ["Al", "30"]]);
+    check sheet.setRow(5, ["x", "y"], sheetWriteMode = FAIL_IF_EXISTS);
+    string cell = check sheet.getCell(5, 0);
+    test:assertEquals(cell, "x", "An empty target row accepts a FAIL_IF_EXISTS write");
+    check wb.close();
+}

@@ -992,3 +992,88 @@ function testCreateSheetDuplicateErrors() returns error? {
     test:assertTrue(result is SheetExistsError, "A duplicate sheet name must raise SheetExistsError");
     check wb.close();
 }
+
+// =============================================================================
+// Open / save error paths
+// =============================================================================
+
+@test:Config {groups: ["workbook"]}
+function testFromFileNotFound() returns error? {
+    // A path that does not exist must surface as the specific FileNotFoundError subtype.
+    Workbook|Error result = fromFile(TEST_DATA_DIR + "definitely_missing_xyz.xlsx");
+    test:assertTrue(result is FileNotFoundError, "A missing file must surface as FileNotFoundError");
+}
+
+@test:Config {groups: ["workbook"]}
+function testSaveAsToInvalidDirectoryErrors() returns error? {
+    // Saving under a non-existent parent directory must fail cleanly, not panic.
+    Workbook wb = new;
+    _ = check wb.createSheet("Data");
+    Error? result = wb.saveAs(TEST_DATA_DIR + "no_such_subdir_xyz/out.xlsx");
+    test:assertTrue(result is Error, "Saving into a missing directory must return an Error");
+    check wb.close();
+}
+
+@test:Config {groups: ["workbook"]}
+function testDeleteLastSheetByIndexRefused() returns error? {
+    // The by-index delete path also refuses to remove the only sheet.
+    Workbook wb = new;
+    _ = check wb.createSheet("OnlyOne");
+    Error? result = wb.deleteSheet(0);
+    test:assertTrue(result is Error, "Deleting the last sheet by index must be refused");
+    check wb.close();
+}
+
+// =============================================================================
+// Handle invalidation — workbook methods after close; sheet-delete cascades to tables
+// =============================================================================
+
+@test:Config {groups: ["workbook"]}
+function testWorkbookMethodsAfterCloseReturnError() returns error? {
+    // Every workbook method that catches the invalidation error must return it after close.
+    // (save/saveAs/toBytes are intentionally excluded — they resolve the native handle outside
+    // their try block and therefore panic; that is exercised via `trap` elsewhere.)
+    Workbook wb = check fromFile(TEST_DATA_DIR + "multi_sheet.xlsx");
+    check wb.close();
+
+    string[]|Error names = wb.getSheetNames();
+    test:assertTrue(names is Error, "getSheetNames after close must error");
+    int|Error count = wb.getSheetCount();
+    test:assertTrue(count is Error, "getSheetCount after close must error");
+    boolean|Error has = wb.hasSheet("Sheet1");
+    test:assertTrue(has is Error, "hasSheet after close must error");
+    Sheet|Error byName = wb.getSheet("Sheet1");
+    test:assertTrue(byName is Error, "getSheet(name) after close must error");
+    Sheet|Error byIndex = wb.getSheet(0);
+    test:assertTrue(byIndex is Error, "getSheet(index) after close must error");
+    Sheet|Error created = wb.createSheet("New");
+    test:assertTrue(created is Error, "createSheet after close must error");
+    Error? delName = wb.deleteSheet("Sheet1");
+    test:assertTrue(delName is Error, "deleteSheet(name) after close must error");
+    Error? delIndex = wb.deleteSheet(0);
+    test:assertTrue(delIndex is Error, "deleteSheet(index) after close must error");
+    Table|Error tbl = wb.getTable("T");
+    test:assertTrue(tbl is Error, "getTable after close must error");
+    Table[]|Error tbls = wb.getAllTables();
+    test:assertTrue(tbls is Error, "getAllTables after close must error");
+}
+
+@test:Config {groups: ["workbook"]}
+function testDeleteSheetInvalidatesVendedTable() returns error? {
+    // Deleting a sheet cascades: a Table handle vended from it becomes invalid too.
+    Workbook wb = new;
+    Sheet data = check wb.createSheet("Data");
+    check data.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check data.createTable("EmpTable", "A1:B2");
+    _ = check wb.createSheet("Keep");   // so "Data" is not the last sheet
+
+    check wb.deleteSheet("Data");
+
+    string|Error result = t.getName();
+    test:assertTrue(result is Error, "A table vended from a deleted sheet must be invalid");
+    if result is Error {
+        test:assertTrue(result.message().includes("no longer valid"),
+                "Error must indicate the handle was invalidated");
+    }
+    check wb.close();
+}
