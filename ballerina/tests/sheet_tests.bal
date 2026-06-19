@@ -877,6 +877,10 @@ function testSheetMethodsAfterCloseAllReturnError() returns error? {
     test:assertTrue(ren is Error, "rename after close must error");
     Table|Error getT = sheet.getTable("T");
     test:assertTrue(getT is Error, "getTable after close must error");
+    if getT is Error {
+        test:assertTrue(getT.message().includes("no longer valid"),
+                "getTable after close must fail due to handle invalidation");
+    }
     Table[]|Error getTs = sheet.getTables();
     test:assertTrue(getTs is Error, "getTables after close must error");
     Table|Error createT = sheet.createTable("T", "A1:B2");
@@ -885,6 +889,10 @@ function testSheetMethodsAfterCloseAllReturnError() returns error? {
     test:assertTrue(createTd is Error, "createTableFromData after close must error");
     Error? delT = sheet.deleteTable("T");
     test:assertTrue(delT is Error, "deleteTable after close must error");
+    if delT is Error {
+        test:assertTrue(delT.message().includes("no longer valid"),
+                "deleteTable after close must fail due to handle invalidation");
+    }
 }
 
 // =============================================================================

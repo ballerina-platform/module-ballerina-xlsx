@@ -1065,6 +1065,10 @@ function testWorkbookMethodsAfterCloseReturnError() returns error? {
     test:assertTrue(delIndex is Error, "deleteSheet(index) after close must error");
     Table|Error tbl = wb.getTable("T");
     test:assertTrue(tbl is Error, "getTable after close must error");
+    if tbl is Error {
+        test:assertTrue(tbl.message().includes("no longer valid"),
+                "getTable after close must fail due to handle invalidation");
+    }
     Table[]|Error tbls = wb.getAllTables();
     test:assertTrue(tbls is Error, "getAllTables after close must error");
 }

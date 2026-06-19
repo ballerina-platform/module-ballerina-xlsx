@@ -1422,7 +1422,7 @@ function testStringToFloatParseError() returns error? {
     check sheet.setCell(0, 0, "v");
     check sheet.setCell(1, 0, "abc");
     float[]|Error result = sheet.getColumn("v");
-    test:assertTrue(result is Error, "A non-numeric string pinned to float must error");
+    test:assertTrue(result is TypeConversionError, "A non-numeric string pinned to float must error");
     check wb.close();
 }
 
@@ -1433,7 +1433,7 @@ function testStringToDecimalParseError() returns error? {
     check sheet.setCell(0, 0, "v");
     check sheet.setCell(1, 0, "xyz");
     decimal[]|Error result = sheet.getColumn("v");
-    test:assertTrue(result is Error, "A non-numeric string pinned to decimal must error");
+    test:assertTrue(result is TypeConversionError, "A non-numeric string pinned to decimal must error");
     check wb.close();
 }
 

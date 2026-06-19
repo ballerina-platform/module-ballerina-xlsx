@@ -1841,6 +1841,10 @@ function testTableMethodsAfterCloseAllReturnError() returns error? {
     test:assertTrue(hasTotals is Error, "hasTotalRow after close must error");
     map<CellValue>|Error totals = t.getTotalRow();
     test:assertTrue(totals is Error, "getTotalRow after close must error");
+    if totals is Error {
+        test:assertTrue(totals.message().includes("no longer valid"),
+                "getTotalRow after close must fail due to handle invalidation");
+    }
     Error? put = t.putRows([["x", "y", "z"]]);
     test:assertTrue(put is Error, "putRows after close must error");
     Error? renamed = t.rename("Renamed");
