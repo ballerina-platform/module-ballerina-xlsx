@@ -89,7 +89,7 @@ public type DataProjection record {|
 public type ParseOptions record {|
     *CommonSheetParseOptions;
     # Maximum number of data rows to read (default: all)
-    int? rowCount = ();
+    int rowCount?;
     # Validate parsed records against their `@constraint` annotations (default: true)
     boolean enableConstraintValidation = true;
     # Data projection: `{}` ignores extra columns (default), `false` requires an exact match
@@ -111,14 +111,14 @@ public type RowParseOptions record {|
 public type ColumnParseOptions record {|
     *CommonSheetParseOptions;
     # Maximum number of cells to read (default: all)
-    int? rowCount = ();
+    int rowCount?;
 |};
 
 # Options for bulk table reads (`parseTable`, `Table.getRows`).
 public type TableParseOptions record {|
     *CommonParseOptions;
     # Maximum number of data rows to read (default: all)
-    int? rowCount = ();
+    int rowCount?;
     # Validate parsed records against their `@constraint` annotations (default: true)
     boolean enableConstraintValidation = true;
     # Data projection: `{}` ignores extra columns (default), `false` requires an exact match
@@ -140,9 +140,9 @@ public type TableRowParseOptions record {|
 public type WriteOptions record {|
     # Write a header row from field names or map keys (default: true; ignored for `string[][]`)
     boolean writeHeaders = true;
-    # 0-based target row. Unset (`()`) uses the mode's natural point: the end of the data for
+    # 0-based target row. Omitted, uses the mode's natural point: the end of the data for
     # `APPEND`, row 0 otherwise.
-    int? startRowIndex = ();
+    int startRowIndex?;
     # How to treat existing content at the target (default: `APPEND`)
     SheetWriteMode sheetWriteMode = APPEND;
 |};
@@ -172,9 +172,9 @@ public type RowWriteOptions record {|
 public type TableWriteOptions record {|
     # How to treat the table's existing data (default: `REPLACE`)
     TableWriteMode tableWriteMode = REPLACE;
-    # For `APPEND`, the 0-based data-row index to insert at; unset (`()`) appends at the end.
+    # For `APPEND`, the 0-based data-row index to insert at; omitted, appends at the end.
     # Ignored by `REPLACE`.
-    int? insertAt = ();
+    int insertAt?;
 |};
 
 # A single row: either a `map<CellValue>` keyed by column header, or a `string[]` of cell text

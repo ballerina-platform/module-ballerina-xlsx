@@ -948,14 +948,12 @@ function testParseWithRowCountLimit() returns error? {
 @test:Config {
     groups: ["parseSheet", "rowcount"]
 }
-function testParseWithRowCountNullMeansAll() returns error? {
-    // Parse with rowCount = null (default) should read all rows
-    ParseOptions opts = {
-        rowCount: ()  // Explicit null = read all
-    };
+function testParseWithRowCountOmittedMeansAll() returns error? {
+    // Omitting rowCount (the default) should read all rows
+    ParseOptions opts = {};
     Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx", 0, opts);
 
-    test:assertEquals(employees.length(), 3, "Should have all 3 records when rowCount is null");
+    test:assertEquals(employees.length(), 3, "Should have all 3 records when rowCount is omitted");
 }
 
 @test:Config {

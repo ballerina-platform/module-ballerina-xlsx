@@ -86,7 +86,7 @@ public class XlsxConfig {
     private boolean writeHeaders = true;
     private int startRowIndex = 0;
     // Boxed: null = no explicit startRowIndex (Sheet.putRows resolves the mode's natural point).
-    // Carries the nullable `int? startRowIndex` from WriteOptions without disturbing the primitive
+    // Carries the optional `int startRowIndex?` from WriteOptions without disturbing the primitive
     // startRowIndex used by writeSheet.
     private Integer startRowIndexOverride = null;
     private int startColumnIndex = 0;
