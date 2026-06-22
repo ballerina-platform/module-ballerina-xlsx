@@ -43,7 +43,6 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -57,35 +56,6 @@ public final class XlsxParser {
 
     private XlsxParser() {
         // Private constructor to prevent instantiation
-    }
-
-    /**
-     * Parse XLSX bytes to Ballerina value based on target type.
-     *
-     * @param env        Ballerina environment (for fail-safe logging)
-     * @param data       XLSX file bytes
-     * @param sheet      Sheet to read (BString for name, Long for index)
-     * @param options    Parse options
-     * @param targetType Target Ballerina type descriptor
-     * @return Parsed value (array of records or array of arrays)
-     */
-    public static Object parseBytes(Environment env, byte[] data, Object sheet, BMap<BString, Object> options,
-                                    BTypedesc targetType) {
-        XlsxConfig config = XlsxConfig.fromParseOptions(options);
-
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
-             Workbook workbook = WorkbookFactory.create(bis)) {
-
-            Sheet selectedSheet = selectSheet(workbook, sheet);
-            return parseSheet(env, selectedSheet, config, targetType);
-
-        } catch (BallerinaErrorException e) {
-            return e.getBError();
-        } catch (IOException e) {
-            return DiagnosticLog.parseError("Failed to parse XLSX: " + e.getMessage());
-        } catch (Exception e) {
-            return DiagnosticLog.error("Error parsing XLSX file: " + e.getMessage(), e);
-        }
     }
 
     /**
@@ -177,7 +147,7 @@ public final class XlsxParser {
             return parseToRecordArray(env, sheet, config, (RecordType) describingType);
         }
 
-        // map<CellValue?> - array of maps
+        // map<CellValue> - array of maps
         if (typeTag == TypeTags.MAP_TAG) {
             return parseToMapArray(env, sheet, config, (MapType) describingType);
         }
@@ -260,7 +230,7 @@ public final class XlsxParser {
     }
 
     /**
-     * Parse sheet to map<CellValue?>[].
+     * Parse sheet to map<CellValue>[].
      * Returns BArray on success, or BError on failure.
      */
     private static Object parseToMapArray(Environment env, Sheet sheet, XlsxConfig config, MapType mapType) {

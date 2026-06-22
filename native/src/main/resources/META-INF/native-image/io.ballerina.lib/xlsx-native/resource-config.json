@@ -273,9 +273,6 @@
       "locales": [
         "und"
       ]
-    },
-    {
-      "name": "xlsx_error"
     }
   ]
 }

@@ -15,6 +15,7 @@
 // under the License.
 
 import ballerina/file;
+import ballerina/io;
 import ballerina/test;
 
 // =============================================================================
@@ -155,14 +156,14 @@ function testWriteWithStartRow() returns error? {
     Workbook wb = check fromFile(tempFile);
     Sheet sheet = check wb.getSheet(0);
 
-    CellValue? leading0 = check sheet.getCell(0, 0);
-    CellValue? leading1 = check sheet.getCell(1, 0);
+    CellValue leading0 = check sheet.getCell(0, 0);
+    CellValue leading1 = check sheet.getCell(1, 0);
     test:assertEquals(leading0, (), "Row 0 should be blank (data starts at row 2)");
     test:assertEquals(leading1, (), "Row 1 should be blank (data starts at row 2)");
 
     // The data we wrote lands at row 2 onward.
-    CellValue? header = check sheet.getCell(2, 0);
-    CellValue? dataCell = check sheet.getCell(3, 0);
+    CellValue header = check sheet.getCell(2, 0);
+    CellValue dataCell = check sheet.getCell(3, 0);
     test:assertEquals(header, "Header1", "Row 2 should hold Header1");
     test:assertEquals(dataCell, "Data1", "Row 3 should hold Data1");
 
@@ -334,7 +335,7 @@ function testWriteBooleanValues() returns error? {
     groups: ["writeSheet", "types"]
 }
 function testWriteMapArray() returns error? {
-    map<CellValue?>[] data = [
+    map<CellValue>[] data = [
         {"Name": "Alice", "Age": 28, "City": "NYC"},
         {"Name": "Bob", "Age": 35, "City": "LA"}
     ];
@@ -584,9 +585,10 @@ function testWriteOverwritesExistingFile() returns error? {
     string[][] parsed1 = check parseSheet(tempFile);
     test:assertEquals(parsed1[0][0], "First", "First write should have 'First'");
 
-    // Overwrite with different data
+    // Overwrite with different data — explicit REPLACE, since writeSheet refuses to clobber
+    // an existing sheet by default (FAIL_IF_EXISTS).
     string[][] data2 = [["Second", "Data", "More"]];
-    check writeSheet(data2, tempFile);
+    check writeSheet(data2, tempFile, sheetWriteMode = REPLACE);
 
     // Verify overwrite - should have new data, not old
     string[][] parsed2 = check parseSheet(tempFile);
@@ -657,8 +659,10 @@ function testWriteSheetPreservesUnrelatedColumns() returns error? {
     projection[0] = {name: "Alice", city: "Boston"};
     projection[1] = {name: "Bob", city: "Seattle"};
 
-    // Write back via putRows
-    check sheet.putRows(projection);
+    // Write back via putRows — overwrite the data rows in place (REPLACE; putRows defaults to APPEND).
+    // REPLACE aligns to the existing header and touches only the projected columns, so the
+    // unrelated columns (age, formulaColumn) are preserved.
+    check sheet.putRows(projection, sheetWriteMode = REPLACE);
     check wb.saveAs(tempFile);
     check wb.close();
 
@@ -788,7 +792,7 @@ function testWriteSheetOverwritesAtomically() returns error? {
     check writeSheet(contentA, tempFile);
 
     string[][] contentB = [["Fresh", "Header"], ["Row1A", "Row1B"], ["Row2A", "Row2B"]];
-    check writeSheet(contentB, tempFile);
+    check writeSheet(contentB, tempFile, sheetWriteMode = REPLACE);
 
     string[][] parsed = check parseSheet(tempFile);
     test:assertEquals(parsed, contentB, "Overwrite must produce content B exactly");
@@ -902,4 +906,371 @@ function testMixedRowShapeWriteErrors() returns error? {
     Error? result = writeSheet(data, tempFile);
     test:assertTrue(result is Error,
             "Mixed-shape Row[] write must surface a clear error, not silently drop rows");
+}
+
+// =============================================================================
+// SheetWriteMode — non-destructive writeSheet (FAIL_IF_EXISTS / REPLACE / APPEND)
+// =============================================================================
+// writeSheet opens an existing file and preserves sibling sheets. The default
+// FAIL_IF_EXISTS refuses to clobber an existing target sheet; REPLACE overwrites
+// it (siblings preserved) and APPEND adds rows below the existing data.
+
+type AppendLogRow record {|
+    string name;
+    int age;
+    string dept;
+|};
+
+// Same columns as AppendLogRow but a different field order, to prove APPEND aligns
+// to the existing header by name rather than by position.
+type AppendLogShuffled record {|
+    int age;
+    string dept;
+    string name;
+|};
+
+type TwoIntRow record {|
+    int a;
+    int b;
+|};
+
+// Builds a fresh three-sheet workbook (Alpha/Beta/Gamma) at `path`.
+function createMultiSheetWorkbook(string path) returns error? {
+    Workbook wb = new;
+    Sheet alpha = check wb.createSheet("Alpha");
+    check alpha.putRows([["a1", "a2"], ["a3", "a4"]]);
+    Sheet beta = check wb.createSheet("Beta");
+    check beta.putRows([["b1", "b2"], ["b3", "b4"]]);
+    Sheet gamma = check wb.createSheet("Gamma");
+    check gamma.putRows([["g1", "g2"], ["g3", "g4"]]);
+    check wb.saveAs(path);
+    check wb.close();
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetReplacePreservesSiblings() returns error? {
+    string tempFile = getTempFilePath("replace_siblings");
+    check createMultiSheetWorkbook(tempFile);
+
+    // Replace only "Beta"; Alpha and Gamma (and the tab order) must survive.
+    check writeSheet([["x1", "x2", "x3"]], tempFile, "Beta", sheetWriteMode = REPLACE);
+
+    Workbook wb = check fromFile(tempFile);
+    string[] names = check wb.getSheetNames();
+    test:assertEquals(names, ["Alpha", "Beta", "Gamma"], "Siblings preserved in original order");
+
+    Sheet alpha = check wb.getSheet("Alpha");
+    string[][] alphaRows = check alpha.getRows();
+    test:assertEquals(alphaRows, [["a1", "a2"], ["a3", "a4"]], "Alpha untouched");
+
+    Sheet beta = check wb.getSheet("Beta");
+    string[][] betaRows = check beta.getRows();
+    test:assertEquals(betaRows, [["x1", "x2", "x3"]], "Beta replaced with the new data");
+
+    Sheet gamma = check wb.getSheet("Gamma");
+    string[][] gammaRows = check gamma.getRows();
+    test:assertEquals(gammaRows, [["g1", "g2"], ["g3", "g4"]], "Gamma untouched");
+
+    check wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetReplaceCreatesAbsentSheet() returns error? {
+    string tempFile = getTempFilePath("replace_absent");
+    check createMultiSheetWorkbook(tempFile);
+
+    check writeSheet([["d1", "d2"]], tempFile, "Delta", sheetWriteMode = REPLACE);
+
+    Workbook wb = check fromFile(tempFile);
+    test:assertEquals(check wb.getSheetCount(), 4, "Delta added alongside the three siblings");
+    test:assertTrue(check wb.hasSheet("Delta"), "Delta created");
+    test:assertTrue(check wb.hasSheet("Alpha"), "Alpha still present");
+    check wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetCreatesNewFile() returns error? {
+    string tempFile = getTempFilePath("create_new");
+    // The path does not exist, so the default FAIL_IF_EXISTS still creates it.
+    check writeSheet([["Name", "Age"], ["Alice", "30"]], tempFile);
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed, [["Name", "Age"], ["Alice", "30"]], "New file created");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetFailsIfSheetExists() returns error? {
+    string tempFile = getTempFilePath("fail_if_exists");
+    check writeSheet([["First"]], tempFile);  // creates Sheet1
+
+    // The default mode refuses to overwrite an existing sheet.
+    Error? result = writeSheet([["Second"]], tempFile);
+    test:assertTrue(result is SheetExistsError, "Default FAIL_IF_EXISTS must refuse an existing sheet");
+
+    // The refusal happens before any write, so the original data is intact.
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed, [["First"]], "Original data untouched after refusal");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetFailIfExistsCreatesWhenAbsent() returns error? {
+    string tempFile = getTempFilePath("fail_miss");
+    check createMultiSheetWorkbook(tempFile);
+
+    // "NewOne" is absent → FAIL_IF_EXISTS creates it and keeps the siblings.
+    check writeSheet([["n1"]], tempFile, "NewOne", sheetWriteMode = FAIL_IF_EXISTS);
+
+    Workbook wb = check fromFile(tempFile);
+    test:assertEquals(check wb.getSheetCount(), 4, "NewOne created alongside siblings");
+    check wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetCaseInsensitiveTarget() returns error? {
+    string tempFile = getTempFilePath("case_target");
+    check createMultiSheetWorkbook(tempFile);
+
+    // Lowercase "beta" resolves to the existing "Beta" — no duplicate sheet.
+    check writeSheet([["z1"]], tempFile, "beta", sheetWriteMode = REPLACE);
+
+    Workbook wb = check fromFile(tempFile);
+    test:assertEquals(check wb.getSheetCount(), 3, "No duplicate sheet created for a case variant");
+    test:assertTrue(check wb.hasSheet("Beta"), "Target still reachable by name");
+    check wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendAlignsToHeader() returns error? {
+    string tempFile = getTempFilePath("append_align");
+    AppendLogRow[] initial = [
+        {name: "Al", age: 30, dept: "Eng"},
+        {name: "Bo", age: 25, dept: "Ops"}
+    ];
+    check writeSheet(initial, tempFile, "Log");
+
+    // Append with a shuffled field order — values must land by header name.
+    AppendLogShuffled[] more = [{age: 40, dept: "HR", name: "Cy"}];
+    check writeSheet(more, tempFile, "Log", sheetWriteMode = APPEND);
+
+    AppendLogRow[] all = check parseSheet(tempFile, "Log");
+    test:assertEquals(all.length(), 3, "Row appended below the existing data");
+    test:assertEquals(all[0], {name: "Al", age: 30, dept: "Eng"}, "Existing rows untouched");
+    test:assertEquals(all[2], {name: "Cy", age: 40, dept: "HR"}, "Appended row aligned by header name");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendIgnoresStartRowIndex() returns error? {
+    // In APPEND, startRowIndex is ignored: the header is auto-detected from the used range and the
+    // row is appended below the existing data regardless of the index passed.
+    string tempFile = getTempFilePath("append_ignores_startrow");
+    AppendLogRow[] initial = [{name: "Al", age: 30, dept: "Eng"}];
+    check writeSheet(initial, tempFile, "Log");
+
+    AppendLogShuffled[] more = [{age: 40, dept: "HR", name: "Cy"}];
+    check writeSheet(more, tempFile, "Log", sheetWriteMode = APPEND, startRowIndex = 5);
+
+    AppendLogRow[] all = check parseSheet(tempFile, "Log");
+    test:assertEquals(all.length(), 2, "Row appended below existing data; startRowIndex ignored in APPEND");
+    test:assertEquals(all[1], {name: "Cy", age: 40, dept: "HR"}, "Appended and aligned to the real header");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendToAbsentSheetIsFresh() returns error? {
+    string tempFile = getTempFilePath("append_absent");
+    check createMultiSheetWorkbook(tempFile);
+
+    // "Fresh" is absent → APPEND behaves like a fresh write (header + data).
+    AppendLogRow[] data = [{name: "Al", age: 30, dept: "Eng"}];
+    check writeSheet(data, tempFile, "Fresh", sheetWriteMode = APPEND);
+
+    AppendLogRow[] parsed = check parseSheet(tempFile, "Fresh");
+    test:assertEquals(parsed, data, "Fresh sheet written with header and data");
+
+    Workbook wb = check fromFile(tempFile);
+    test:assertEquals(check wb.getSheetCount(), 4, "Siblings preserved");
+    check wb.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendStringArrayPositional() returns error? {
+    string tempFile = getTempFilePath("append_strings");
+    check writeSheet([["H1", "H2"], ["a", "b"]], tempFile, "Data");
+    check writeSheet([["c", "d"], ["e", "f"]], tempFile, "Data", sheetWriteMode = APPEND);
+
+    string[][] parsed = check parseSheet(tempFile, "Data");
+    test:assertEquals(parsed, [["H1", "H2"], ["a", "b"], ["c", "d"], ["e", "f"]],
+            "string[][] rows appended positionally below the last row");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendRecordWithoutHeaderErrors() returns error? {
+    string tempFile = getTempFilePath("append_no_header");
+
+    // Build a sheet whose first row holds only numeric cells — no string header.
+    Workbook wb = new;
+    Sheet s = check wb.createSheet("Nums");
+    check s.setCell(0, 0, 1);
+    check s.setCell(0, 1, 2);
+    check s.setCell(1, 0, 3);
+    check s.setCell(1, 1, 4);
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Appending records needs a header to align against → typed error, not a silent shift.
+    TwoIntRow[] recs = [{a: 5, b: 6}];
+    Error? result = writeSheet(recs, tempFile, "Nums", sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "APPEND of records without a header row must error");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetCorruptExistingFileErrors() returns error? {
+    string tempFile = getTempFilePath("corrupt_existing");
+    check io:fileWriteString(tempFile, "this is not a workbook");
+
+    // Opening an existing-but-unreadable file surfaces a ParseError, same as fromFile.
+    Error? result = writeSheet([["X"]], tempFile, "Sheet1", sheetWriteMode = REPLACE);
+    test:assertTrue(result is ParseError, "A corrupt existing file must yield a ParseError");
+    check removeTempFile(tempFile);
+}
+
+// Sheet.setRow now honours headerRowIndex (previously hard-wired to 0), so a record
+// row can align against a header that does not sit on row 0.
+@test:Config {groups: ["writeSheet", "sheet"]}
+function testSetRowHonorsHeaderRowIndex() returns error? {
+    string tempFile = getTempFilePath("setrow_header_idx");
+
+    // Header on row 2; rows 0-1 are unrelated.
+    Workbook wb = new;
+    Sheet s = check wb.createSheet("Data");
+    check s.setRow(2, ["name", "age"]);
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Write a record at row 3, pointing setRow at the header on row 2.
+    Workbook wb2 = check fromFile(tempFile);
+    Sheet s2 = check wb2.getSheet("Data");
+    check s2.setRow(3, {name: "Al", age: 30}, headerRowIndex = 2);
+    check wb2.save();
+    check wb2.close();
+
+    Workbook wb3 = check fromFile(tempFile);
+    Sheet s3 = check wb3.getSheet("Data");
+    string nameCell = check s3.getCell(3, 0);
+    int ageCell = check s3.getCell(3, 1);
+    test:assertEquals(nameCell, "Al", "name aligned to col 0 via headerRowIndex = 2");
+    test:assertEquals(ageCell, 30, "age aligned to col 1 via headerRowIndex = 2");
+    check wb3.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetInvalidPathErrors() returns error? {
+    // A path the filesystem cannot represent (embedded NUL) must surface as a typed Error,
+    // not a raw runtime exception.
+    Error? result = writeSheet([["x"]], "bad\u{0000}name.xlsx");
+    test:assertTrue(result is Error, "An invalid file path must return an Error");
+    if result is Error {
+        test:assertTrue(result.message().includes("Invalid file path"),
+                "Error must identify the invalid path");
+    }
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetRowUnionWithRecords() returns error? {
+    // An explicit Row[] of records exercises the union-dispatch record branch (the element
+    // static type is the Row union; dispatch picks the writer from the first runtime value).
+    string tempFile = getTempFilePath("union_records");
+    TwoIntRow first = {a: 1, b: 2};
+    TwoIntRow second = {a: 3, b: 4};
+    Row[] rows = [first, second];
+    check writeSheet(rows, tempFile, "U");
+
+    record {|int a; int b;|}[] parsed = check parseSheet(tempFile, "U");
+    test:assertEquals(parsed.length(), 2, "Both record rows written via union dispatch");
+    test:assertEquals(parsed[0], {a: 1, b: 2}, "First record row");
+    test:assertEquals(parsed[1], {a: 3, b: 4}, "Second record row");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendMapAlignsToHeader() returns error? {
+    // APPEND of map rows resolves keys against the existing header row and writes below the data.
+    string tempFile = getTempFilePath("append_map_align");
+    check writeSheet([["name", "age"], ["Al", "30"]], tempFile, "M");
+
+    map<CellValue>[] more = [{"age": 40, "name": "Cy"}];
+    check writeSheet(more, tempFile, "M", sheetWriteMode = APPEND);
+
+    string[][] parsed = check parseSheet(tempFile, "M");
+    test:assertEquals(parsed.length(), 3, "Map row appended below the existing data");
+    test:assertEquals(parsed[2][0], "Cy", "name aligned to column 0 by header, not key order");
+    test:assertEquals(parsed[2][1], "40", "age aligned to column 1 by header");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendMapUnmatchedKeyErrors() returns error? {
+    // A map key with no matching header is rejected during APPEND alignment.
+    string tempFile = getTempFilePath("append_map_badkey");
+    check writeSheet([["name", "age"], ["Al", "30"]], tempFile, "M");
+
+    map<CellValue>[] bad = [{"name": "Cy", "salary": 999}];
+    Error? result = writeSheet(bad, tempFile, "M", sheetWriteMode = APPEND);
+    test:assertTrue(result is Error, "An unmatched map key must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("salary"), "Error must name the offending key");
+    }
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetRowUnionWithMaps() returns error? {
+    // An explicit Row[] of maps drives the union-dispatch map branch.
+    string tempFile = getTempFilePath("union_maps");
+    map<CellValue> r1 = {"a": "1", "b": "2"};
+    map<CellValue> r2 = {"a": "3", "b": "4"};
+    Row[] rows = [r1, r2];
+    check writeSheet(rows, tempFile, "U");
+
+    string[][] parsed = check parseSheet(tempFile, "U");
+    test:assertEquals(parsed.length(), 3, "Header + two map rows written via union dispatch");
+    test:assertEquals(parsed[1][0], "1", "First map row value");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetAppendToExistingEmptySheet() returns error? {
+    // APPEND into a sheet that exists but is empty falls through to a fresh write.
+    string tempFile = getTempFilePath("append_empty_existing");
+    Workbook wb = new;
+    _ = check wb.createSheet("E");
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    check writeSheet([["a", "b"], ["1", "2"]], tempFile, "E", sheetWriteMode = APPEND);
+    string[][] parsed = check parseSheet(tempFile, "E");
+    test:assertEquals(parsed, [["a", "b"], ["1", "2"]], "APPEND to an empty existing sheet writes fresh");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["writeSheet"]}
+function testWriteSheetMixedArrayThenMapErrors() returns error? {
+    // A Row[] whose first element is an array routes to the array writer; a later non-array
+    // element is rejected as an incompatible shape.
+    string tempFile = getTempFilePath("union_mixed");
+    map<CellValue> m = {"a": "1"};
+    Row[] mixed = [["h1", "h2"], m];
+    Error? result = writeSheet(mixed, tempFile);
+    test:assertTrue(result is Error, "A mixed array/map Row[] must error in the array writer");
+    check removeTempFile(tempFile);
 }

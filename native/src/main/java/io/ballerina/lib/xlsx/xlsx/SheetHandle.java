@@ -19,6 +19,7 @@
 package io.ballerina.lib.xlsx.xlsx;
 
 import io.ballerina.lib.xlsx.utils.AnnotationUtils;
+import io.ballerina.lib.xlsx.utils.CellRangeUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
@@ -129,15 +130,8 @@ public final class SheetHandle {
                 return null;
             }
 
-            // Create CellRange record using the module's record type
-            BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                    ModuleUtils.getModule(), "CellRange");
-            cellRange.put(StringUtils.fromString("firstRowIndex"), (long) range.getFirstRow());
-            cellRange.put(StringUtils.fromString("lastRowIndex"), (long) range.getLastRow());
-            cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) range.getFirstColumn());
-            cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) range.getLastColumn());
-
-            return cellRange;
+            return CellRangeUtils.create(range.getFirstRow(), range.getLastRow(),
+                    range.getFirstColumn(), range.getLastColumn());
         } catch (BallerinaErrorException e) {
             return e.getBError();
         }
@@ -210,7 +204,7 @@ public final class SheetHandle {
                 return getRowsAsRecords(env, sheet, config, (RecordType) describingType);
             }
 
-            // map<CellValue?> → map<CellValue?>[]
+            // map<CellValue> → map<CellValue>[]
             if (typeTag == TypeTags.MAP_TAG) {
                 return getRowsAsMaps(env, sheet, config, (MapType) describingType);
             }
@@ -434,7 +428,7 @@ public final class SheetHandle {
     }
 
     /**
-     * Get rows as map<CellValue?>[].
+     * Get rows as map<CellValue>[].
      */
     private static Object getRowsAsMaps(Environment env, Sheet sheet, XlsxConfig config, MapType mapType) {
         CellRangeAddress usedRange = UsedRangeDetector.detectUsedRange(sheet);
@@ -554,7 +548,7 @@ public final class SheetHandle {
      * Read a single cell value, bound to the target type.
      *
      * <p>The target type drives binding exactly as elsewhere: a broad target (the default
-     * {@code CellValue?}) yields the cell's natural value (whole number → int, fractional →
+     * {@code CellValue}) yields the cell's natural value (whole number → int, fractional →
      * decimal, date/time → ISO string), while a pinned {@code time:Civil} / {@code time:Date}
      * / {@code time:TimeOfDay} / scalar yields that type. A blank cell binds to {@code ()} for
      * a nilable target, or surfaces a typed error for a non-nilable one (same rule as a
@@ -606,6 +600,34 @@ public final class SheetHandle {
             Sheet sheet = getSheet(sheetObj);
             XlsxConfig config = XlsxConfig.fromWriteOptions(options);
             int targetRow = (int) rowIdx;
+            String mode = config.getSheetWriteMode();  // setRow default is REPLACE (overwrite the row)
+            if ("FAIL_IF_EXISTS".equals(mode)) {
+                if (rowHasRealData(sheet.getRow(targetRow))) {
+                    return DiagnosticLog.error(
+                            "Cannot setRow with FAIL_IF_EXISTS: row " + targetRow + " is not empty");
+                }
+            } else if ("APPEND".equals(mode)) {
+                int headerRowIdx = config.hasHeaders() ? config.getHeaderRowIndex() : 0;
+                // Inserting a record/map row at or above the header it aligns to corrupts the alignment.
+                if (rowData instanceof BMap && targetRow <= headerRowIdx) {
+                    return DiagnosticLog.error("setRow APPEND position " + targetRow
+                            + " must be below the header row " + headerRowIdx);
+                }
+                // Refuse to shift a table: the cells would move but the table's ref would not follow.
+                String shifted = RowShifter.firstTableShiftedBy(sheet, targetRow, null);
+                if (shifted != null) {
+                    return DiagnosticLog.tableShiftConflictError(shifted, sheet.getSheetName(), targetRow);
+                }
+                // Validate header + field/key resolution before mutating, so a record/map that can't
+                // be aligned doesn't leave a shifted blank row behind in the (persistent) workbook.
+                if (rowData instanceof BMap) {
+                    Object validationError = validateRecordMapForHeader(sheet, headerRowIdx, rowData);
+                    if (validationError != null) {
+                        return validationError;
+                    }
+                }
+                RowShifter.makeRoom(sheet, targetRow, 1);
+            }
             StyleCache styleCache = new StyleCache(sheet.getWorkbook());
             if (rowData instanceof BArray) {
                 BArray arr = (BArray) rowData;
@@ -683,12 +705,62 @@ public final class SheetHandle {
                 return null;
             }
             return DiagnosticLog.error(
-                    "setRow data must be string[], record, or map<CellValue?>");
+                    "setRow data must be string[], record, or map<CellValue>");
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
             return DiagnosticLog.error("Error setting row: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Validate that a record/map row can be aligned to the sheet's header row at {@code headerRowIdx}
+     * (the header exists and every field/key resolves to a column), returning a typed error on the
+     * first problem or {@code null}. Used to validate an APPEND insert before it mutates the sheet.
+     */
+    private static Object validateRecordMapForHeader(Sheet sheet, int headerRowIdx, Object rowData) {
+        Map<String, Integer> headers = XlsxWriter.existingHeaderMap(sheet, headerRowIdx);
+        if (headers == null) {
+            return DiagnosticLog.error(
+                    "setRow with a record or map requires an existing header row at index " + headerRowIdx);
+        }
+        @SuppressWarnings("unchecked")
+        BMap<BString, Object> map = (BMap<BString, Object>) rowData;
+        Type valueType = TypeUtils.getReferredType(TypeUtils.getType(map));
+        if (valueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+            RecordType recordType = (RecordType) valueType;
+            for (String fieldName : recordType.getFields().keySet()) {
+                String headerName = AnnotationUtils.getHeaderName(recordType, fieldName);
+                if (headers.get(headerName) == null) {
+                    return DiagnosticLog.error("Field '" + fieldName + "' (header '" + headerName
+                            + "') has no matching column in the sheet header row");
+                }
+            }
+        } else {
+            for (BString key : map.getKeys()) {
+                if (headers.get(key.getValue()) == null) {
+                    return DiagnosticLog.error("Key '" + key.getValue()
+                            + "' has no matching column in the sheet header row");
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether a row holds any real data (used by the FAIL_IF_EXISTS occupancy guard).
+     */
+    private static boolean rowHasRealData(Row row) {
+        if (row == null) {
+            return false;
+        }
+        short last = row.getLastCellNum();
+        for (int c = 0; c < last; c++) {
+            if (UsedRangeDetector.hasRealData(row.getCell(c))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -791,6 +863,12 @@ public final class SheetHandle {
                 return DiagnosticLog.error(
                         "Row index " + idx + " is out of range for deletion");
             }
+            // Deleting a row shifts everything below up; a table caught in that shift would have
+            // its cells moved but its definition left stale. Refuse and point at the Table API.
+            String shifted = RowShifter.firstTableShiftedBy(sheet, idx, null);
+            if (shifted != null) {
+                return DiagnosticLog.tableDeleteConflictError(shifted, sheet.getSheetName(), idx);
+            }
             Row row = sheet.getRow(idx);
             if (row != null) {
                 sheet.removeRow(row);
@@ -822,7 +900,7 @@ public final class SheetHandle {
             // Refuse to rename to a name another sheet already uses (case-insensitive).
             int existing = WorkbookHandle.findSheetIndexCaseInsensitive(workbook, name);
             if (existing != -1 && existing != idx) {
-                return DiagnosticLog.error("Sheet '" + name + "' already exists");
+                return DiagnosticLog.sheetExistsError(name);
             }
             workbook.setSheetName(idx, name);
             return null;
@@ -943,18 +1021,6 @@ public final class SheetHandle {
 
             XSSFSheet xssfSheet = (XSSFSheet) sheet;
             String tableName = name.getValue();
-            // Check if table name already exists in workbook
-            org.apache.poi.xssf.usermodel.XSSFWorkbook workbook =
-                    (org.apache.poi.xssf.usermodel.XSSFWorkbook) xssfSheet.getWorkbook();
-            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
-                XSSFSheet s =
-                        (XSSFSheet) workbook.getSheetAt(i);
-                for (XSSFTable t : s.getTables()) {
-                    if (tableName.equals(t.getName()) || tableName.equals(t.getDisplayName())) {
-                        return DiagnosticLog.error("Table '" + tableName + "' already exists in workbook");
-                    }
-                }
-            }
 
             // Parse range
             AreaReference areaRef;
@@ -965,10 +1031,10 @@ public final class SheetHandle {
             } else if (range instanceof BMap) {
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> cellRange = (BMap<BString, Object>) range;
-                int firstRow = ((Long) cellRange.get(StringUtils.fromString("firstRowIndex"))).intValue();
-                int lastRow = ((Long) cellRange.get(StringUtils.fromString("lastRowIndex"))).intValue();
-                int firstCol = ((Long) cellRange.get(StringUtils.fromString("firstColumnIndex"))).intValue();
-                int lastCol = ((Long) cellRange.get(StringUtils.fromString("lastColumnIndex"))).intValue();
+                int firstRow = CellRangeUtils.firstRow(cellRange);
+                int lastRow = CellRangeUtils.lastRow(cellRange);
+                int firstCol = CellRangeUtils.firstColumn(cellRange);
+                int lastCol = CellRangeUtils.lastColumn(cellRange);
 
                 CellReference topLeft = new CellReference(firstRow, firstCol);
                 CellReference bottomRight = new CellReference(lastRow, lastCol);
@@ -978,13 +1044,10 @@ public final class SheetHandle {
                 return DiagnosticLog.invalidTableRangeError("Invalid range type");
             }
 
-            // Check for overlap with existing tables
-            for (XSSFTable existing : xssfSheet.getTables()) {
-                AreaReference existingArea = new AreaReference(
-                        existing.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
-                if (rangesOverlap(areaRef, existingArea)) {
-                    return DiagnosticLog.tableOverlapError(tableName, existing.getName(), xssfSheet.getSheetName());
-                }
+            // Validate placement (workbook-wide name uniqueness + sibling overlap) before creating.
+            Object placementError = validateTablePlacement(xssfSheet, tableName, areaRef);
+            if (placementError != null) {
+                return placementError;
             }
 
             // Create the table
@@ -1045,51 +1108,47 @@ public final class SheetHandle {
             }
 
             XSSFSheet xssfSheet = (XSSFSheet) sheet;
-            // Write data first
+
+            // An Excel table needs at least a header row, so there is nothing to wrap when the
+            // data is empty (the write below would be a no-op, leaving a malformed 1x1 table).
+            if (data.getLength() == 0) {
+                return DiagnosticLog.invalidTableRangeError(
+                        "Cannot create a table from empty data: a table requires at least a header row");
+            }
+
+            // Compute the target range from the data shape up front (records → declared field count;
+            // maps → union of keys; string[][] → first-row length), so the table name and overlap are
+            // validated BEFORE any data is written — otherwise a name/overlap failure would strand the
+            // written data on the (persistent) sheet. Record/map rows add a header row; a string[][]
+            // already carries its header as its first row.
+            int startRow = (int) startRowIndex;
+            int startCol = (int) startColumnIndex;
+            boolean arrayData = data.get(0) instanceof BArray;
+            int colCount = Math.max(XlsxWriter.writtenColumnCount(data), 1);
+            int rowCount = arrayData ? (int) data.getLength() : (int) data.getLength() + 1;
+            CellReference topLeft = new CellReference(startRow, startCol);
+            CellReference bottomRight =
+                    new CellReference(startRow + rowCount - 1, startCol + colCount - 1);
+            AreaReference areaRef = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+
+            TableHandle.validateTableName(name.getValue());
+            Object placementError = validateTablePlacement(xssfSheet, name.getValue(), areaRef);
+            if (placementError != null) {
+                return placementError;
+            }
+
+            // Lay the data out deterministically over the table's region (overwrite, no shift).
             BMap<BString, Object> writeOptions = ValueCreator.createMapValue();
             writeOptions.put(StringUtils.fromString("writeHeaders"), true);
             writeOptions.put(StringUtils.fromString("startRowIndex"), startRowIndex);
             writeOptions.put(StringUtils.fromString("startColumnIndex"), startColumnIndex);
-
+            writeOptions.put(XlsxConfig.WRITE_SHEET_MODE, StringUtils.fromString("REPLACE"));
             Object writeResult = XlsxWriter.writeToSheet(xssfSheet, data, writeOptions);
             if (writeResult != null) {
                 return writeResult; // Error from write
             }
 
-            // Calculate the table range
-            int startRow = (int) startRowIndex;
-            int startCol = (int) startColumnIndex;
-
-            // Get dimensions from data. Record/map rows generate a header row, so the
-            // table spans data rows + 1. A string[][] already carries its header as the
-            // first row, so its height is exactly the supplied row count.
-            int colCount = 1; // Default
-            boolean arrayData = false;
-
-            // Determine column count and row shape from the first row
-            if (data.getLength() > 0) {
-                Object firstItem = data.get(0);
-                if (firstItem instanceof BMap) {
-                    @SuppressWarnings("unchecked")
-                    BMap<BString, Object> record = (BMap<BString, Object>) firstItem;
-                    colCount = record.getKeys().length;
-                } else if (firstItem instanceof BArray) {
-                    arrayData = true;
-                    colCount = (int) ((BArray) firstItem).getLength();
-                }
-            }
-
-            int rowCount = arrayData ? (int) data.getLength() : (int) data.getLength() + 1;
-
-            int lastRow = startRow + rowCount - 1;
-            int lastCol = startCol + colCount - 1;
-
-            CellReference topLeft = new CellReference(startRow, startCol);
-            CellReference bottomRight = new CellReference(lastRow, lastCol);
-            AreaReference areaRef = new AreaReference(
-                    topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
-
-            // Create table from the written range
+            // Create the table over the written range.
             return createTable(sheetObj, name, StringUtils.fromString(areaRef.formatAsString()), null);
 
         } catch (BallerinaErrorException e) {
@@ -1147,6 +1206,33 @@ public final class SheetHandle {
             WorkbookHandle.registerVendedHandle(parentWorkbook, tableObj);
         }
         return tableObj;
+    }
+
+    /**
+     * Validate that a table named {@code name} can be placed at {@code area}: the name is unique
+     * across the workbook and the area overlaps no existing table. Returns a typed error or
+     * {@code null}. Shared by {@code createTable} and {@code createTableFromData} so the latter can
+     * validate before writing any data.
+     */
+    private static Object validateTablePlacement(XSSFSheet sheet, String name, AreaReference area) {
+        org.apache.poi.xssf.usermodel.XSSFWorkbook workbook =
+                (org.apache.poi.xssf.usermodel.XSSFWorkbook) sheet.getWorkbook();
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            XSSFSheet s = (XSSFSheet) workbook.getSheetAt(i);
+            for (XSSFTable t : s.getTables()) {
+                if (name.equals(t.getName()) || name.equals(t.getDisplayName())) {
+                    return DiagnosticLog.tableExistsError(name);
+                }
+            }
+        }
+        for (XSSFTable existing : sheet.getTables()) {
+            AreaReference existingArea = new AreaReference(
+                    existing.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+            if (rangesOverlap(area, existingArea)) {
+                return DiagnosticLog.tableOverlapError(name, existing.getName(), sheet.getSheetName());
+            }
+        }
+        return null;
     }
 
     /**

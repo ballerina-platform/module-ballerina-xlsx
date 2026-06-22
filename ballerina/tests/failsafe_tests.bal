@@ -380,6 +380,33 @@ function testFailSafeDoesNotSwallowStructuralError() returns error? {
         "Structural error must fail even with fail-safe enabled");
 }
 
+@test:Config {
+    groups: ["failsafe"],
+    before: setupFailSafeTestData
+}
+function testFailSafeUnwritableLogPathErrors() returns error? {
+    // A log-file path whose parent is a regular file cannot be created; the generation failure
+    // surfaces rather than being silently dropped.
+    string blocker = FAIL_SAFE_TEST_DIR + "failsafe_blocker";
+    check io:fileWriteString(blocker, "x");
+    string badLog = blocker + "/nested/errors.log";   // parent "failsafe_blocker" is a file
+
+    ParseOptions opts = {
+        failSafe: {
+            enableConsoleLogs: false,
+            fileOutputMode: {
+                filePath: badLog,
+                contentType: METADATA
+            }
+        }
+    };
+
+    FailSafeEmployee[]|error result = trap parseSheet(FAIL_SAFE_TEST_DIR + "failsafe_test.xlsx", 0, opts);
+    test:assertTrue(result is error, "An uncreatable log-file path must surface an error");
+
+    check file:remove(blocker);
+}
+
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
@@ -553,7 +580,7 @@ function testTableGetRowsWithFailSafe() returns error? {
     Workbook wb = check fromFile(FAIL_SAFE_TEST_DIR + "failsafe_table.xlsx");
     Table tbl = check wb.getTable("FailSafeTable");
 
-    ParseOptions opts = {
+    TableParseOptions opts = {
         failSafe: {
             enableConsoleLogs: false,
             fileOutputMode: {

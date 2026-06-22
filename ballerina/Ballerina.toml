@@ -2,10 +2,10 @@
 distribution = "2201.12.0"
 org = "ballerina"
 name = "xlsx"
-version = "0.9.0"
+version = "1.0.0"
 license = ["Apache-2.0"]
 authors = ["Ballerina"]
-keywords = ["xlsx", "excel", "spreadsheet", "data"]
+keywords = ["xlsx", "excel", "microsoft", "spreadsheet", "data"]
 repository = "https://github.com/ballerina-platform/module-ballerina-xlsx"
 
 [build-options]
@@ -17,8 +17,8 @@ graalvmCompatible = true
 [[platform.java21.dependency]]
 groupId = "io.ballerina.lib"
 artifactId = "xlsx-native"
-version = "0.9.0"
-path = "../native/build/libs/xlsx-native-0.9.0.jar"
+version = "1.0.0"
+path = "../native/build/libs/xlsx-native-1.0.0-SNAPSHOT.jar"
 
 [[platform.java21.dependency]]
 groupId = "org.apache.poi"

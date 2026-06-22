@@ -402,3 +402,44 @@ function testDatetimeCellReadAsStringPreservesTime() returns error? {
 
     check removeTempFile(tempFile);
 }
+
+// String-target views of the date/time columns, used to verify that binding a date/time cell to a
+// plain `string` field keeps the full ISO shape (matching the raw string[][] path).
+type EventCreatedAtAsString record {|
+    string name;
+    string createdAt;
+|};
+
+type EventStartTimeAsString record {|
+    string name;
+    string startTime;
+|};
+
+@test:Config {groups: ["datetime"]}
+function testDateTimeBindsToStringKeepingTime() returns error? {
+    // A date-time cell read into a string field must keep its time component (not collapse to a
+    // date-only string), matching the raw string[][] path.
+    EventWithDateTime[] events = [
+        {name: "Webinar", createdAt: {year: 2026, month: 3, day: 10, hour: 14, minute: 30, second: 0d}}
+    ];
+    string tempFile = getTempFilePath("datetime_string_fallback");
+    check writeSheet(events, tempFile);
+
+    EventCreatedAtAsString[] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[0].createdAt, "2026-03-10 14:30:00",
+            "Date-time bound to a string field keeps the time component");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["datetime"]}
+function testTimeOnlyBindsToStringAsTime() returns error? {
+    // A time-only cell read into a string field must yield a time string, not a bogus epoch date.
+    EventWithTime[] events = [{name: "Standup", startTime: {hour: 9, minute: 15, second: 0d}}];
+    string tempFile = getTempFilePath("timeonly_string_fallback");
+    check writeSheet(events, tempFile);
+
+    EventStartTimeAsString[] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[0].startTime, "09:15:00",
+            "Time-only cell bound to a string field yields a time string");
+    check removeTempFile(tempFile);
+}

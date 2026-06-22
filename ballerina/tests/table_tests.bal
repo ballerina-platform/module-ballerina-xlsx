@@ -164,7 +164,7 @@ function testParseTableToStringArray() returns error? {
     groups: ["table"]
 }
 function testParseTableToMaps() returns error? {
-    map<CellValue?>[] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
+    map<CellValue>[] data = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable");
 
     test:assertEquals(data.length(), 3, "Should have 3 maps");
     test:assertEquals(data[0]["Name"], "Alice", "First employee name");
@@ -189,7 +189,7 @@ function testParseTableNotFound() returns error? {
 function testParseTableCaseInsensitiveHeaders() returns error? {
     // CaseTable has lowercase headers (name/age/department); TableEmployee fields are
     // capitalised (Name/Age/Department). With caseInsensitiveHeaders they must match.
-    ParseOptions opts = {
+    TableParseOptions opts = {
         caseInsensitiveHeaders: true
     };
 
@@ -199,6 +199,27 @@ function testParseTableCaseInsensitiveHeaders() returns error? {
     test:assertEquals(employees[0].Name, "Alice", "First employee name");
     test:assertEquals(employees[0].Age, 30, "First employee age");
     test:assertEquals(employees[1].Name, "Bob", "Second employee name");
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testTableGetRowWithOptions() returns error? {
+    // Single-row table read threads its binding fields through TableRowParseOptions.
+    // CaseTable has lowercase headers (name/age) vs the capitalised TableEmployee fields,
+    // so the row only binds when caseInsensitiveHeaders is honoured by getRow.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "case_table.xlsx");
+    Table tbl = check wb.getTable("CaseTable");
+
+    TableRowParseOptions opts = {
+        caseInsensitiveHeaders: true
+    };
+    TableEmployee emp = check tbl.getRow(0, opts);
+
+    test:assertEquals(emp.Name, "Alice", "getRow(0) name via caseInsensitive match");
+    test:assertEquals(emp.Age, 30, "getRow(0) age via caseInsensitive match");
+
+    check wb.close();
 }
 
 @test:Config {
@@ -546,6 +567,239 @@ function testTablePutRows() returns error? {
     check wb.close();
 }
 
+// =============================================================================
+// TABLE WRITE-MODE TESTS — REPLACE resize (grow/shrink/clear), APPEND, overlap
+// =============================================================================
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableReplaceShrinks() returns error? {
+    // REPLACE (the default) with fewer rows must shrink the data range — no stale rows survive
+    // inside the table. EmployeeTable starts with 3 data rows.
+    string tempFile = getTempFilePath("table_shrink");
+    Workbook wbSrc = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    check wbSrc.saveAs(tempFile);
+    check wbSrc.close();
+
+    TableEmployee[] fewer = [{Name: "Solo", Age: 41, Department: "Ops"}];
+    check writeTable(fewer, tempFile, "EmployeeTable");
+
+    TableEmployee[] result = check parseTable(tempFile, "EmployeeTable");
+    test:assertEquals(result.length(), 1, "REPLACE with 1 row must leave exactly 1 data row");
+    test:assertEquals(result[0].Name, "Solo", "The single row must be the written row");
+
+    Workbook wbCheck = check fromFile(tempFile);
+    Table shrunk = check wbCheck.getTable("EmployeeTable");
+    test:assertEquals(check shrunk.getRowCount(), 1, "Table data-row count must shrink to 1");
+    CellRange dataRange = check shrunk.getDataCellRange();
+    test:assertEquals(dataRange.lastRowIndex, 1, "Data range must shrink (no stale rows below)");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableReplaceClears() returns error? {
+    // REPLACE with an empty array clears the table to a single blank data row (Excel needs >= 1).
+    string tempFile = getTempFilePath("table_clear");
+    Workbook wbSrc = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    check wbSrc.saveAs(tempFile);
+    check wbSrc.close();
+
+    TableEmployee[] none = [];
+    check writeTable(none, tempFile, "EmployeeTable");
+
+    Workbook wbCheck = check fromFile(tempFile);
+    Table cleared = check wbCheck.getTable("EmployeeTable");
+    test:assertEquals(check cleared.getRowCount(), 1, "Cleared table keeps a single blank data row");
+    string[][] rows = check cleared.getRows();
+    test:assertEquals(rows.length(), 1, "Cleared table reads a single data row");
+    test:assertEquals(rows[0][0], "", "The kept data row must be blank");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableAppendMode() returns error? {
+    // APPEND adds rows below the existing data; existing rows are preserved.
+    string tempFile = getTempFilePath("table_append");
+    Workbook wbSrc = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    check wbSrc.saveAs(tempFile);
+    check wbSrc.close();
+
+    TableEmployee[] more = [
+        {Name: "Dan", Age: 28, Department: "HR"},
+        {Name: "Eve", Age: 33, Department: "Legal"}
+    ];
+    check writeTable(more, tempFile, "EmployeeTable", tableWriteMode = APPEND);
+
+    TableEmployee[] result = check parseTable(tempFile, "EmployeeTable");
+    test:assertEquals(result.length(), 5, "APPEND must keep 3 original + 2 new rows");
+    test:assertEquals(result[0].Name, "Alice", "Original first row preserved");
+    test:assertEquals(result[2].Name, "Charlie", "Original last row preserved");
+    test:assertEquals(result[3].Name, "Dan", "First appended row");
+    test:assertEquals(result[4].Name, "Eve", "Second appended row");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testTablePutRowsAppendMode() returns error? {
+    // The object API honours the mode too.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("T");
+    check sheet.putRows([["Name", "Value"], ["A", "1"], ["B", "2"]]);
+    Table t = check sheet.createTable("PutAppend", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.putRows([["C", "3"]], tableWriteMode = APPEND);
+
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 3, "APPEND adds below existing data");
+    test:assertEquals(rows[0][0], "A", "Original row preserved");
+    test:assertEquals(rows[2][0], "C", "Appended row at the bottom");
+    check wb.close();
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableTotalsRowResize() returns error? {
+    // A totals row must survive a resize (grow then shrink) and stay directly below the data.
+    string totalsFile = getTempFilePath("table_totals_resize");
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    check sheet.putRows([["Region", "Amount"], ["North", "100"], ["South", "250"]]);
+    Table salesTable = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check setTotalRowNative(salesTable, 1, 350.0);
+    check wb.saveAs(totalsFile);
+    check wb.close();
+
+    // Grow: replace 2 data rows with 4.
+    string[][] grown = [["North", "100"], ["South", "250"], ["East", "75"], ["West", "125"]];
+    check writeTable(grown, totalsFile, "SalesTable");
+
+    Workbook wbGrown = check fromFile(totalsFile);
+    Table grownTable = check wbGrown.getTable("SalesTable");
+    test:assertEquals(check grownTable.getRowCount(), 4, "Data rows grow to 4");
+    test:assertTrue(check grownTable.hasTotalRow(), "Totals row survives the grow");
+    map<CellValue> grownTotals = check grownTable.getTotalRow();
+    test:assertEquals(grownTotals["Amount"], 350, "Totals value carried by the shift");
+    check wbGrown.close();
+
+    // Shrink: replace 4 data rows with 1.
+    string[][] shrunk = [["Only", "999"]];
+    check writeTable(shrunk, totalsFile, "SalesTable");
+
+    Workbook wbShrunk = check fromFile(totalsFile);
+    Table shrunkTable = check wbShrunk.getTable("SalesTable");
+    test:assertEquals(check shrunkTable.getRowCount(), 1, "Data rows shrink to 1 (no stale rows)");
+    test:assertTrue(check shrunkTable.hasTotalRow(), "Totals row survives the shrink");
+    map<CellValue> shrunkTotals = check shrunkTable.getTotalRow();
+    test:assertEquals(shrunkTotals["Amount"], 350, "Totals value still intact after shrink");
+    check wbShrunk.close();
+    check removeTempFile(totalsFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableResizeOverlapError() returns error? {
+    // Two tables stacked on one sheet. Growing the upper one over the lower must fail loud with a
+    // TableOverlapError and leave both tables untouched.
+    string tempFile = getTempFilePath("table_overlap");
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Stacked");
+    check sheet.putRows([
+        ["Name", "Value"],
+        ["A", "1"],
+        ["B", "2"],
+        ["", ""],
+        ["P", "Q"],
+        ["x", "y"],
+        ["z", "w"]
+    ]);
+    _ = check sheet.createTable("Upper", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Lower", {
+        firstRowIndex: 4,
+        lastRowIndex: 6,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Grow Upper from 2 to 5 data rows — would shift Lower down → overlap.
+    string[][] big = [["A", "1"], ["B", "2"], ["C", "3"], ["D", "4"], ["E", "5"]];
+    Error? result = writeTable(big, tempFile, "Upper");
+    test:assertTrue(result is TableOverlapError,
+            "Growing a table into another must return TableOverlapError");
+
+    // Both tables untouched — nothing was written.
+    Workbook wbCheck = check fromFile(tempFile);
+    Table upperCheck = check wbCheck.getTable("Upper");
+    Table lowerCheck = check wbCheck.getTable("Lower");
+    test:assertEquals(check upperCheck.getRowCount(), 2, "Upper table unchanged after a refused write");
+    test:assertEquals(check lowerCheck.getRowCount(), 2, "Lower table unchanged after a refused write");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
+@test:Config {
+    groups: ["table"]
+}
+function testWriteTableShiftsPlainContentDown() returns error? {
+    // Plain (non-table) content below a table is carried down by a grow, not overwritten.
+    string tempFile = getTempFilePath("table_plain_below");
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["Name", "Value"],
+        ["A", "1"],
+        ["B", "2"],
+        ["", ""],
+        ["NOTE", "keep-me"]
+    ]);
+    _ = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check wb.saveAs(tempFile);
+    check wb.close();
+
+    // Grow the table by 2 rows; the note at row 4 must shift down to row 6, preserved.
+    string[][] more = [["A", "1"], ["B", "2"], ["C", "3"], ["D", "4"]];
+    check writeTable(more, tempFile, "T");
+
+    Workbook wbCheck = check fromFile(tempFile);
+    Sheet s = check wbCheck.getSheet("S");
+    string moved = check s.getCell(6, 1);
+    test:assertEquals(moved, "keep-me", "Plain content below the table is carried down, not clobbered");
+    check wbCheck.close();
+    check removeTempFile(tempFile);
+}
+
 @test:Config {
     groups: ["table"]
 }
@@ -684,7 +938,7 @@ function testTableGetTotalsRowError() returns error? {
     Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
     Table empTable = check wb.getTable("EmployeeTable");
 
-    map<CellValue?>|Error result = empTable.getTotalRow();
+    map<CellValue>|Error result = empTable.getTotalRow();
     test:assertTrue(result is Error, "Should return error when table has no totals row");
     if result is Error {
         test:assertTrue(result.message().includes("does not have a total row"),
@@ -699,7 +953,7 @@ function testTableGetTotalsRowError() returns error? {
 }
 function testTableGetTotalRow() returns error? {
     // Build a table, author a total row via the test-only helper, then read it back.
-    // The total-row map must come back typed as map<CellValue?> with the total bound
+    // The total-row map must come back typed as map<CellValue> with the total bound
     // to its natural Ballerina type (a whole number → int).
     string totalsFile = TEST_DATA_DIR + "temp_table_totals.xlsx";
     Workbook wb = new;
@@ -726,12 +980,10 @@ function testTableGetTotalRow() returns error? {
 
     test:assertTrue(check reopenedTable.hasTotalRow(), "Table should have a total row");
 
-    map<CellValue?> totals = check reopenedTable.getTotalRow();
-    // The returned map must be a genuine map<CellValue?>, not the wider map<anydata> the
-    // native builds internally — this guards the typedesc-based inherent-type fix.
-    test:assertTrue(totals is map<CellValue?>,
-            "Total row must be a genuine map<CellValue?>, not map<anydata>");
-    CellValue? amountTotal = totals["Amount"];
+    // Binding to a map<CellValue> is itself the guard for the typedesc-based inherent-type fix:
+    // this `check` would fail if the native returned the wider map<anydata>.
+    map<CellValue> totals = check reopenedTable.getTotalRow();
+    CellValue amountTotal = totals["Amount"];
     test:assertEquals(amountTotal, 350, "Total should bind to its natural type (int 350)");
     test:assertTrue(amountTotal is int, "Whole-number total must bind to int, not decimal/string");
 
@@ -866,7 +1118,7 @@ function testWriteTableNotFound() returns error? {
 }
 function testParseTableWithRowCount() returns error? {
     // Test that rowCount option limits the number of rows returned
-    ParseOptions opts = {
+    TableParseOptions opts = {
         rowCount: 2
     };
     TableEmployee[] employees = check parseTable(TEST_DATA_DIR + "tables_test.xlsx", "EmployeeTable", opts);
@@ -885,7 +1137,7 @@ function testTableGetRowsWithRowCount() returns error? {
     Table empTable = check wb.getTable("EmployeeTable");
 
     // Get rows with rowCount limit
-    ParseOptions opts = {
+    TableParseOptions opts = {
         rowCount: 1
     };
     TableEmployee[] employees = check empTable.getRows(opts);
@@ -920,12 +1172,11 @@ function testWriteTableWithInlineLiteral() returns error? {
     Workbook check_wb = check fromFile(tempFile);
     Table empTable = check check_wb.getTable("EmployeeTable");
     string[][] rows = check empTable.getRows();
-    // writeTable overwrites from the first data row and expands when needed, but does not
-    // shrink — writing two rows over the original three leaves the third row in place.
-    test:assertEquals(rows.length(), 3, "Table keeps 3 data rows (overwrite-in-place, no shrink)");
+    // REPLACE (the default) resizes the table to fit the data, so writing two rows over the
+    // original three shrinks it to two — no stale trailing row survives.
+    test:assertEquals(rows.length(), 2, "REPLACE resizes the table to fit (3 -> 2 rows, no stale row)");
     test:assertEquals(rows[0][0], "Eve");
     test:assertEquals(rows[1][0], "Frank");
-    test:assertEquals(rows[2][0], "Charlie", "Untouched trailing row is preserved");
     check check_wb.close();
     check removeTempFile(tempFile);
 }
@@ -1086,10 +1337,10 @@ function testCreateTableFromDataAtNonZeroStartColumn() returns error? {
     test:assertEquals(range.lastColumnIndex, 4);
 
     Sheet s2 = check wb2.getSheet(0);
-    CellValue? headerNameCell = check s2.getCell(2, 3);
+    CellValue headerNameCell = check s2.getCell(2, 3);
     test:assertEquals(headerNameCell, "name",
             "Header 'name' must be at row 2 col 3, matching the requested table offset");
-    CellValue? firstNameCell = check s2.getCell(3, 3);
+    CellValue firstNameCell = check s2.getCell(3, 3);
     test:assertEquals(firstNameCell, "Alice",
             "Data value 'Alice' must be at row 3 col 3, not column 0");
     check wb2.close();
@@ -1146,4 +1397,818 @@ function testTableWriteResolvesColumnsByHeader() returns error? {
     test:assertEquals(parsed[0].age, 42,
             "age field must land in the 'age' column, regardless of write key order");
     check file:remove(tempFile);
+}
+
+// =============================================================================
+// TABLE MID-POSITION INSERT (APPEND insertAt)
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsInsertAt() returns error? {
+    // APPEND with insertAt inserts inside the table, shifting existing rows down.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"], ["Cara", "40"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 3,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // Insert at data-row 1 (between Alice and Bob).
+    check t.putRows([["Zoe", "99"]], tableWriteMode = APPEND, insertAt = 1);
+
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 4, "Table grew by one row");
+    test:assertEquals(rows[0][0], "Alice", "Row before the insert preserved");
+    test:assertEquals(rows[1][0], "Zoe", "Inserted at data-row 1");
+    test:assertEquals(rows[2][0], "Bob", "Existing row shifted down");
+    test:assertEquals(rows[3][0], "Cara", "Trailing row shifted down");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtOutOfRange() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // currentDataRows = 1; insertAt = 5 is out of range.
+    Error? result = t.putRows([["X", "9"]], tableWriteMode = APPEND, insertAt = 5);
+    test:assertTrue(result is InvalidTableRangeError, "insertAt out of range must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtIgnoredForReplace() returns error? {
+    // insertAt is APPEND-only; with REPLACE it is ignored (the whole data region is replaced).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.putRows([["Solo", "1"]], tableWriteMode = REPLACE, insertAt = 1);
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 1, "REPLACE replaces the whole data region, ignoring insertAt");
+    test:assertEquals(rows[0][0], "Solo", "Data replaced");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtOverlapError() returns error? {
+    // A mid-insert that would shift a second table below must error.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["Name", "Age"],
+        ["Alice", "30"],
+        ["Bob", "25"],
+        ["", ""],
+        ["P", "Q"],
+        ["x", "y"]
+    ]);
+    Table t = check sheet.createTable("Upper", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Lower", {
+        firstRowIndex: 4,
+        lastRowIndex: 5,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = t.putRows([["Z", "9"]], tableWriteMode = APPEND, insertAt = 0);
+    test:assertTrue(result is TableOverlapError, "A mid-insert that shifts a second table must error");
+    check wb.close();
+}
+
+// =============================================================================
+// TABLE ROW DELETE (Table.deleteRow)
+// =============================================================================
+
+// Record whose optional field may be absent in a given row.
+type OptionalAgeRow record {|
+    string name;
+    int age?;
+|};
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRow() returns error? {
+    // Deleting a data row shrinks the table; the row below is pulled up to close the gap.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"], ["Cara", "40"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 3,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.deleteRow(1);  // remove Bob
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows.length(), 2, "Table shrank by one data row");
+    test:assertEquals(rows[0][0], "Alice", "Row before the delete preserved");
+    test:assertEquals(rows[1][0], "Cara", "Row after the delete pulled up");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowOutOfRange() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = t.deleteRow(5);
+    test:assertTrue(result is InvalidTableRangeError, "Out-of-range data-row index must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteLastRowRefused() returns error? {
+    // A table must keep at least one data row, so the last one cannot be deleted.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = t.deleteRow(0);
+    test:assertTrue(result is InvalidTableRangeError, "Deleting the only data row must error");
+    test:assertEquals(check t.getRowCount(), 1, "The data row is left intact");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowCarriesTotalsRow() returns error? {
+    // The totals row and its value ride along with the upward shift when a data row is deleted.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    check sheet.putRows([["Region", "Amount"], ["North", "100"], ["South", "250"], ["East", "75"]]);
+    Table t = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 3,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check setTotalRowNative(t, 1, 425.0);
+
+    check t.deleteRow(0);  // remove North
+    test:assertEquals(check t.getRowCount(), 2, "Two data rows remain");
+    test:assertTrue(check t.hasTotalRow(), "Totals row survives the delete");
+    map<CellValue> totals = check t.getTotalRow();
+    test:assertEquals(totals["Amount"], 425, "Totals value carried up by the shift");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtShiftsTotalsRow() returns error? {
+    // A mid-table insert shifts the totals row down and preserves its value.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Sales");
+    check sheet.putRows([["Region", "Amount"], ["North", "100"], ["South", "250"]]);
+    Table t = check sheet.createTable("SalesTable", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    check setTotalRowNative(t, 1, 350.0);
+
+    check t.putRows([["East", "75"]], tableWriteMode = APPEND, insertAt = 1);
+    test:assertEquals(check t.getRowCount(), 3, "Data grew to three rows");
+    test:assertTrue(check t.hasTotalRow(), "Totals row survives the insert");
+    map<CellValue> totals = check t.getTotalRow();
+    test:assertEquals(totals["Amount"], 350, "Totals value preserved after the shift");
+    string[][] rows = check t.getRows();
+    test:assertEquals(rows[1][0], "East", "Inserted at data-row 1");
+    check wb.close();
+}
+
+// =============================================================================
+// createTableFromData column span + empty rejection
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataKeepsAllDeclaredColumns() returns error? {
+    // The table spans every declared column even when the first row omits an optional field
+    // (the column count is read from the written header, not the first row's present keys).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    OptionalAgeRow[] data = [{name: "Alice"}, {name: "Bob", age: 30}];
+    Table t = check sheet.createTableFromData("T", data);
+    test:assertEquals(check t.getColumnCount(), 2, "Table spans both declared columns");
+    string[] headers = check t.getHeaders();
+    test:assertTrue(headers.indexOf("age") is int,
+            "The optional column is part of the table even though the first row omits it");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataEmptyRejected() returns error? {
+    // A table needs at least a header row, so empty data cannot form one.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    string[][] empty = [];
+    Table|Error result = sheet.createTableFromData("T", empty);
+    test:assertTrue(result is InvalidTableRangeError, "Empty data cannot form a table");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableDuplicateNameErrors() returns error? {
+    // A table name must be unique within the workbook.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    _ = check sheet.createTable("Dup", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Table|Error result = sheet.createTable("Dup", {
+        firstRowIndex: 3,
+        lastRowIndex: 4,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    test:assertTrue(result is TableExistsError, "A duplicate table name must raise TableExistsError");
+    check wb.close();
+}
+
+// =============================================================================
+// CODE-REVIEW HARDENING: validate-before-mutate + no stale cells
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsReplaceClearsStaleCells() returns error? {
+    // REPLACE with a row narrower than the existing data must not leave stale values behind in the
+    // columns the new row does not supply (the reused row is blanked first).
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "c"], ["1", "2", "3"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+
+    // REPLACE with a map that supplies only column "a"; b and c must be cleared, not left as 2/3.
+    map<CellValue>[] rows = [{"a": "X"}];
+    check t.putRows(rows);
+    map<CellValue>[] read = check t.getRows();
+    test:assertEquals(read.length(), 1, "Data resized to a single row");
+    test:assertEquals(read[0]["a"], "X", "Supplied column written");
+    test:assertEquals(read[0]["b"], (), "Stale value in unsupplied column 'b' cleared");
+    test:assertEquals(read[0]["c"], (), "Stale value in unsupplied column 'c' cleared");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsUnknownKeyLeavesTableUnchanged() returns error? {
+    // A key with no matching column is rejected BEFORE any shift/resize, so the failed write leaves
+    // the existing table intact rather than half-mutated.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    map<CellValue>[] rows = [{"name": "Cara", "salary": 999}];
+    Error? result = t.putRows(rows);
+    test:assertTrue(result is Error, "An unknown key must error");
+    test:assertEquals(check t.getRowCount(), 2, "Table data rows unchanged by the failed write");
+    string[][] read = check t.getRows();
+    test:assertEquals(read[0][0], "Alice", "Existing data intact (not shrunk/blanked)");
+    test:assertEquals(read[1][0], "Bob", "Existing data intact");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsWideArrayLeavesTableUnchanged() returns error? {
+    // An array row wider than the table's columns would write past the last column into adjacent
+    // sheet cells; it must be refused BEFORE any shift/resize, leaving the table and sheet intact.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // The table has 2 columns; a 3-value array row overflows it.
+    string[][] wide = [["Cara", "40", "Sales"]];
+    Error? result = t.putRows(wide);
+    test:assertTrue(result is Error, "An over-wide array row must error");
+    test:assertEquals(check t.getRowCount(), 2, "Table data rows unchanged by the failed write");
+    test:assertEquals(check t.getColumnCount(), 2, "Table column count unchanged");
+    CellRange? used = check sheet.getUsedCellRange();
+    if used is CellRange {
+        test:assertTrue(used.lastColumnIndex <= 1, "No data spilled beyond the table's last column");
+        test:assertTrue(used.lastRowIndex <= 2, "No new row added by the failed write");
+    }
+    string[][] read = check t.getRows();
+    test:assertEquals(read[0][0], "Alice", "Existing data intact");
+    test:assertEquals(read[1][0], "Bob", "Existing data intact");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataDuplicateNameWritesNoStrayData() returns error? {
+    // A duplicate-name failure is detected before writing, so no data is stranded on the sheet.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["x"], ["1"]]);
+    _ = check sheet.createTable("Dup", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 0
+    });
+
+    record {| string name; int age; |}[] data = [{name: "Al", age: 1}];
+    Table|Error result = sheet.createTableFromData("Dup", data, startRowIndex = 5);
+    test:assertTrue(result is TableExistsError, "Duplicate table name must raise TableExistsError");
+    CellRange? used = check sheet.getUsedCellRange();
+    if used is CellRange {
+        test:assertTrue(used.lastRowIndex <= 1, "No stray data written at the createTableFromData region");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testCreateTableFromDataColumnCountMapAndArray() returns error? {
+    // The table spans the full written width for map (union of keys) and string[][] (first-row) data.
+    Workbook wb = new;
+    Sheet mapSheet = check wb.createSheet("M");
+    map<CellValue>[] maps = [{"a": "1", "b": "2"}, {"a": "3", "b": "4", "c": "5"}];
+    Table mapTable = check mapSheet.createTableFromData("MT", maps);
+    test:assertEquals(check mapTable.getColumnCount(), 3, "Map table spans the union of all keys");
+
+    Sheet arrSheet = check wb.createSheet("A");
+    string[][] arr = [["h1", "h2", "h3"], ["x", "y", "z"]];
+    Table arrTable = check arrSheet.createTableFromData("AT", arr);
+    test:assertEquals(check arrTable.getColumnCount(), 3, "Array table spans the header (first) row width");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableGetRangeAndDataRange() returns error? {
+    // A1-notation range accessors: getRange spans the whole table; getDataRange excludes the header.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    test:assertEquals(check t.getRange(), "A1:B3", "Full range spans the header and data rows");
+    test:assertEquals(check t.getDataRange(), "A2:B3", "Data range excludes the header row");
+    check wb.close();
+}
+
+// =============================================================================
+// HANDLE INVALIDATION — every Table method errors after the workbook is closed
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTableMethodsAfterCloseAllReturnError() returns error? {
+    // One vended handle, then close the workbook: every method must surface the
+    // "no longer valid" error rather than touch a freed native object.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Table t = check wb.getTable("EmployeeTable");
+    check wb.close();
+
+    string|Error name = t.getName();
+    test:assertTrue(name is Error, "getName after close must error");
+    string|Error displayName = t.getDisplayName();
+    test:assertTrue(displayName is Error, "getDisplayName after close must error");
+    string|Error sheetName = t.getSheetName();
+    test:assertTrue(sheetName is Error, "getSheetName after close must error");
+    string|Error range = t.getRange();
+    test:assertTrue(range is Error, "getRange after close must error");
+    CellRange|Error cellRange = t.getCellRange();
+    test:assertTrue(cellRange is Error, "getCellRange after close must error");
+    string|Error dataRange = t.getDataRange();
+    test:assertTrue(dataRange is Error, "getDataRange after close must error");
+    CellRange|Error dataCellRange = t.getDataCellRange();
+    test:assertTrue(dataCellRange is Error, "getDataCellRange after close must error");
+    int|Error rowCount = t.getRowCount();
+    test:assertTrue(rowCount is Error, "getRowCount after close must error");
+    int|Error colCount = t.getColumnCount();
+    test:assertTrue(colCount is Error, "getColumnCount after close must error");
+    string[]|Error headers = t.getHeaders();
+    test:assertTrue(headers is Error, "getHeaders after close must error");
+    string[]|Error oneRow = t.getRow(0);
+    test:assertTrue(oneRow is Error, "getRow after close must error");
+    boolean|Error hasTotals = t.hasTotalRow();
+    test:assertTrue(hasTotals is Error, "hasTotalRow after close must error");
+    map<CellValue>|Error totals = t.getTotalRow();
+    test:assertTrue(totals is Error, "getTotalRow after close must error");
+    if totals is Error {
+        test:assertTrue(totals.message().includes("no longer valid"),
+                "getTotalRow after close must fail due to handle invalidation");
+    }
+    Error? put = t.putRows([["x", "y", "z"]]);
+    test:assertTrue(put is Error, "putRows after close must error");
+    Error? renamed = t.rename("Renamed");
+    test:assertTrue(renamed is Error, "rename after close must error");
+    Error? resized = t.resize("A1:C4");
+    test:assertTrue(resized is Error, "resize after close must error");
+    Error? deleted = t.deleteRow(0);
+    test:assertTrue(deleted is Error, "deleteRow after close must error");
+}
+
+@test:Config {groups: ["table"]}
+function testTableGetRowAsStringArray() returns error? {
+    // Explicit string[] target on getRow drives the array/string-element branch.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "tables_test.xlsx");
+    Table t = check wb.getTable("EmployeeTable");
+    string[] row = check t.getRow(0);
+    test:assertEquals(row, ["Alice", "30", "Engineering"], "getRow as string[] returns the raw cells");
+    check wb.close();
+}
+
+// =============================================================================
+// TABLE RESIZE — A1 string, range validation, overlap, column grow/shrink
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTableResizeWithA1String() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "c"], ["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+
+    // A1-notation range parsed through the BString branch of resize.
+    check t.resize("A1:C4");
+    test:assertEquals(check t.getRowCount(), 3, "A1-string resize extends the data range to 3 rows");
+    test:assertEquals(check t.getColumnCount(), 3, "Column span unchanged at 3");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeInvalidColumnSpan() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // firstColumn after lastColumn is an invalid span.
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 3, lastColumnIndex: 1});
+    test:assertTrue(result is InvalidTableRangeError, "Inverted column span must error");
+    if result is InvalidTableRangeError {
+        test:assertTrue(result.message().includes("first column is after the last column"),
+                "Error must identify the inverted column span");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeOutOfBounds() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // Last row index beyond the XLSX sheet limit (1048575).
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 2000000, firstColumnIndex: 0, lastColumnIndex: 1});
+    test:assertTrue(result is InvalidTableRangeError, "A range past the sheet bounds must error");
+    if result is InvalidTableRangeError {
+        test:assertTrue(result.message().includes("outside the sheet bounds"),
+                "Error must identify the out-of-bounds range");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeIntoAnotherTableErrors() returns error? {
+    // Two side-by-side tables; resizing the first to span the second's columns must be refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "", "d", "e"], ["1", "2", "", "4", "5"]]);
+    Table left = check sheet.createTable("Left", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Right", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 3,
+        lastColumnIndex: 4
+    });
+
+    // Grow Left to span columns 0-4, overlapping Right.
+    Error? result = left.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 4});
+    test:assertTrue(result is TableOverlapError, "Resizing over another table must return TableOverlapError");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeNoOverlapWithSibling() returns error? {
+    // A resize that stays clear of a sibling table (different columns) is allowed — exercises the
+    // non-overlapping branch of the overlap guard.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["a", "b", "", "d", "e"],
+        ["1", "2", "", "4", "5"],
+        ["6", "7", "", "9", "10"]
+    ]);
+    Table left = check sheet.createTable("Left", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Right", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 3,
+        lastColumnIndex: 4
+    });
+
+    // Grow Left's rows only (columns 0-1) — Right (columns 3-4) is untouched.
+    check left.resize({firstRowIndex: 0, lastRowIndex: 2, firstColumnIndex: 0, lastColumnIndex: 1});
+    test:assertEquals(check left.getRowCount(), 2, "Left grows without colliding with Right");
+    Table right = check sheet.getTable("Right");
+    test:assertEquals(check right.getRowCount(), 1, "Right untouched");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeNegativeFirstColumn() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: -1, lastColumnIndex: 1});
+    test:assertTrue(result is InvalidTableRangeError, "A negative first column must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeLastColumnExceedsBounds() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    // Excel's last column index is 16383; 20000 is past the sheet bound.
+    Error? result = t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 20000});
+    test:assertTrue(result is InvalidTableRangeError, "A column past the sheet bound must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeShrinkColumns() returns error? {
+    // Shrinking the column span removes the trailing table columns.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["a", "b", "c"], ["1", "2", "3"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 2
+    });
+    test:assertEquals(check t.getColumnCount(), 3, "Starts with three columns");
+
+    check t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 1});
+    test:assertEquals(check t.getColumnCount(), 2, "Shrinks to two columns");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableResizeGrowColumnWithBlankHeader() returns error? {
+    // Growing into a column whose header cell is empty falls back to a generated "ColumnN" name.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    // Only columns A and B carry data; C has no header cell.
+    check sheet.putRows([["name", "age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    check t.resize({firstRowIndex: 0, lastRowIndex: 1, firstColumnIndex: 0, lastColumnIndex: 2});
+    test:assertEquals(check t.getColumnCount(), 3, "Grows to three columns");
+    string[] headers = check t.getHeaders();
+    test:assertEquals(headers.length(), 3, "Three headers after the grow");
+    test:assertTrue(headers[2].startsWith("Column"), "Blank header cell yields a generated column name");
+    check wb.close();
+}
+
+// =============================================================================
+// TABLE deleteRow / APPEND / record-field validation / rename validation
+// =============================================================================
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowShiftConflict() returns error? {
+    // Deleting a row pulls everything below up; a second table caught in that shift must be refused.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([
+        ["Name", "Age"],
+        ["Alice", "30"],
+        ["Bob", "25"],
+        ["", ""],
+        ["P", "Q"],
+        ["x", "y"]
+    ]);
+    Table upper = check sheet.createTable("Upper", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    _ = check sheet.createTable("Lower", {
+        firstRowIndex: 4,
+        lastRowIndex: 5,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    Error? result = upper.deleteRow(0);
+    test:assertTrue(result is TableOverlapError, "A delete that shifts a second table must error");
+    test:assertEquals(check upper.getRowCount(), 2, "Upper table left intact after the refused delete");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableDeleteRowNegativeIndex() returns error? {
+    // The negative side of the deleteRow range check.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Error? result = t.deleteRow(-1);
+    test:assertTrue(result is InvalidTableRangeError, "A negative deleteRow index must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableInsertAtNegative() returns error? {
+    // The negative side of the APPEND insertAt range check.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+    Error? result = t.putRows([["X", "9"]], tableWriteMode = APPEND, insertAt = -1);
+    test:assertTrue(result is InvalidTableRangeError, "A negative insertAt must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableAppendEmptyIsNoOp() returns error? {
+    // APPEND with no rows is a no-op: the table is unchanged and no error is raised.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["Name", "Age"], ["Alice", "30"], ["Bob", "25"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 2,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    string[][] none = [];
+    check t.putRows(none, tableWriteMode = APPEND);
+    test:assertEquals(check t.getRowCount(), 2, "APPEND of zero rows leaves the data unchanged");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTablePutRowsUnknownRecordFieldErrors() returns error? {
+    // A record field with no matching table column is rejected before any mutation.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["name", "age"], ["Alice", "30"]]);
+    Table t = check sheet.createTable("T", {
+        firstRowIndex: 0,
+        lastRowIndex: 1,
+        firstColumnIndex: 0,
+        lastColumnIndex: 1
+    });
+
+    // 'salary' has no matching column in the table.
+    record {|string name; int salary;|}[] bad = [{name: "Cara", salary: 999}];
+    Error? result = t.putRows(bad);
+    test:assertTrue(result is Error, "An unmatched record field must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("salary"),
+                "Error must name the offending field");
+    }
+    test:assertEquals(check t.getRowCount(), 1, "Table left intact after the refused write");
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableRenameEmptyErrors() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", "A1:B2");
+
+    Error? result = t.rename("");
+    test:assertTrue(result is Error, "Empty table name must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("cannot be empty"), "Error must identify the empty name");
+    }
+    check wb.close();
+}
+
+@test:Config {groups: ["table"]}
+function testTableRenameTooLongErrors() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("S");
+    check sheet.putRows([["A", "B"], ["1", "2"]]);
+    Table t = check sheet.createTable("T", "A1:B2");
+
+    // Build a 256-character name (exceeds Excel's 255-char table-name limit).
+    string longName = "T";
+    foreach int _ in 0 ..< 8 {
+        longName = longName + longName;
+    }
+    Error? result = t.rename(longName);
+    test:assertTrue(result is Error, "A name beyond 255 characters must error");
+    if result is Error {
+        test:assertTrue(result.message().includes("255-character limit"),
+                "Error must identify the length limit");
+    }
+    check wb.close();
 }

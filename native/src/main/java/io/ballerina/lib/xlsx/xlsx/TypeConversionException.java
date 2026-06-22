@@ -19,38 +19,22 @@
 package io.ballerina.lib.xlsx.xlsx;
 
 /**
- * Exception thrown when a cell value cannot be converted to the target type.
+ * Exception thrown when a cell value cannot be converted to the target type. The message carries
+ * the offending value and the target type. This is a control-flow exception (caught per row), so
+ * the Java stack trace is not captured.
  */
 public class TypeConversionException extends RuntimeException {
 
-    private final String cellValue;
-    private final String targetType;
-    private final String actualType;
-
-    public TypeConversionException(String message, String cellValue, String targetType, String actualType) {
+    public TypeConversionException(String message) {
         super(message);
-        this.cellValue = cellValue;
-        this.targetType = targetType;
-        this.actualType = actualType;
     }
 
-    public TypeConversionException(String message, String cellValue, String targetType, String actualType,
-                                   Throwable cause) {
+    public TypeConversionException(String message, Throwable cause) {
         super(message, cause);
-        this.cellValue = cellValue;
-        this.targetType = targetType;
-        this.actualType = actualType;
     }
 
-    public String getCellValue() {
-        return cellValue;
-    }
-
-    public String getTargetType() {
-        return targetType;
-    }
-
-    public String getActualType() {
-        return actualType;
+    @Override
+    public Throwable fillInStackTrace() {
+        return this;
     }
 }

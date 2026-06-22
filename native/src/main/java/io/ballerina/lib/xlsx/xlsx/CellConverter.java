@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.xlsx.xlsx;
 
+import io.ballerina.lib.xlsx.utils.DiagnosticLog;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.RecordType;
@@ -55,6 +56,9 @@ public final class CellConverter {
     private static final String EXCEL_DATE_FORMAT = "yyyy-mm-dd";
     private static final String EXCEL_DATETIME_FORMAT = "yyyy-mm-dd hh:mm:ss";
     private static final String EXCEL_TIME_FORMAT = "h:mm:ss";
+
+    // Excel caps a single cell's text at 32,767 characters.
+    private static final int MAX_CELL_TEXT_LENGTH = 32767;
 
     // Time module constants for type detection
     private static final String TIME_MODULE = "time";
@@ -108,7 +112,7 @@ public final class CellConverter {
         }
 
         // A "broad" target (anydata, or a union with more than one non-nil member such as
-        // CellValue?) does not pin a single scalar type — bind to the cell's natural value.
+        // CellValue) does not pin a single scalar type — bind to the cell's natural value.
         if (isBroadTarget(targetType)) {
             return convertToCellValue(cell, config);
         }
@@ -177,7 +181,7 @@ public final class CellConverter {
     /**
      * Whether a target type fails to pin a single scalar Ballerina type, so a cell should
      * bind to its natural value via {@link #convertToCellValue}. True for {@code anydata}
-     * and for a union with more than one non-nil member (e.g. {@code CellValue?}, whether
+     * and for a union with more than one non-nil member (e.g. {@code CellValue}, whether
      * the runtime represents it flattened or as {@code CellValue | ()}). A union with a
      * single non-nil member that is itself a plain type (e.g. {@code int?},
      * {@code time:Civil?}) is NOT broad — it resolves to that member via the typed path.
@@ -204,12 +208,13 @@ public final class CellConverter {
             }
             nonNilCount++;
             if (nonNilCount > 1) {
-                return true;  // multiple non-nil members (e.g. a flattened CellValue?)
+                return true;  // multiple non-nil members (e.g. a flattened CellValue)
             }
             singleNonNil = resolvedMember;
         }
-        // One non-nil member: broad only if it is itself a union/anydata, which is how a
-        // named-union nilable such as `CellValue?` (= `CellValue | ()`) can appear.
+        // One non-nil member: broad only if it is itself a union/anydata — e.g. a nilable
+        // alias of a union type (`MyUnion?`). (`CellValue` itself folds in `()`, so it
+        // surfaces as multiple non-nil members above, not through this branch.)
         if (nonNilCount == 1) {
             int innerTag = singleNonNil.getTag();
             return innerTag == TypeTags.UNION_TAG || innerTag == TypeTags.ANYDATA_TAG;
@@ -351,7 +356,7 @@ public final class CellConverter {
                     boolean is1904 = isWorkbookDate1904(cell);
                     LocalDate localDate = convertSerialToLocalDate(numericValue, is1904);
                     LocalTime localTime = convertNumericToTime(numericValue);
-                    return convertDate(localDate, localTime, targetType);
+                    return convertDate(cell, localDate, localTime, targetType);
                 }
 
                 return convertNumeric(numericValue, targetType);
@@ -404,14 +409,12 @@ public final class CellConverter {
                         double d = Double.parseDouble(value.trim());
                         if (Double.isInfinite(d) || d != Math.floor(d)) {
                             throw new TypeConversionException(
-                                    "Cannot convert '" + value + "' to int (non-integer value)",
-                                    value, "int", "string");
+                                    "Cannot convert '" + value + "' to int (non-integer value)");
                         }
                         return (long) d;
                     } catch (NumberFormatException e2) {
                         throw new TypeConversionException(
-                                "Cannot convert '" + value + "' to int",
-                                value, "int", "string", e2);
+                                "Cannot convert '" + value + "' to int", e2);
                     }
                 }
 
@@ -420,8 +423,7 @@ public final class CellConverter {
                     return Double.parseDouble(value.trim());
                 } catch (NumberFormatException e) {
                     throw new TypeConversionException(
-                            "Cannot convert '" + value + "' to float",
-                            value, "float", "string", e);
+                            "Cannot convert '" + value + "' to float", e);
                 }
 
             case TypeTags.DECIMAL_TAG:
@@ -429,8 +431,7 @@ public final class CellConverter {
                     return ValueCreator.createDecimalValue(new BigDecimal(value.trim()));
                 } catch (NumberFormatException e) {
                     throw new TypeConversionException(
-                            "Cannot convert '" + value + "' to decimal",
-                            value, "decimal", "string", e);
+                            "Cannot convert '" + value + "' to decimal", e);
                 }
 
             case TypeTags.BOOLEAN_TAG:
@@ -470,8 +471,7 @@ public final class CellConverter {
             case TypeTags.INT_TAG:
                 if (Double.isInfinite(value) || value != Math.floor(value)) {
                     throw new TypeConversionException(
-                            "Cannot convert " + value + " to int (non-integer value)",
-                            String.valueOf(value), "int", "double");
+                            "Cannot convert " + value + " to int (non-integer value)");
                 }
                 return (long) value;
 
@@ -534,9 +534,9 @@ public final class CellConverter {
     /**
      * Build a Ballerina time record (time:Date / time:TimeOfDay / time:Civil) from
      * a naive {@link LocalDate} and {@link LocalTime}. Falls back to an ISO string
-     * for non-time target types.
+     * for non-time target types, preserving the cell's date / time / date-time shape.
      */
-    private static Object convertDate(LocalDate localDate, LocalTime localTime, Type targetType) {
+    private static Object convertDate(Cell cell, LocalDate localDate, LocalTime localTime, Type targetType) {
         if (localDate == null) {
             return null;
         }
@@ -553,8 +553,9 @@ public final class CellConverter {
             return createCivilRecord(localDate, localTime, (RecordType) effectiveType);
         }
 
-        // Fallback: ISO format string (backward compatible)
-        return StringUtils.fromString(DATE_FORMAT.format(localDate));
+        // Fallback (e.g. a string field): a full ISO string that keeps the cell's
+        // time component instead of collapsing date-time/time-only cells to a date.
+        return StringUtils.fromString(formatCellDateIso(cell));
     }
 
     /**
@@ -773,8 +774,7 @@ public final class CellConverter {
             return false;
         }
         throw new TypeConversionException(
-                "Cannot convert '" + value + "' to boolean",
-                value, "boolean", "string");
+                "Cannot convert '" + value + "' to boolean");
     }
 
     /**
@@ -824,14 +824,49 @@ public final class CellConverter {
                     applyDateCellStyle(cell, map, styleCache);  // Apply date format so readers recognise it
                 } else {
                     // Not a recognized time record, convert to string
-                    cell.setCellValue(value.toString());
+                    writeStringCell(cell, value.toString());
                 }
             }
         } else {
             // Strings starting with "=" are written verbatim as text — formula
             // authoring on write is deferred to a future xlsx:Formula wrapper.
-            cell.setCellValue(value.toString());
+            writeStringCell(cell, value.toString());
         }
+    }
+
+    /**
+     * Write a string to a cell, sanitizing XLSX-illegal control characters and rejecting text that
+     * exceeds Excel's per-cell length limit with a clear error (rather than POI's opaque one).
+     */
+    private static void writeStringCell(Cell cell, String value) {
+        String sanitized = stripIllegalChars(value);
+        if (sanitized.length() > MAX_CELL_TEXT_LENGTH) {
+            throw new BallerinaErrorException(DiagnosticLog.error(
+                    "Cell text length " + sanitized.length() + " exceeds the Excel limit of "
+                            + MAX_CELL_TEXT_LENGTH + " characters"));
+        }
+        cell.setCellValue(sanitized);
+    }
+
+    /**
+     * Remove control characters that are illegal in the XLSX (XML 1.0) format — the C0 controls
+     * except tab, newline, and carriage return. Allocates only when a stray character is found.
+     */
+    private static String stripIllegalChars(String value) {
+        StringBuilder sb = null;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            boolean illegal = c < 0x20 && c != '\t' && c != '\n' && c != '\r';
+            if (illegal) {
+                if (sb == null) {
+                    sb = new StringBuilder(value.length());
+                    sb.append(value, 0, i);
+                }
+            } else if (sb != null) {
+                sb.append(c);
+            }
+        }
+        return sb == null ? value : sb.toString();
     }
 
     // =============================================================================

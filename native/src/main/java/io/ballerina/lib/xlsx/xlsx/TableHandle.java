@@ -19,8 +19,8 @@
 package io.ballerina.lib.xlsx.xlsx;
 
 import io.ballerina.lib.xlsx.utils.AnnotationUtils;
+import io.ballerina.lib.xlsx.utils.CellRangeUtils;
 import io.ballerina.lib.xlsx.utils.DiagnosticLog;
-import io.ballerina.lib.xlsx.utils.ModuleUtils;
 import io.ballerina.lib.xlsx.utils.RecordParsingUtils;
 import io.ballerina.lib.xlsx.utils.XlsxConfig;
 import io.ballerina.runtime.api.Environment;
@@ -191,14 +191,7 @@ public final class TableHandle {
             // Exclude totals row if present (use getTotalsRowCount(), not isHasTotalsRow())
             int dataLastRow = lastRow - table.getTotalsRowCount();
 
-            BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                    ModuleUtils.getModule(), "CellRange");
-            cellRange.put(StringUtils.fromString("firstRowIndex"), (long) dataFirstRow);
-            cellRange.put(StringUtils.fromString("lastRowIndex"), (long) dataLastRow);
-            cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) firstCol);
-            cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) lastCol);
-
-            return cellRange;
+            return CellRangeUtils.create(dataFirstRow, dataLastRow, firstCol, lastCol);
         } catch (BallerinaErrorException e) {
             return e.getBError();
         }
@@ -331,8 +324,8 @@ public final class TableHandle {
      * has the XSSF objects from {@code WorkbookFactory.create} and never vends
      * a Table BObject.
      *
-     * <p>Shared dispatch with {@link #getRows(Environment, BObject, BMap, BTypedesc)} —
-     * both call into {@link #parseTableInternal} below.</p>
+     * Shared dispatch with {@link #getRows(Environment, BObject, BMap, BTypedesc)} —
+     * both call into {@link #parseTableInternal} below.
      */
     public static Object parseFromXSSFTable(Environment env, XSSFTable table, XSSFSheet sheet,
                                              BMap<BString, Object> options, BTypedesc targetType) {
@@ -374,7 +367,7 @@ public final class TableHandle {
             return getTableRowsAsRecords(env, table, sheet, config, (RecordType) describingType);
         }
 
-        // map<CellValue?> → map<CellValue?>[]
+        // map<CellValue> → map<CellValue>[]
         if (typeTag == TypeTags.MAP_TAG) {
             return getTableRowsAsMaps(env, table, sheet, config, (MapType) describingType);
         }
@@ -459,18 +452,21 @@ public final class TableHandle {
     }
 
     /**
-     * Put rows into the table (auto-expands if needed).
+     * Put rows into the table. By default (REPLACE) the data region is resized to fit the data
+     * exactly; APPEND adds the rows below the existing data.
      *
      * @param tableObj Ballerina Table object
      * @param data     Data to write
-     * @param options  Write options
+     * @param options  Table write options (tableWriteMode)
      * @return null on success, error on failure
      */
     public static Object putRows(BObject tableObj, BArray data, BMap<BString, Object> options) {
         try {
             XSSFTable table = getTable(tableObj);
             XSSFSheet sheet = getSheet(tableObj);
-            return writeTableInternal(table, sheet, data, options);
+            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+            boolean append = "APPEND".equals(config.getTableWriteMode());
+            return writeTableInternal(table, sheet, data, append, config.getTableInsertAt());
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -483,13 +479,15 @@ public final class TableHandle {
      * Table handle. Used by {@code Native.writeTable} which has the XSSF objects
      * from {@code WorkbookFactory.create} and never vends a Table BObject.
      *
-     * <p>Shared dispatch with {@link #putRows(BObject, BArray, BMap)} — both call
-     * into {@link #writeTableInternal} below.</p>
+     * Shared dispatch with {@link #putRows(BObject, BArray, BMap)} — both call
+     * into {@link #writeTableInternal} below.
      */
     public static Object writeToXSSFTable(XSSFTable table, XSSFSheet sheet, BArray data,
-                                           BMap<BString, Object> options) {
+                                          BMap<BString, Object> options) {
         try {
-            return writeTableInternal(table, sheet, data, options);
+            XlsxConfig config = XlsxConfig.fromWriteOptions(options);
+            boolean append = "APPEND".equals(config.getTableWriteMode());
+            return writeTableInternal(table, sheet, data, append, config.getTableInsertAt());
         } catch (BallerinaErrorException e) {
             return e.getBError();
         } catch (Exception e) {
@@ -498,68 +496,212 @@ public final class TableHandle {
     }
 
     /**
-     * Shared write dispatch. Resizes the table if the incoming data exceeds the
-     * current data-row capacity, then writes each row via {@link #writeRowData}.
+     * Delete a single data row from the table by 0-based data-row index. The table shrinks to fit:
+     * the totals row and any content below it are pulled up to close the gap. Excel requires at
+     * least one data row, so the last remaining data row cannot be deleted. A shrink that would
+     * shift another table is refused with a {@code TableOverlapError}.
+     *
+     * @param tableObj Ballerina Table object
+     * @param index    0-based row index within the data range
+     * @return null on success, error on failure
      */
-    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data,
-                                              BMap<BString, Object> options) {
+    public static Object deleteRow(BObject tableObj, long index) {
+        try {
+            XSSFTable table = getTable(tableObj);
+            XSSFSheet sheet = getSheet(tableObj);
+            AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
+            int firstRow = area.getFirstCell().getRow();
+            int lastRow = area.getLastCell().getRow();
+            int firstCol = area.getFirstCell().getCol();
+            int lastCol = area.getLastCell().getCol();
+            int dataFirstRow = firstRow + 1;
+            int totalsRowCount = table.getTotalsRowCount();
+            boolean hasTotals = totalsRowCount > 0;
+            int currentDataRows = lastRow - firstRow - totalsRowCount;
+            int idx = (int) index;
+
+            if (idx < 0 || idx >= currentDataRows) {
+                return DiagnosticLog.invalidTableRangeError("Row index " + idx
+                        + " is out of range for a table with " + currentDataRows + " data rows");
+            }
+            if (currentDataRows <= 1) {
+                return DiagnosticLog.invalidTableRangeError("Cannot delete the only data row of table '"
+                        + table.getName() + "': a table requires at least one data row");
+            }
+
+            // Deleting pulls the totals row + everything below up; another table caught in that
+            // shift would have its cells moved but its definition left stale, so refuse instead.
+            String colliding = RowShifter.firstTableShiftedBy(sheet, dataFirstRow + idx, table.getName());
+            if (colliding != null) {
+                return DiagnosticLog.tableResizeOverlapError(table.getName(), colliding, sheet.getSheetName());
+            }
+
+            RowShifter.removeRows(sheet, dataFirstRow + idx, 1);
+            resizeTableArea(table, firstRow, firstCol, lastCol, currentDataRows - 1, hasTotals);
+            return null;
+        } catch (BallerinaErrorException e) {
+            return e.getBError();
+        } catch (Exception e) {
+            return DiagnosticLog.error("Error deleting table row: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Shared write dispatch. Resizes the table to fit the incoming data — growing or shrinking
+     * the data range so no stale rows survive (REPLACE), or inserting the rows below the existing
+     * data (APPEND). The totals row and any content below the table ride along with the shift; a
+     * resize that would shift another table is refused with a {@code TableOverlapError}.
+     */
+    private static Object writeTableInternal(XSSFTable table, XSSFSheet sheet, BArray data, boolean append,
+                                             Integer insertAtOverride) {
         AreaReference area = new AreaReference(table.getArea().formatAsString(), SpreadsheetVersion.EXCEL2007);
         int firstRow = area.getFirstCell().getRow();
         int lastRow = area.getLastCell().getRow();
         int firstCol = area.getFirstCell().getCol();
         int lastCol = area.getLastCell().getCol();
 
-        // Data starts after header row
-        int dataFirstRow = firstRow + 1;
+        int dataFirstRow = firstRow + 1;  // data starts after the header row
         int totalsRowCount = table.getTotalsRowCount();
         boolean hasTotals = totalsRowCount > 0;
-
-        long dataSize = data.getLength();
         int currentDataRows = lastRow - firstRow - totalsRowCount;
+        int inputRowCount = (int) data.getLength();
 
-        // Check if we need to expand the table
-        if (dataSize > currentDataRows) {
-            // Calculate new last row (keeping totals if present)
-            int newDataLastRow = dataFirstRow + (int) dataSize - 1;
-            int newLastRow = hasTotals ? newDataLastRow + 1 : newDataLastRow;
-
-            // Resize the table
-            CellReference topLeft = new CellReference(firstRow, firstCol);
-            CellReference bottomRight = new CellReference(newLastRow, lastCol);
-            AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
-            CTTable ctTable = table.getCTTable();
-            ctTable.setRef(newArea.formatAsString());
-
-            // Update table references
-            table.updateHeaders();
+        // Resolve the new data-row count, where rows are written, and where the shift happens.
+        // REPLACE: the data becomes exactly inputRowCount rows (>= 1, since Excel needs a data row;
+        //          an empty write clears the table to a single blank row); grow/shrink at the bottom.
+        // APPEND: inputRowCount rows are inserted at data-row insertIndex (default bottom), shifting
+        //          the rows from there down — existing rows are left untouched.
+        int newDataRows;
+        int writeStart;
+        int shiftAt;
+        if (append) {
+            if (inputRowCount == 0) {
+                return null;  // nothing to append
+            }
+            int insertIndex = (insertAtOverride != null) ? insertAtOverride : currentDataRows;
+            if (insertIndex < 0 || insertIndex > currentDataRows) {
+                return DiagnosticLog.invalidTableRangeError("insertAt " + insertIndex
+                        + " is out of range for a table with " + currentDataRows + " data rows");
+            }
+            newDataRows = currentDataRows + inputRowCount;
+            writeStart = dataFirstRow + insertIndex;
+            shiftAt = dataFirstRow + insertIndex;
+        } else {
+            newDataRows = Math.max(inputRowCount, 1);
+            writeStart = dataFirstRow;
+            shiftAt = dataFirstRow + currentDataRows;
         }
 
-        // Write the data
-        XlsxConfig config = XlsxConfig.fromWriteOptions(options);
-        StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+        int delta = newDataRows - currentDataRows;     // > 0 grow, < 0 shrink, 0 same size
 
-        // Resolve column index by table header name. Record/map rows route values to
-        // the column matching the field/key name (with @xlsx:Name annotation support
-        // for records); array rows fall back to positional placement at firstCol + i.
+        // Resolve column index by table header name (columns are unchanged by a row-count resize),
+        // and validate that every row's fields/keys resolve BEFORE mutating — a bad field/key must
+        // not leave the table half-shifted/half-written (matters for the persistent object-API
+        // caller; the one-shot writeTable is shielded by its atomic save). Arrays are positional and
+        // must fit within the table's column span.
         List<XSSFTableColumn> tableColumns = table.getColumns();
         Map<String, Integer> headerToCol = new HashMap<>();
         for (int i = 0; i < tableColumns.size(); i++) {
             headerToCol.put(tableColumns.get(i).getName(), firstCol + i);
         }
+        for (int i = 0; i < inputRowCount; i++) {
+            Object validationError = validateRowResolves(data.get(i), headerToCol);
+            if (validationError != null) {
+                return validationError;
+            }
+        }
 
-        // We write data directly without headers since table has its own headers
-        for (int i = 0; i < dataSize; i++) {
-            int rowIdx = dataFirstRow + i;
+        // Overlap pre-check, before any mutation: a nonzero resize shifts the totals row and
+        // everything below it; another table caught in that shift would have its cells moved but
+        // its definition left stale, so refuse rather than corrupt it.
+        if (delta != 0) {
+            String colliding = RowShifter.firstTableShiftedBy(sheet, shiftAt, table.getName());
+            if (colliding != null) {
+                return DiagnosticLog.tableResizeOverlapError(table.getName(), colliding, sheet.getSheetName());
+            }
+        }
+
+        // Make room (grow) or pull rows up (shrink), carrying the totals row + content below.
+        // When delta == 0 the row count is unchanged, so no shift is needed — resizeTableArea below
+        // re-sets the same area and the write loop overwrites the existing rows in place.
+        if (delta > 0) {
+            RowShifter.makeRoom(sheet, shiftAt, delta);
+        } else if (delta < 0) {
+            RowShifter.removeRows(sheet, dataFirstRow + newDataRows, -delta);
+        }
+
+        // Resize the table area to the new data-row count (plus the totals row, if any).
+        resizeTableArea(table, firstRow, firstCol, lastCol, newDataRows, hasTotals);
+
+        // Data is written without headers — the table carries its own header row. Blank each target
+        // row's column span first so a sparse record/map row (which writes only its own fields/keys)
+        // leaves no stale values behind in a reused row.
+        StyleCache styleCache = new StyleCache(sheet.getWorkbook());
+        for (int i = 0; i < inputRowCount; i++) {
+            int rowIdx = writeStart + i;
+            blankRowCells(sheet, rowIdx, firstCol, lastCol);
             Row row = sheet.getRow(rowIdx);
             if (row == null) {
                 row = sheet.createRow(rowIdx);
             }
+            writeRowData(row, firstCol, data.get(i), headerToCol, styleCache);
+        }
 
-            Object rowData = data.get(i);
-            writeRowData(row, firstCol, rowData, headerToCol, styleCache);
+        // REPLACE with empty input keeps a single blank data row — clear its cells.
+        if (!append && inputRowCount == 0) {
+            blankRowCells(sheet, dataFirstRow, firstCol, lastCol);
         }
 
         return null;
+    }
+
+    /**
+     * Re-set the table's area to span {@code newDataRows} data rows (plus the totals row, if any),
+     * keeping the header row and column span fixed, then resync the header model. Shared by the
+     * write/resize paths so the table {@code ref} always follows a row-count change.
+     */
+    private static void resizeTableArea(XSSFTable table, int firstRow, int firstCol, int lastCol,
+                                        int newDataRows, boolean hasTotals) {
+        int dataFirstRow = firstRow + 1;
+        int newLastRow = dataFirstRow + newDataRows - 1 + (hasTotals ? 1 : 0);
+        CellReference topLeft = new CellReference(firstRow, firstCol);
+        CellReference bottomRight = new CellReference(newLastRow, lastCol);
+        AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+        table.getCTTable().setRef(newArea.formatAsString());
+        table.updateHeaders();
+    }
+
+    /**
+     * Whether two rectangular areas intersect (used by the resize overlap guard).
+     */
+    private static boolean rangesOverlap(AreaReference a, AreaReference b) {
+        int aFirstRow = a.getFirstCell().getRow();
+        int aLastRow = a.getLastCell().getRow();
+        int aFirstCol = a.getFirstCell().getCol();
+        int aLastCol = a.getLastCell().getCol();
+        int bFirstRow = b.getFirstCell().getRow();
+        int bLastRow = b.getLastCell().getRow();
+        int bFirstCol = b.getFirstCell().getCol();
+        int bLastCol = b.getLastCell().getCol();
+        boolean rowsOverlap = aFirstRow <= bLastRow && aLastRow >= bFirstRow;
+        boolean colsOverlap = aFirstCol <= bLastCol && aLastCol >= bFirstCol;
+        return rowsOverlap && colsOverlap;
+    }
+
+    /**
+     * Blank the cells of a single row across the table's column span.
+     */
+    private static void blankRowCells(Sheet sheet, int rowIdx, int firstCol, int lastCol) {
+        Row row = sheet.getRow(rowIdx);
+        if (row == null) {
+            return;
+        }
+        for (int c = firstCol; c <= lastCol; c++) {
+            Cell cell = row.getCell(c);
+            if (cell != null) {
+                cell.setBlank();
+            }
+        }
     }
 
     // === Total Row Methods ===
@@ -586,7 +728,7 @@ public final class TableHandle {
      * Get the total row values.
      *
      * @param tableObj   Ballerina Table object
-     * @param targetType Descriptor for the result map type ({@code map<CellValue?>})
+     * @param targetType Descriptor for the result map type ({@code map<CellValue>})
      * @return Map of column names to total values
      */
     public static Object getTotalRow(BObject tableObj, BTypedesc targetType) {
@@ -605,7 +747,7 @@ public final class TableHandle {
             Row totalsRow = sheet.getRow(totalsRowIdx);
             List<XSSFTableColumn> columns = table.getColumns();
 
-            // Bind the result to the declared map type (map<CellValue?>) so its runtime
+            // Bind the result to the declared map type (map<CellValue>) so its runtime
             // type matches the Ballerina contract rather than the wider map<anydata>.
             MapType mapType = (MapType) TypeUtils.getReferredType(targetType.getDescribingType());
             BMap<BString, Object> totals = ValueCreator.createMapValue(mapType);
@@ -634,13 +776,13 @@ public final class TableHandle {
     /**
      * Add a total row to a table and write a literal numeric total into one column.
      *
-     * <p>Package-private — reachable only from test code via a private
+     * Package-private — reachable only from test code via a private
      * {@code @java:Method} external in {@code test_utils.bal}. The public Ballerina
      * API does not author total rows (they require formula/aggregation authoring,
      * which is out of scope); this helper exists so fixtures can contain a real
      * total row for testing the {@code getTotalRow} read path. A literal value is
      * written rather than a {@code SUM} aggregation because POI does not evaluate
-     * formulas, so a cached aggregation would read back as 0.</p>
+     * formulas, so a cached aggregation would read back as 0.
      *
      * @param tableObj   Ballerina Table object
      * @param totalColIndex 0-based column offset (within the table) to receive the total
@@ -737,16 +879,27 @@ public final class TableHandle {
             } else {
                 @SuppressWarnings("unchecked")
                 BMap<BString, Object> rangeRecord = (BMap<BString, Object>) newRange;
-                firstRow = ((Long) rangeRecord.get(StringUtils.fromString("firstRowIndex"))).intValue();
-                lastRow = ((Long) rangeRecord.get(StringUtils.fromString("lastRowIndex"))).intValue();
-                firstCol = ((Long) rangeRecord.get(StringUtils.fromString("firstColumnIndex"))).intValue();
-                lastCol = ((Long) rangeRecord.get(StringUtils.fromString("lastColumnIndex"))).intValue();
+                firstRow = CellRangeUtils.firstRow(rangeRecord);
+                lastRow = CellRangeUtils.lastRow(rangeRecord);
+                firstCol = CellRangeUtils.firstColumn(rangeRecord);
+                lastCol = CellRangeUtils.lastColumn(rangeRecord);
             }
 
-            // Validate range
+            // Validate range shape: at least one header row + one data row, and a valid column span.
             if (firstRow >= lastRow) {
                 return DiagnosticLog.invalidTableRangeError(
                         "Invalid range: must have at least one header row and one data row");
+            }
+            if (firstCol > lastCol) {
+                return DiagnosticLog.invalidTableRangeError(
+                        "Invalid range: first column is after the last column");
+            }
+            // Validate range bounds against the spreadsheet limits.
+            SpreadsheetVersion version = SpreadsheetVersion.EXCEL2007;
+            if (firstRow < 0 || firstCol < 0
+                    || lastRow > version.getLastRowIndex() || lastCol > version.getLastColumnIndex()) {
+                return DiagnosticLog.invalidTableRangeError("Range is outside the sheet bounds ("
+                        + version.getMaxRows() + " rows x " + version.getMaxColumns() + " columns)");
             }
 
             // Get current column info
@@ -757,6 +910,19 @@ public final class TableHandle {
             CellReference topLeft = new CellReference(firstRow, firstCol);
             CellReference bottomRight = new CellReference(lastRow, lastCol);
             AreaReference newArea = new AreaReference(topLeft, bottomRight, SpreadsheetVersion.EXCEL2007);
+
+            // Refuse a resize that would overlap another table on the sheet (mirrors createTable).
+            for (XSSFTable other : sheet.getTables()) {
+                if (table.getName().equals(other.getName())) {
+                    continue;
+                }
+                AreaReference otherArea = new AreaReference(other.getArea().formatAsString(),
+                        SpreadsheetVersion.EXCEL2007);
+                if (rangesOverlap(newArea, otherArea)) {
+                    return DiagnosticLog.tableOverlapError(table.getName(), other.getName(),
+                            sheet.getSheetName());
+                }
+            }
 
             CTTable ctTable = table.getCTTable();
             ctTable.setRef(newArea.formatAsString());
@@ -888,7 +1054,7 @@ public final class TableHandle {
     }
 
     /**
-     * Get table rows as map&lt;CellValue?&gt;[] via the shared per-row binder. Map keys are the
+     * Get table rows as map&lt;CellValue&gt;[] via the shared per-row binder. Map keys are the
      * table's column names. Honours fail-safe when configured (env threaded through).
      */
     private static Object getTableRowsAsMaps(Environment env, XSSFTable table, Sheet sheet, XlsxConfig config,
@@ -974,16 +1140,61 @@ public final class TableHandle {
     }
 
     /**
+     * Validate that a record's fields (honouring {@code @xlsx:Name}) or a map's keys all resolve to a
+     * table column, returning a typed error on the first miss (else {@code null}). Mirrors
+     * {@link #writeRowData}'s resolution so an unknown field/key is caught before any mutation.
+     * Arrays are positional and always resolvable.
+     */
+    private static Object validateRowResolves(Object rowData, Map<String, Integer> headerToCol) {
+        if (rowData instanceof BArray) {
+            // Arrays are positional: value i lands in the i-th table column. A row with more values
+            // than the table has columns would write past the table's last column into adjacent
+            // sheet cells, so refuse it before any mutation.
+            BArray array = (BArray) rowData;
+            if (array.getLength() > headerToCol.size()) {
+                return DiagnosticLog.error("Array row has " + array.getLength()
+                        + " value(s) but the table has " + headerToCol.size()
+                        + " column(s); a row cannot extend beyond the table's columns");
+            }
+            return null;
+        }
+        if (!(rowData instanceof BMap)) {
+            return null;
+        }
+        @SuppressWarnings("unchecked")
+        BMap<BString, Object> map = (BMap<BString, Object>) rowData;
+        Type valueType = TypeUtils.getReferredType(TypeUtils.getType(map));
+        if (valueType.getTag() == TypeTags.RECORD_TYPE_TAG) {
+            RecordType recordType = (RecordType) valueType;
+            for (String fieldName : recordType.getFields().keySet()) {
+                String headerName = AnnotationUtils.getHeaderName(recordType, fieldName);
+                if (headerToCol.get(headerName) == null) {
+                    return DiagnosticLog.error("Field '" + fieldName + "' (header '" + headerName
+                            + "') has no matching column in the table");
+                }
+            }
+        } else {
+            for (BString key : map.getKeys()) {
+                if (headerToCol.get(key.getValue()) == null) {
+                    return DiagnosticLog.error("Map key '" + key.getValue()
+                            + "' has no matching column in the table");
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Write row data to a POI Row, aligning each value to its target column.
      *
-     * <p>Records: iterate fields in declaration order, resolve each header via {@code @xlsx:Name}
+     * Records: iterate fields in declaration order, resolve each header via {@code @xlsx:Name}
      * (falling back to the field name), look up the column in {@code headerToCol}. Maps:
      * iterate keys and look them up. Arrays: positional placement at {@code startCol + i}
-     * (arrays have no header semantics).</p>
+     * (arrays have no header semantics), rejected if wider than the table's columns.
      *
-     * <p>An unknown header for a record field or map key surfaces a typed
-     * {@link BallerinaErrorException} so the caller sees a clear "no matching column" error
-     * rather than a silent misalignment.</p>
+     * An unknown header for a record field or map key, or an array row wider than the
+     * table, surfaces a typed {@link BallerinaErrorException} so the caller sees a clear
+     * error rather than a silent misalignment or a write outside the table.
      */
     private static void writeRowData(Row row, int startCol, Object rowData,
                                       Map<String, Integer> headerToCol,
@@ -1025,6 +1236,11 @@ public final class TableHandle {
             }
         } else if (rowData instanceof BArray) {
             BArray array = (BArray) rowData;
+            if (array.getLength() > headerToCol.size()) {
+                throw new BallerinaErrorException(DiagnosticLog.error(
+                        "Array row has " + array.getLength() + " value(s) but the table has "
+                                + headerToCol.size() + " column(s)"));
+            }
             for (int i = 0; i < array.getLength(); i++) {
                 Cell cell = row.createCell(startCol + i);
                 Object value = array.get(i);
@@ -1037,13 +1253,8 @@ public final class TableHandle {
      * Create a CellRange record from an AreaReference.
      */
     private static BMap<BString, Object> createCellRange(AreaReference area) {
-        BMap<BString, Object> cellRange = ValueCreator.createRecordValue(
-                ModuleUtils.getModule(), "CellRange");
-        cellRange.put(StringUtils.fromString("firstRowIndex"), (long) area.getFirstCell().getRow());
-        cellRange.put(StringUtils.fromString("lastRowIndex"), (long) area.getLastCell().getRow());
-        cellRange.put(StringUtils.fromString("firstColumnIndex"), (long) area.getFirstCell().getCol());
-        cellRange.put(StringUtils.fromString("lastColumnIndex"), (long) area.getLastCell().getCol());
-        return cellRange;
+        return CellRangeUtils.create(area.getFirstCell().getRow(), area.getLastCell().getRow(),
+                area.getFirstCell().getCol(), area.getLastCell().getCol());
     }
 
     /**

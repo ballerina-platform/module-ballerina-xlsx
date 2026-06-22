@@ -192,7 +192,7 @@ function testParseToTypedRecordWithVariousTypes() returns error? {
     groups: ["parseSheet", "types"]
 }
 function testParseToMapArray() returns error? {
-    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
+    map<CellValue>[] data = check parseSheet(TEST_DATA_DIR + "simple.xlsx");
 
     test:assertEquals(data.length(), 3, "Should have 3 records (excluding header)");
     test:assertEquals(data[0]["Name"], "John", "First record Name should be 'John'");
@@ -509,7 +509,7 @@ function testParseWithAllowDataProjectionFalseMatchingFields() returns error? {
     groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldTrue() returns error? {
-    // Test nilAsOptionalField for map<CellValue?>[] - nil values should be skipped
+    // Test nilAsOptionalField for map<CellValue>[] - nil values should be skipped
     ParseOptions opts = {
         allowDataProjection: {
             nilAsOptionalField: true,
@@ -532,10 +532,10 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
     check wb.saveAs(nilMapFile);
     check wb.close();
 
-    map<CellValue?>[] data = check parseSheet(nilMapFile, 0, opts);
+    map<CellValue>[] data = check parseSheet(nilMapFile, 0, opts);
 
     test:assertEquals(data.length(), 2, "Should have 2 data rows");
-    map<CellValue?> jane = data[1];
+    map<CellValue> jane = data[1];
     test:assertFalse(jane.hasKey("department"),
             "Blank cell's key must be absent when nilAsOptionalField is true");
 
@@ -546,7 +546,7 @@ function testParseMapWithNilAsOptionalFieldTrue() returns error? {
     groups: ["parseSheet", "projection"]
 }
 function testParseMapWithNilAsOptionalFieldFalse() returns error? {
-    // Test nilAsOptionalField=false for map<CellValue?>[] - nil values should be included
+    // Test nilAsOptionalField=false for map<CellValue>[] - nil values should be included
     ParseOptions opts = {
         allowDataProjection: {
             nilAsOptionalField: false,
@@ -569,12 +569,12 @@ function testParseMapWithNilAsOptionalFieldFalse() returns error? {
     check wb.saveAs(nilMapFile);
     check wb.close();
 
-    map<CellValue?>[] data = check parseSheet(nilMapFile, 0, opts);
+    map<CellValue>[] data = check parseSheet(nilMapFile, 0, opts);
 
     test:assertEquals(data.length(), 2, "Should have 2 data rows");
-    map<CellValue?> jane = data[1];
+    map<CellValue> jane = data[1];
     test:assertTrue(jane.hasKey("department"), "Blank cell's key must be present in the map");
-    test:assertTrue(jane["department"] is (), "Blank cell must bind to () in map<CellValue?>");
+    test:assertTrue(jane["department"] is (), "Blank cell must bind to () in map<CellValue>");
 
     check file:remove(nilMapFile);
 }
@@ -919,7 +919,7 @@ function testParseHeaderlessToMap() returns error? {
     ParseOptions opts = {
         headerRowIndex: ()
     };
-    map<CellValue?>[] result = check parseSheet(testFile, 0, opts);
+    map<CellValue>[] result = check parseSheet(testFile, 0, opts);
 
     test:assertEquals(result.length(), 2, "Should have 2 rows");
     test:assertEquals(result[0]["col0"], "Alice", "First row col0 should be 'Alice'");
@@ -948,14 +948,12 @@ function testParseWithRowCountLimit() returns error? {
 @test:Config {
     groups: ["parseSheet", "rowcount"]
 }
-function testParseWithRowCountNullMeansAll() returns error? {
-    // Parse with rowCount = null (default) should read all rows
-    ParseOptions opts = {
-        rowCount: ()  // Explicit null = read all
-    };
+function testParseWithRowCountOmittedMeansAll() returns error? {
+    // Omitting rowCount (the default) should read all rows
+    ParseOptions opts = {};
     Employee[] employees = check parseSheet(TEST_DATA_DIR + "employees.xlsx", 0, opts);
 
-    test:assertEquals(employees.length(), 3, "Should have all 3 records when rowCount is null");
+    test:assertEquals(employees.length(), 3, "Should have all 3 records when rowCount is omitted");
 }
 
 @test:Config {
@@ -1083,16 +1081,16 @@ function testParseClosedRecordIgnoresExtraColumns() returns error? {
 }
 
 // =============================================================================
-// Natural-type binding for untyped / broad reads (map<CellValue?>, rest fields)
+// Natural-type binding for untyped / broad reads (map<CellValue>, rest fields)
 // =============================================================================
 
 @test:Config {
     groups: ["parseSheet", "types"]
 }
 function testParseNaturalTypedCellsIntoMap() returns error? {
-    // natural_types.xlsx holds genuinely typed cells. Reading into map<CellValue?>[]
+    // natural_types.xlsx holds genuinely typed cells. Reading into map<CellValue>[]
     // must bind each value to its natural Ballerina type, not collapse to strings.
-    map<CellValue?>[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
+    map<CellValue>[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
 
     test:assertEquals(data.length(), 1, "Should have 1 data row");
     test:assertEquals(data[0]["intCol"], 42, "Whole number should bind to int");
@@ -1113,8 +1111,8 @@ function testParseNaturalTypedCellsIntoRecord() returns error? {
     NaturalTypedRow[] data = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
 
     test:assertEquals(data.length(), 1, "Should have 1 data row");
-    test:assertTrue(data[0].intCol is int, "intCol should bind to int");
-    test:assertEquals(data[0].intCol, 42, "intCol should be 42");
+    // intCol is statically `int`, so binding succeeded iff the value asserts equal below.
+    test:assertEquals(data[0].intCol, 42, "intCol should bind to int 42");
     test:assertEquals(data[0].decimalCol, 3.14d, "decimalCol should be 3.14");
     test:assertEquals(data[0].boolCol, true, "boolCol should be true");
 }
@@ -1124,7 +1122,7 @@ function testParseNaturalTypedCellsIntoRecord() returns error? {
 }
 function testParseNaturalTypedCellsIntoRestField() returns error? {
     // intCol/boolCol are declared fields; the remaining typed columns fall to the
-    // CellValue? rest field and must keep their natural types.
+    // CellValue rest field and must keep their natural types.
     PartialNaturalRow[] rows = check parseSheet(TEST_DATA_DIR + "natural_types.xlsx");
 
     test:assertEquals(rows.length(), 1);
@@ -1370,5 +1368,122 @@ function testFractionalNumericToIntErrors() returns error? {
                 "Error message should flag the non-integer value: " + result.message());
     }
 
+    check removeTempFile(tempFile);
+}
+
+// =============================================================================
+// CellConverter type-conversion matrix (boolean/numeric cell → pinned target)
+// =============================================================================
+
+@test:Config {groups: ["parseSheet"]}
+function testBooleanCellToNumericAndString() returns error? {
+    // natural_types.xlsx has a genuine boolean cell (boolCol = true). Pinning it to
+    // int/float/string drives the boolean→other conversions.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+
+    int[] asInt = check sheet.getColumn("boolCol");
+    test:assertEquals(asInt, [1], "true → int 1");
+    float[] asFloat = check sheet.getColumn("boolCol");
+    test:assertEquals(asFloat, [1.0], "true → float 1.0");
+    string[] asString = check sheet.getColumn("boolCol");
+    test:assertEquals(asString, ["true"], "true → string \"true\"");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testNumericCellToBoolean() returns error? {
+    // A non-zero numeric cell pinned to boolean binds to true.
+    Workbook wb = check fromFile(TEST_DATA_DIR + "natural_types.xlsx");
+    Sheet sheet = check wb.getSheet(0);
+    boolean[] flags = check sheet.getColumn("intCol");
+    test:assertEquals(flags, [true], "Non-zero numeric → boolean true");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testStringToIntDoubleFallback() returns error? {
+    // A whole-number-shaped string ("42.0") binds to int via the double fallback.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "42.0");
+    int[] vals = check sheet.getColumn("v");
+    test:assertEquals(vals, [42], "\"42.0\" → int 42 via double fallback");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testStringToFloatParseError() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "abc");
+    float[]|Error result = sheet.getColumn("v");
+    test:assertTrue(result is TypeConversionError, "A non-numeric string pinned to float must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet", "error"]}
+function testStringToDecimalParseError() returns error? {
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "v");
+    check sheet.setCell(1, 0, "xyz");
+    decimal[]|Error result = sheet.getColumn("v");
+    test:assertTrue(result is TypeConversionError, "A non-numeric string pinned to decimal must error");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testParseBooleanValidVariants() returns error? {
+    // The accepted truthy/falsy spellings all bind to boolean.
+    Workbook wb = new;
+    Sheet sheet = check wb.createSheet("Data");
+    check sheet.setCell(0, 0, "b");
+    check sheet.setCell(1, 0, "yes");
+    check sheet.setCell(2, 0, "no");
+    check sheet.setCell(3, 0, "1");
+    check sheet.setCell(4, 0, "0");
+    boolean[] vals = check sheet.getColumn("b");
+    test:assertEquals(vals, [true, false, true, false],
+            "yes/no/1/0 map to true/false/true/false");
+    check wb.close();
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testWriteStripsIllegalControlChars() returns error? {
+    // XLSX (XML 1.0) forbids C0 control chars except tab/newline/CR; they are stripped on write.
+    string tempFile = getTempFilePath("control_chars");
+    string[][] data = [["clean"], ["a\u{0001}b"]];
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[1][0], "ab", "The illegal control character is stripped on write");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testWriteStripsControlCharsKeepsTab() returns error? {
+    // Tab is a permitted control char (kept); other C0 controls are stripped, including a
+    // second illegal char after the StringBuilder is already allocated.
+    string tempFile = getTempFilePath("control_chars_tab");
+    string[][] data = [["a\tb\u{0001}c\u{0002}d"]];
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[0][0], "a\tbcd", "Tab kept; the two illegal control chars stripped");
+    check removeTempFile(tempFile);
+}
+
+@test:Config {groups: ["parseSheet"]}
+function testWriteStripsControlCharsKeepsNewline() returns error? {
+    // Newline is a permitted control char (kept); an illegal C0 control alongside it is stripped.
+    string tempFile = getTempFilePath("control_chars_nl");
+    string[][] data = [["a\nb\u{0001}c"]];
+    check writeSheet(data, tempFile);
+
+    string[][] parsed = check parseSheet(tempFile);
+    test:assertEquals(parsed[0][0], "a\nbc", "Newline kept; the illegal control char stripped");
     check removeTempFile(tempFile);
 }

@@ -24,6 +24,7 @@ import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
+import org.apache.poi.EncryptedDocumentException;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
@@ -207,9 +208,12 @@ public final class WorkbookHandle {
             return workbookObj;
         } catch (FileNotFoundException e) {
             return DiagnosticLog.fileNotFoundError("Failed to open workbook: " + filePath.getValue(), e);
+        } catch (EncryptedDocumentException e) {
+            return DiagnosticLog.parseError(
+                    "Cannot open a password-protected (encrypted) workbook: " + filePath.getValue());
         } catch (IOException e) {
-            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP,
-            // malformed OOXML, encrypted files). The file existed; reading it as XLSX failed.
+            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP or
+            // malformed OOXML). The file existed; reading it as XLSX failed.
             return DiagnosticLog.parseError("Failed to parse workbook: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook: " + e.getMessage(), e);
@@ -233,13 +237,41 @@ public final class WorkbookHandle {
             workbookObj.addNativeData(WORKBOOK_NATIVE_KEY, workbook);
             registerForCleanup(workbookObj, workbook);
             return workbookObj;
+        } catch (EncryptedDocumentException e) {
+            return DiagnosticLog.parseError(
+                    "Cannot open a password-protected (encrypted) workbook from the given bytes");
         } catch (IOException e) {
-            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP,
-            // malformed OOXML, encrypted content). The bytes were readable; interpreting
-            // them as XLSX failed.
+            // WorkbookFactory.create throws IOException for parse failures (corrupted ZIP or
+            // malformed OOXML). The bytes were readable; interpreting them as XLSX failed.
             return DiagnosticLog.parseError("Failed to parse workbook bytes: " + e.getMessage());
         } catch (Exception e) {
             return DiagnosticLog.error("Error opening workbook from bytes: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Open a workbook for in-place editing, creating a new empty one if the path is absent.
+     *
+     * Unlike {@link #openWorkbookFromPath}, this is BObject-free and is *not*
+     * registered for phantom-reference cleanup — the caller owns the returned workbook and
+     * must close it (try-with-resources). A missing file is not an error: a new empty
+     * {@link XSSFWorkbook} is returned. An existing-but-unreadable file throws
+     * {@link IOException}, which the caller maps to a parse error. The stream is read fully
+     * by POI and closed before return, so the returned workbook holds no lock on the file —
+     * safe to atomically rewrite the same path.
+     *
+     * @param path destination path
+     * @return an open Workbook — the existing contents if the file exists, else empty
+     * @throws IOException if an existing file cannot be read as XLSX (e.g. corrupt or malformed);
+     *                     a password-protected file surfaces as an unchecked EncryptedDocumentException
+     */
+    static Workbook openWorkbookForEdit(String path) throws IOException {
+        Path filePath = Paths.get(path);
+        if (!Files.exists(filePath)) {
+            return new XSSFWorkbook();
+        }
+        try (FileInputStream fis = new FileInputStream(filePath.toFile())) {
+            return WorkbookFactory.create(fis);
         }
     }
 
@@ -339,12 +371,13 @@ public final class WorkbookHandle {
     public static Object getSheetByIndex(BObject workbookObj, long index) {
         try {
             Workbook workbook = getWorkbook(workbookObj);
-            int idx = (int) index;
-
-            if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
-                return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            int sheetCount = workbook.getNumberOfSheets();
+            // Bounds-check the 64-bit index before narrowing, so a huge value cannot wrap to a
+            // valid int and silently address the wrong sheet.
+            if (index < 0 || index >= sheetCount) {
+                return DiagnosticLog.sheetNotFoundError(index, sheetCount - 1);
             }
-            return createBallerinaSheet(workbookObj, workbook.getSheetAt(idx));
+            return createBallerinaSheet(workbookObj, workbook.getSheetAt((int) index));
         } catch (BallerinaErrorException e) {
             return e.getBError();
         }
@@ -366,7 +399,7 @@ public final class WorkbookHandle {
 
             // Check if sheet already exists (case-insensitive, matching Excel semantics)
             if (findSheetIndexCaseInsensitive(workbook, sheetName) != -1) {
-                return DiagnosticLog.error("Sheet '" + sheetName + "' already exists");
+                return DiagnosticLog.sheetExistsError(sheetName);
             }
 
             return createBallerinaSheet(workbookObj, workbook.createSheet(sheetName));
@@ -535,16 +568,17 @@ public final class WorkbookHandle {
     public static Object deleteSheetByIndex(BObject workbookObj, long index) {
         try {
             Workbook workbook = getWorkbook(workbookObj);
-            int idx = (int) index;
-
-            if (idx < 0 || idx >= workbook.getNumberOfSheets()) {
-                return DiagnosticLog.sheetNotFoundError(idx, workbook.getNumberOfSheets() - 1);
+            int sheetCount = workbook.getNumberOfSheets();
+            // Bounds-check the 64-bit index before narrowing (see getSheetByIndex).
+            if (index < 0 || index >= sheetCount) {
+                return DiagnosticLog.sheetNotFoundError(index, sheetCount - 1);
             }
-            if (workbook.getNumberOfSheets() == 1) {
+            if (sheetCount == 1) {
                 return DiagnosticLog.error(
                         "Cannot delete the last sheet — Excel requires at least one sheet");
             }
 
+            int idx = (int) index;
             Sheet doomed = workbook.getSheetAt(idx);
             invalidateHandlesForSheet(workbookObj, doomed);
             workbook.removeSheetAt(idx);

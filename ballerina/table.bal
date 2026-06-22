@@ -16,188 +16,136 @@
 
 import ballerina/jballerina.java;
 
-# Represents an Excel Table (ListObject) within a worksheet.
+# An Excel Table (ListObject) in a worksheet, with automatic header handling, an optional totals
+# row, and auto-resize on write. Table names are unique across the workbook.
 #
-# Tables provide structured access to data with automatic header handling,
-# optional totals row support, and auto-expand capability when writing.
-# Table names are unique across the entire workbook.
-#
-# Instances are obtained from a `Workbook` or `Sheet` via methods like
-# `getTable`, `createTable`, etc.; direct construction (`new Table()`) is not supported.
+# Obtained from a `Workbook` or `Sheet` (for example `getTable` or `createTable`); not constructed
+# directly.
 #
 # ```ballerina
-# xlsx:Workbook wb = check xlsx:fromFile("sales.xlsx");
 # xlsx:Table empTable = check wb.getTable("EmployeeTable");
-#
-# // Read data (headers excluded automatically)
 # Employee[] employees = check empTable.getRows();
-#
-# // Write data (auto-expands if needed)
 # check empTable.putRows(newEmployees);
-#
-# check wb.save();
-# check wb.close();
 # ```
 public type Table isolated object {
 
-    # Get the name of the table.
+    # Get the name of the table. Table names are unique across the workbook.
     #
-    # Table names are unique across the entire workbook.
-    #
-    # + return - Table name, or an `Error` if the handle is invalid
+    # + return - The table name, or an error
     public isolated function getName() returns string|Error;
 
-    # Get the display name of the table.
+    # Get the display name of the table, as shown in the Excel UI.
     #
-    # The display name is what appears in Excel's UI. It may differ from the internal name.
-    #
-    # + return - Table display name, or an `Error` if the handle is invalid
+    # + return - The display name, or an error
     public isolated function getDisplayName() returns string|Error;
 
-    # Get the name of the sheet containing this table.
+    # Get the name of the sheet that holds this table.
     #
-    # + return - Sheet name, or an `Error` if the handle is invalid
+    # + return - The sheet name, or an error
     public isolated function getSheetName() returns string|Error;
 
-    # Get the full range of the table (including headers and total row) in A1 notation.
+    # Get the full table range, including the header and totals row, in A1 notation.
     #
-    # + return - A1-notation range string (e.g., "A1:D10"), or an `Error` if the handle is invalid
+    # + return - The range in A1 notation, such as "A1:D10", or an error
     public isolated function getRange() returns string|Error;
 
-    # Get the full range of the table (including headers and total row) as a `CellRange`.
+    # Get the full table range, including the header and totals row, as a `CellRange` (0-based).
     #
-    # All indices are 0-based.
-    #
-    # + return - CellRange representing the full table area, or an `Error` if the handle is invalid
+    # + return - The full table range, or an error
     public isolated function getCellRange() returns CellRange|Error;
 
-    # Get the data range of the table (excluding headers and total row) in A1 notation.
+    # Get the data range, excluding the header and totals row, in A1 notation.
     #
-    # + return - A1-notation range string, or an `Error` if the handle is invalid
+    # + return - The data range in A1 notation, or an error
     public isolated function getDataRange() returns string|Error;
 
-    # Get the data range of the table (excluding headers and total row) as a `CellRange`.
+    # Get the data range, excluding the header and totals row, as a `CellRange` (0-based).
     #
-    # All indices are 0-based.
-    #
-    # + return - CellRange representing only the data area, or an `Error` if the handle is invalid
+    # + return - The data range, or an error
     public isolated function getDataCellRange() returns CellRange|Error;
 
-    # Get the number of data rows in the table.
+    # Get the number of data rows, excluding the header and totals row.
     #
-    # Returns only data rows, excluding header and totals row.
-    #
-    # + return - Data row count, or an `Error` if the handle is invalid
+    # + return - The data row count, or an error
     public isolated function getRowCount() returns int|Error;
 
     # Get the number of columns in the table.
     #
-    # + return - Column count, or an `Error` if the handle is invalid
+    # + return - The column count, or an error
     public isolated function getColumnCount() returns int|Error;
 
-    # Get the column header names.
+    # Get the column header names, in column order.
     #
-    # Returns an array of header names in column order.
-    #
-    # + return - Array of header strings, or an `Error` if the handle is invalid
+    # + return - The header names, or an error
     public isolated function getHeaders() returns string[]|Error;
 
-    # Get all data rows from the table.
+    # Read all data rows from the table as records, maps, or a string grid.
     #
-    # Headers and totals row are automatically excluded. Supports reading to:
-    # - `string[][]` - Raw string array
-    # - `record{}[]` - Array of records (headers map to fields)
+    # The header and any totals row are excluded.
     #
-    # ```ballerina
-    # // As string array
-    # string[][] rows = check table.getRows();
-    #
-    # // As records
-    # type Employee record {| string name; int age; |};
-    # Employee[] employees = check table.getRows();
-    # ```
-    #
-    # + options - Read options
-    # + t - Target row type descriptor (record, map, or string[])
-    # + return - Array of data rows or error
-    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
+    # + options - Table read options
+    # + t - Target row type
+    # + return - The data rows, or an error
+    public isolated function getRows(TableParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error;
 
-    # Get a single data row from the table by index.
+    # Read a single data row by index as a record, map, or string array.
     #
-    # The index is 0-based within the data range (first data row is index 0).
-    # Headers and totals are excluded from indexing.
-    #
-    # ```ballerina
-    # type Employee record {| string name; int age; |};
-    # Employee first = check table.getRow(0);
-    # ```
-    #
-    # + index - Row index (0-based within data range)
-    # + options - Read options
-    # + t - Target type descriptor
-    # + return - Single row or error
-    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
+    # + index - 0-based index within the data range, so `getRow(0)` is the first data row
+    # + options - Table read options
+    # + t - Target row type
+    # + return - The row, or an error
+    public isolated function getRow(int index, TableRowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error;
 
-    # Write rows to the table.
+    # Write rows to the table, resizing its data range to fit.
     #
-    # If the data exceeds the current table size, the table automatically expands.
-    # Existing data is overwritten starting from the first data row.
+    # By default the data is replaced; `tableWriteMode = APPEND` adds rows below it instead.
+    # A resize that would overlap another table fails with a `TableOverlapError`.
     #
-    # ```ballerina
-    # Employee[] employees = [{name: "John", age: 30}, {name: "Jane", age: 25}];
-    # check table.putRows(employees);
-    # ```
-    #
-    # + data - Data to write (records or arrays)
-    # + options - Write options
-    # + return - Error if write fails
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error?;
+    # + data - Rows to write (records, maps, or string arrays)
+    # + options - Table write options
+    # + return - An error if the write fails
+    public isolated function putRows(Row[] data, *TableWriteOptions options) returns Error?;
 
-    # Check if the table has a total row.
+    # Check whether the table has a totals row.
     #
-    # + return - true if a total row exists, or an `Error` if the handle is invalid
+    # + return - Whether a totals row exists, or an error
     public isolated function hasTotalRow() returns boolean|Error;
 
-    # Get the total row values.
+    # Get the totals row as a map keyed by column name.
     #
-    # Returns a map keyed by column name. Each value binds to its natural cell value —
-    # a whole number to `int`, a fractional number to `decimal`, a date/time to an ISO
-    # string — or `()` for a blank total cell.
+    # Each value binds to its natural cell value, or `()` for a blank total cell.
     #
-    # ```ballerina
-    # if check table.hasTotalRow() {
-    #     map<xlsx:CellValue?> totals = check table.getTotalRow();
-    #     io:println("Total salary: ", totals["Salary"]);
-    # }
-    # ```
-    #
-    # + t - Result map type descriptor; leave at the default `map<CellValue?>` (the intended
-    #       target). A narrower target (e.g. `map<int>`) only succeeds if every total cell fits it.
-    # + return - Map of column names to total values, or error if no total row
-    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>) returns t|Error;
+    # + t - Result map type (default: `map<CellValue>`); a narrower type binds only if every cell fits
+    # + return - The totals by column name, or an error if there is no totals row
+    public isolated function getTotalRow(typedesc<map<CellValue>> t = <>) returns t|Error;
 
-    # Rename the table.
-    #
-    # The new name must be unique within the workbook.
+    # Rename the table. The new name must be unique in the workbook.
     #
     # + newName - New table name
-    # + return - Error if rename fails (e.g., name already exists)
+    # + return - An error if the rename fails, for example if the name is taken
     public isolated function rename(string newName) returns Error?;
 
-    # Resize the table to a new range.
+    # Resize the table to a new range, which must include a header row and a data row.
+    # For automatic resizing on write, use `putRows` instead.
     #
-    # The new range must include at least one header row and one data row.
-    # This is for manual resizing; use putRows() for automatic expansion.
-    #
-    # + newRange - New table range as a `CellRange` record or an A1-notation string
-    # + return - Error if resize fails (e.g., invalid range, overlap)
+    # + newRange - New table range as a `CellRange` or an A1-notation string
+    # + return - An error if the range is invalid or overlaps another table
     public isolated function resize(CellRange|string newRange) returns Error?;
+
+    # Delete a data row by 0-based index; the table shrinks and rows below move up.
+    #
+    # A table must keep at least one data row, so the last one cannot be deleted.
+    #
+    # + index - 0-based index within the data range, so 0 is the first data row
+    # + return - An error if the index is out of range, it is the last data row, or the shrink
+    #            would disrupt another table
+    public isolated function deleteRow(int index) returns Error?;
 };
 
-# Concrete implementation of `Table`. Not exported — instances are vended
-# from `Workbook` and `Sheet` methods (`getTable`, `createTable`, etc.).
+# Concrete implementation of `Table`. Not exported; instances are vended
+# from `Workbook` and `Sheet` methods such as `getTable` and `createTable`.
 isolated class TableImpl {
     *Table;
 
@@ -241,17 +189,17 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getRows(ParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRows(TableParseOptions options = {}, typedesc<Row> t = <>)
             returns t[]|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getRow(int index, RowParseOptions options = {}, typedesc<Row> t = <>)
+    public isolated function getRow(int index, TableRowParseOptions options = {}, typedesc<Row> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function putRows(Row[] data, *RowWriteOptions options) returns Error? = @java:Method {
+    public isolated function putRows(Row[] data, *TableWriteOptions options) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
@@ -259,7 +207,7 @@ isolated class TableImpl {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 
-    public isolated function getTotalRow(typedesc<map<CellValue?>> t = <>)
+    public isolated function getTotalRow(typedesc<map<CellValue>> t = <>)
             returns t|Error = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
@@ -269,6 +217,10 @@ isolated class TableImpl {
     } external;
 
     public isolated function resize(CellRange|string newRange) returns Error? = @java:Method {
+        'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
+    } external;
+
+    public isolated function deleteRow(int index) returns Error? = @java:Method {
         'class: "io.ballerina.lib.xlsx.xlsx.TableHandle"
     } external;
 }

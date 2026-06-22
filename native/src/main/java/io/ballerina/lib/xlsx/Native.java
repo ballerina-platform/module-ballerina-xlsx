@@ -72,8 +72,8 @@ public final class Native {
      *
      * @param data      Data to write (record[] or string[][])
      * @param filePath  Path to the output file
-     * @param sheetName Name of the sheet to create
-     * @param options   Row-level write options (writeHeaders, startRowIndex)
+     * @param sheetName Name of the target sheet
+     * @param options   Write options (sheetWriteMode, writeHeaders, startRowIndex)
      * @return null on success, error on failure
      */
     public static Object writeSheet(BArray data, BString filePath, BString sheetName,
@@ -147,7 +147,7 @@ public final class Native {
      * @param data      Data to write
      * @param filePath  Path to the XLSX file
      * @param tableName Name of the table to write to
-     * @param options   Write options
+     * @param options   Table write options (tableWriteMode)
      * @return null on success, error on failure
      */
     public static Object writeTable(BArray data, BString filePath, BString tableName,

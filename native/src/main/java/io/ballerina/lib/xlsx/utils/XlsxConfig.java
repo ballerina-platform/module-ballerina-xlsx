@@ -51,6 +51,9 @@ public class XlsxConfig {
     private static final BString WRITE_HEADERS = StringUtils.fromString("writeHeaders");
     private static final BString START_ROW_INDEX = StringUtils.fromString("startRowIndex");
     private static final BString START_COLUMN_INDEX = StringUtils.fromString("startColumnIndex");
+    public static final BString WRITE_SHEET_MODE = StringUtils.fromString("sheetWriteMode");
+    private static final BString WRITE_TABLE_MODE = StringUtils.fromString("tableWriteMode");
+    private static final BString TABLE_INSERT_AT = StringUtils.fromString("insertAt");
 
     // Formula mode values
     private static final String FORMULA_MODE_CACHED = "CACHED";
@@ -82,7 +85,17 @@ public class XlsxConfig {
     private String writeSheetName = DEFAULT_SHEET_NAME;
     private boolean writeHeaders = true;
     private int startRowIndex = 0;
+    // Boxed: null = no explicit startRowIndex (Sheet.putRows resolves the mode's natural point).
+    // Carries the optional `int startRowIndex?` from WriteOptions without disturbing the primitive
+    // startRowIndex used by writeSheet.
+    private Integer startRowIndexOverride = null;
     private int startColumnIndex = 0;
+    // A Ballerina SheetWriteMode enum member; default matches SheetWriteOptions.
+    private String sheetWriteMode = "FAIL_IF_EXISTS";
+    // A Ballerina TableWriteMode enum member; default matches TableWriteOptions.
+    private String tableWriteMode = "REPLACE";
+    // Boxed: null = no explicit insert position (APPEND appends at the bottom of the data).
+    private Integer tableInsertAt = null;
 
     /**
      * Create config from Ballerina parse options map.
@@ -203,11 +216,34 @@ public class XlsxConfig {
         Object startRowIndexVal = options.get(START_ROW_INDEX);
         if (startRowIndexVal != null) {
             config.startRowIndex = ((Long) startRowIndexVal).intValue();
+            config.startRowIndexOverride = ((Long) startRowIndexVal).intValue();
         }
 
         Object startColumnIndexVal = options.get(START_COLUMN_INDEX);
         if (startColumnIndexVal != null) {
             config.startColumnIndex = ((Long) startColumnIndexVal).intValue();
+        }
+
+        Object sheetWriteModeVal = options.get(WRITE_SHEET_MODE);
+        if (sheetWriteModeVal != null) {
+            config.sheetWriteMode = sheetWriteModeVal.toString();
+        }
+
+        Object tableWriteModeVal = options.get(WRITE_TABLE_MODE);
+        if (tableWriteModeVal != null) {
+            config.tableWriteMode = tableWriteModeVal.toString();
+        }
+
+        Object tableInsertAtVal = options.get(TABLE_INSERT_AT);
+        if (tableInsertAtVal != null) {
+            config.tableInsertAt = ((Long) tableInsertAtVal).intValue();
+        }
+
+        // headerRowIndex is carried by single-row write options (setRow) to locate the
+        // header row for record/map column alignment.
+        Object headerRowIndexVal = options.get(HEADER_ROW_INDEX);
+        if (headerRowIndexVal != null) {
+            config.headerRowIndex = ((Long) headerRowIndexVal).intValue();
         }
 
         return config;
@@ -252,17 +288,6 @@ public class XlsxConfig {
         return rowCount;
     }
 
-    /**
-     * Check if a row count limit is set.
-     */
-    public boolean hasRowCountLimit() {
-        return rowCount != null;
-    }
-
-    public String getFormulaMode() {
-        return formulaMode;
-    }
-
     public boolean isFormulaModeText() {
         return FORMULA_MODE_TEXT.equals(formulaMode);
     }
@@ -301,8 +326,35 @@ public class XlsxConfig {
         return startRowIndex;
     }
 
+    /**
+     * Whether Sheet.putRows was given an explicit startRowIndex (vs. leaving it `()` to resolve
+     * the mode's natural point).
+     */
+    public boolean hasStartRowIndex() {
+        return startRowIndexOverride != null;
+    }
+
+    public Integer getStartRowIndexOverride() {
+        return startRowIndexOverride;
+    }
+
     public int getStartColumnIndex() {
         return startColumnIndex;
+    }
+
+    public String getSheetWriteMode() {
+        return sheetWriteMode;
+    }
+
+    public String getTableWriteMode() {
+        return tableWriteMode;
+    }
+
+    /**
+     * Explicit APPEND insert position (0-based data-row index), or null to append at the bottom.
+     */
+    public Integer getTableInsertAt() {
+        return tableInsertAt;
     }
 
     // Fail-safe getters

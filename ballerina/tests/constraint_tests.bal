@@ -135,6 +135,9 @@ function testConstraintViolationReturnsError() returns error? {
         // The error must pinpoint the offending row, not just signal a generic failure.
         test:assertTrue(result.detail().rowNumber is int,
                 "ConstraintValidationError should carry the violating row number");
+        // The underlying constraint:Error is chained as the cause for full diagnostics.
+        test:assertTrue(result.cause() is error,
+                "ConstraintValidationError should chain the underlying constraint error as its cause");
     }
 }
 
@@ -188,7 +191,7 @@ function testConstraintViolationDisabledAllowsInvalidData() returns error? {
 function testParseTableConstraintValidationReturnsError() returns error? {
     // parseTable must honour enableConstraintValidation just like parseSheet.
     // The table holds out-of-range ages (-5, 150), so enabled validation must reject them.
-    ParseOptions opts = {
+    TableParseOptions opts = {
         enableConstraintValidation: true
     };
 
@@ -208,7 +211,7 @@ function testTableGetRowsConstraintValidationReturnsError() returns error? {
     Workbook wb = check fromFile(CONSTRAINT_TEST_DIR + "constraint_table.xlsx");
     Table tbl = check wb.getTable("ConstraintTable");
 
-    ParseOptions opts = {
+    TableParseOptions opts = {
         enableConstraintValidation: true
     };
 

@@ -251,7 +251,7 @@ function setupTestData() returns error? {
     // natural_types.xlsx - Genuinely typed cells (numeric / boolean / date /
     // date-time) written via the Workbook API, so each cell carries a real Excel
     // type rather than text. Used to verify that untyped / broad reads
-    // (map<CellValue?>, getCell, getColumn, rest fields) bind to the natural
+    // (map<CellValue>, getCell, getColumn, rest fields) bind to the natural
     // Ballerina type — string-only fixtures cannot exercise this.
     // -------------------------------------------------------------------------
     time:Date naturalDate = {year: 2026, month: 5, day: 28};
@@ -299,6 +299,18 @@ function cleanupTestData() returns error? {
         string filePath = TEST_DATA_DIR + fileName;
         if check file:test(filePath, file:EXISTS) {
             check file:remove(filePath);
+        }
+    }
+
+    // Safety net: sweep any leftover transient files (temp_*). Per-test `removeTempFile` only runs
+    // when a test passes, so a failed assertion would otherwise strand its temp file on disk.
+    if check file:test(TEST_DATA_DIR, file:EXISTS) {
+        foreach file:MetaData entry in check file:readDir(TEST_DATA_DIR) {
+            // Match on the file name (OS-agnostic) rather than a POSIX-separator substring.
+            string fileName = check file:basename(entry.absPath);
+            if !entry.dir && fileName.startsWith("temp_") {
+                check file:remove(entry.absPath);
+            }
         }
     }
 }
