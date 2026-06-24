@@ -1,6 +1,6 @@
-## Overview
+# Overview
 
-The `ballerina/xlsx` module provides functionality to read and write Microsoft Excel files in the XLSX format with type-safe data binding to Ballerina records. It exposes a simple file-based API (`parseSheet` / `writeSheet`) for single-sheet ETL and an object-based Workbook API for multi-sheet operations, byte-array I/O, and Excel Tables.
+This module provides functionality to read and write Microsoft Excel files in the XLSX format with type-safe data binding to Ballerina records. It exposes a simple file-based API (`parseSheet` / `writeSheet`) for single-sheet ETL and an object-based Workbook API for multi-sheet operations, byte-array I/O, and Excel Tables.
 
 All processing is done locally with no external service dependencies.
 
