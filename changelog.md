@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [1.0.1] - 2026-06-24
+
+### Fixed
+
+- Added Icon
+- Fixed docs
+
 ## [1.0.0] - 2026-06-18
 
 Tracking issue: [ballerina-library#8115](https://github.com/ballerina-platform/ballerina-library/issues/8115)
