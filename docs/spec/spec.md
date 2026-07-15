@@ -252,7 +252,7 @@ public type RowWriteOptions record {|
 public enum SheetWriteMode {
     FAIL_IF_EXISTS,   # fail rather than touch existing content (sheet exists / target rows occupied)
     REPLACE,          # overwrite in place (writeSheet drops & recreates the sheet; row writers overwrite)
-    APPEND            # add rows, shifting existing content down (writeSheet appends below the data)
+    APPEND            # add rows without overwriting; content in the way of an insert shifts down (writeSheet appends below the data)
 }
 
 # writeTable / Table.putRows.
