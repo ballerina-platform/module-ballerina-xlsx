@@ -32,7 +32,7 @@ public enum SheetWriteMode {
     # Overwrite existing content in place
     REPLACE,
 
-    # Add new content, shifting existing content down to make room
+    # Add new content without overwriting. Any content in the way of an insert is shifted down to make room.
     APPEND
 }
 
