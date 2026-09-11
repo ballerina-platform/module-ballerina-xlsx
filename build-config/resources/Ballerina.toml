@@ -5,7 +5,7 @@ name = "xlsx"
 version = "@toml.version@"
 license = ["Apache-2.0"]
 authors = ["Ballerina"]
-keywords = ["xlsx", "excel", "microsoft", "spreadsheet", "data"]
+keywords = ["xlsx", "excel", "microsoft", "spreadsheet", "data", "Type/Library", "Area/Storage & File Management", "Name/XLSX"]
 repository = "https://github.com/ballerina-platform/module-ballerina-xlsx"
 icon = "icon.png"
 
