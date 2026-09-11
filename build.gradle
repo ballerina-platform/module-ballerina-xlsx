@@ -84,9 +84,18 @@ subprojects {
 
 def moduleVersion = project.version.replace("-SNAPSHOT", "")
 
-tasks.named('build') {
-    dependsOn(':xlsx-native:build')
-    dependsOn(':xlsx-ballerina:build')
+if (tasks.names.contains('build')) {
+    tasks.named('build') {
+        dependsOn(':xlsx-native:build')
+        dependsOn(':xlsx-ballerina:build')
+
+    }
+} else {
+    tasks.register('build') {
+        dependsOn(':xlsx-native:build')
+        dependsOn(':xlsx-ballerina:build')
+
+    }
 }
 
 release {
