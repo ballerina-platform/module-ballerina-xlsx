@@ -17,6 +17,13 @@
  */
 
 import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.process.ExecOperations
+
+import javax.inject.Inject
+
+abstract class BallerinaExecHelper {
+    @Inject abstract ExecOperations getExecOperations()
+}
 
 plugins {
     id 'io.ballerina.plugin'
@@ -49,7 +56,7 @@ ballerina {
     module = packageName
     langVersion = project.ballerinaLangVersion
     testCoverageParam = "--code-coverage --coverage-format=xml --includes=io.ballerina.lib.xlsx.*:ballerina.*"
-    isConnector = false
+    connector = false
     platform = "java21"
 }
 
@@ -72,6 +79,7 @@ task updateTomlFiles {
 updateTomlFiles.dependsOn copyStdlibs
 
 task commitTomlFiles {
+    def execHelper = project.objects.newInstance(BallerinaExecHelper)
     doLast {
         def filesToCommit = []
         def ballerinaToml = new File("$project.projectDir/Ballerina.toml")
@@ -89,7 +97,7 @@ task commitTomlFiles {
             return
         }
         
-        project.exec {
+        execHelper.execOperations.exec {
             ignoreExitValue true
             def filesList = filesToCommit.join(" ")
             if (Os.isFamily(Os.FAMILY_WINDOWS)) {
