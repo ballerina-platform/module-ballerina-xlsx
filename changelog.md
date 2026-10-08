@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - [[#9132] Updated Keywords and Reformat README for Connector Store Discoverability](https://github.com/ballerina-platform/ballerina-library/issues/9132)
-
+- Clarify the API documentation of the write options and update the module specification
+- Upgrade Gradle to 9.5.1 and the Ballerina Gradle plugin to 4.0.0
 
 ## [1.0.1] - 2026-06-24
 
