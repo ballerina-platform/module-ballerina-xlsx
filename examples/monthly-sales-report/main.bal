@@ -158,7 +158,7 @@ public function main() returns error? {
 
     // Spot-check a single cell directly without parsing the whole sheet.
     xlsx:Sheet ordersSheetReopened = check reopened.getSheet("Orders");
-    anydata firstCustomer = check ordersSheetReopened.getCell(1, 2); // with 0-based indices, this means 1 -> 2, 2 -> C, i.e. C2 cell. 
+    xlsx:CellValue firstCustomer = check ordersSheetReopened.getCell(1, 2); // with 0-based indices, this means 1 -> 2, 2 -> C, i.e. C2 cell. 
     io:println(string `Spot check via Sheet.getCell(1, 2): first customer is "${firstCustomer.toString()}".`);
 
     check reopened.close();

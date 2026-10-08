@@ -101,7 +101,7 @@ function applyTaxSurcharge(byte[] input, decimal rate) returns byte[]|error {
     // Locate the amount column by reading the header row directly.
     int amountCol = -1;
     foreach int c in used.firstColumnIndex ... used.lastColumnIndex {
-        anydata header = check sheet.getCell(used.firstRowIndex, c);
+        xlsx:CellValue header = check sheet.getCell(used.firstRowIndex, c);
         if header.toString() == "amount" {
             amountCol = c;
             break;
@@ -114,7 +114,7 @@ function applyTaxSurcharge(byte[] input, decimal rate) returns byte[]|error {
     // Walk data rows (everything below the header) and apply the surcharge.
     // setCell uses (row, col) — the natural form inside a loop.
     foreach int r in (used.firstRowIndex + 1) ... used.lastRowIndex {
-        anydata current = check sheet.getCell(r, amountCol);
+        xlsx:CellValue current = check sheet.getCell(r, amountCol);
         decimal raw;
         if current is decimal {
             raw = current * (1d + rate);
