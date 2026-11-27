@@ -64,7 +64,7 @@ The `xlsx` module reads and writes Microsoft Excel files in the XLSX (Office Ope
 - **Constraint validation.** Integrates with `ballerina/constraint` annotations on parsed records.
 - **Atomic file writes.** File-based saves use a temp-file + rename pattern, so a failed write never destroys the original file.
 
-The module uses Apache POI 5.3.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported.
+The module uses Apache POI 5.4.0 for XLSX processing. All operations load the entire workbook into memory (DOM model); streaming is not supported.
 
 ### Limitations
 

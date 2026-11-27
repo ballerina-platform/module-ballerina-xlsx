@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-27
+
+### Changed
+- [Update Apache POI to 5.4.0 and Log4j to 2.25.5 to fix known vulnerabilities](https://github.com/ballerina-platform/ballerina-library/issues/9645)
+
 ## [1.0.2] - 2026-10-08
 
 ### Changed
